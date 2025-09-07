@@ -1,0 +1,14 @@
+# ============================================
+# Configuration de la watchlist (FR)
+# - categorie : "linear" (USDT), "inverse" (USD) ou "both"
+# - funding_min / funding_max : bornes sur le taux de funding (valeurs décimales)
+#   Exemples : 0.0001 = 0.01%   |   -0.0002 = -0.02%
+# - volume_min : volume minimum en USDT (ex: 1000000 = 1M USDT)
+# - limite : nombre max de paires à afficher (après tri par |funding| décroissant)
+# ============================================
+
+categorie: "linear"      # "linear" | "inverse" | "both"
+funding_min: null        # ex: 0.0001 pour >= 0.01%  | null = pas de min
+funding_max: null        # ex: 0.0005 pour <= 0.05%  | null = pas de max
+volume_min: 1000000      # ex: 1000000 pour >= 1M USDT | null = pas de min
+limite: 10               # ex: 10  | null = pas de limite

@@ -122,6 +122,18 @@ class BybitClient:
             else:
                 raise RuntimeError(f"Erreur réseau/HTTP Bybit : {e}")
     
+    def public_base_url(self) -> str:
+        """
+        Retourne l'URL de base publique pour les endpoints sans authentification.
+        
+        Returns:
+            str: URL de base publique (testnet ou mainnet)
+        """
+        if self.testnet:
+            return "https://api-testnet.bybit.com"
+        else:
+            return "https://api.bybit.com"
+    
     def get_wallet_balance(self, account_type: str = "UNIFIED") -> dict:
         """
         Récupère le solde du portefeuille.

@@ -12,6 +12,7 @@ import websocket
 from config import get_settings
 from logging_setup import setup_logging
 from bybit_client import BybitClient
+from instruments import get_perp_symbols
 
 
 class Orchestrator:
@@ -273,28 +274,49 @@ class Orchestrator:
         # 1. Vérification REST privé
         self.check_rest_private()
         
-        # 2. Démarrage WebSocket publique
+        # 2. Détection de l'univers perp
+        try:
+            # Créer un client temporaire pour récupérer l'URL publique
+            temp_client = BybitClient(
+                testnet=self.testnet,
+                timeout=10,
+                api_key=self.api_key or "dummy_key",
+                api_secret=self.api_secret or "dummy_secret"
+            )
+            base_url = temp_client.public_base_url()
+            
+            self.logger.info("🗺️ Détection de l'univers perp en cours…")
+            data = get_perp_symbols(base_url, timeout=10)
+            
+            self.logger.info(f"✅ Perp USDT (linear) détectés : {len(data['linear'])}")
+            self.logger.info(f"✅ Perp coin-margined (inverse) détectés : {len(data['inverse'])}")
+            self.logger.info(f"📊 Univers perp total : {data['total']}")
+            
+        except Exception as err:
+            self.logger.warning(f"⚠️ Impossible de détecter l'univers perp (on continue) : {err}")
+        
+        # 3. Démarrage WebSocket publique
         self.logger.info("🔌 Démarrage WS publique…")
         self.ws_public_thread = threading.Thread(target=self.ws_public_runner)
         self.ws_public_thread.daemon = True
         self.ws_public_thread.start()
         
-        # 3. Démarrage WebSocket privée
+        # 4. Démarrage WebSocket privée
         self.logger.info("🔌 Démarrage WS privée…")
         self.ws_private_thread = threading.Thread(target=self.ws_private_runner)
         self.ws_private_thread.daemon = True
         self.ws_private_thread.start()
         
-        # 4. Attendre un peu pour que les connexions s'établissent
+        # 5. Attendre un peu pour que les connexions s'établissent
         time.sleep(3)
         
-        # 5. Afficher l'état initial
+        # 6. Afficher l'état initial
         self.logger.info(f"🩺 Health | REST={self.rest_status} | WS_publique={self.ws_public_status} | WS_privée={self.ws_private_status}")
         self.prev_rest_status = self.rest_status
         self.prev_ws_public_status = self.ws_public_status
         self.prev_ws_private_status = self.ws_private_status
         
-        # 6. Health-check dans le thread principal
+        # 7. Health-check dans le thread principal
         self.health_check_loop()
     
     def close(self):

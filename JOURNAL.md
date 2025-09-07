@@ -33,6 +33,39 @@
 **Test :** `python src/app.py`  
 **Résultat :** ✅ OK (CONNECTED sur public & privé)
 
+## [2025-09-07] — Comptage de l'univers perp (linear/inverse)
+**But :** Logguer au démarrage le nombre de contrats perp disponibles (USDT + coin-margined) pour informer l'orchestrateur et la stratégie.
+**Fichiers modifiés :** src/app.py
+**Tests/commandes :** `python src/app.py` → vérifier la présence des 4 logs :
+  - "🗺️ Détection de l'univers perp en cours…"
+  - "✅ Perp USDT (linear) détectés : X"
+  - "✅ Perp coin-margined (inverse) détectés : Y"
+  - "📊 Univers perp total : Z"
+**Résultat :** ✅ OK
+
+## [2025-09-07] — Système de watchlist avec filtrage par funding et volume
+**But :** Créer un système complet de filtrage des contrats perpétuels par funding rate et volume, avec suivi des prix en temps réel.
+**Fichiers créés :** 
+  - `src/instruments.py` - Récupération des instruments perpétuels
+  - `src/filtering.py` - Filtrage par critères (funding, volume)
+  - `src/price_store.py` - Stockage des prix en mémoire
+  - `src/run_ws_prices.py` - Script principal de suivi des prix
+  - `src/watchlist_config.fr.yaml` - Configuration en français
+**Fichiers modifiés :** 
+  - `src/bybit_client.py` - Ajout de `public_base_url()`
+  - `src/app.py` - Intégration du comptage perp au démarrage
+**Fonctionnalités :**
+  - Filtrage par catégorie (linear/inverse/both)
+  - Filtrage par funding rate (min/max)
+  - Filtrage par volume 24h minimum
+  - Tri par |funding| décroissant
+  - Suivi des prix en temps réel via WebSocket
+  - Tableau aligné avec mark price, last price, funding %, volume 24h, âge
+**Tests/commandes :** 
+  - `python src/run_ws_prices.py` → affiche les paires filtrées avec prix temps réel
+  - Modifier `src/watchlist_config.fr.yaml` pour ajuster les filtres
+**Résultat :** ✅ OK (système complet et fonctionnel)
+
 ---
 
 ## 🧩 Modèle d'entrée à réutiliser
