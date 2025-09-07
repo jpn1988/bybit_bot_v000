@@ -1,0 +1,135 @@
+"""Client Bybit pour les opérations synchrones avec authentification privée."""
+
+import time
+import hashlib
+import hmac
+import httpx
+
+
+class BybitClient:
+    """Client pour interagir avec l'API privée Bybit v5."""
+    
+    def __init__(self, testnet: bool = True, timeout: int = 10, api_key: str | None = None, api_secret: str | None = None):
+        """
+        Initialise le client Bybit.
+        
+        Args:
+            testnet (bool): Utiliser le testnet (True) ou le marché réel (False)
+            timeout (int): Timeout pour les requêtes HTTP en secondes
+            api_key (str | None): Clé API Bybit
+            api_secret (str | None): Secret API Bybit
+            
+        Raises:
+            RuntimeError: Si les clés API sont manquantes
+        """
+        if not api_key or not api_secret:
+            raise RuntimeError("Clés API manquantes")
+            
+        self.testnet = testnet
+        self.timeout = timeout
+        self.api_key = api_key
+        self.api_secret = api_secret
+        
+        # Définir l'URL de base selon l'environnement
+        if testnet:
+            self.base_url = "https://api-testnet.bybit.com"
+        else:
+            self.base_url = "https://api.bybit.com"
+    
+    def _get_private(self, path: str, params: dict = None) -> dict:
+        """
+        Effectue une requête GET privée authentifiée.
+        
+        Args:
+            path (str): Chemin de l'endpoint
+            params (dict): Paramètres de la requête
+            
+        Returns:
+            dict: Réponse JSON de l'API
+            
+        Raises:
+            RuntimeError: En cas d'erreur HTTP ou API
+        """
+        if params is None:
+            params = {}
+            
+        # Générer timestamp et recv_window
+        timestamp = int(time.time() * 1000)
+        recv_window_ms = 10000
+        
+        # Créer la query string triée
+        query_string = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
+        
+        # Créer le payload pour la signature
+        payload = f"{timestamp}{self.api_key}{recv_window_ms}{query_string}"
+        
+        # Générer la signature HMAC-SHA256
+        signature = hmac.new(
+            self.api_secret.encode('utf-8'),
+            payload.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Headers requis
+        headers = {
+            "X-BAPI-API-KEY": self.api_key,
+            "X-BAPI-SIGN": signature,
+            "X-BAPI-SIGN-TYPE": "2",
+            "X-BAPI-TIMESTAMP": str(timestamp),
+            "X-BAPI-RECV-WINDOW": str(recv_window_ms),
+            "Content-Type": "application/json"
+        }
+        
+        # Construire l'URL complète
+        url = f"{self.base_url}{path}"
+        if query_string:
+            url += f"?{query_string}"
+        
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(url, headers=headers)
+                
+                # Vérifier le statut HTTP
+                if response.status_code >= 400:
+                    raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{response.text[:100]}\"")
+                
+                data = response.json()
+                
+                # Vérifier le retCode
+                if data.get("retCode") != 0:
+                    ret_code = data.get("retCode")
+                    ret_msg = data.get("retMsg", "")
+                    
+                    # Messages d'erreur pédagogiques selon le retCode
+                    if ret_code in [10005, 10006]:
+                        raise RuntimeError("Authentification échouée : clé/secret invalides ou signature incorrecte")
+                    elif ret_code == 10018:
+                        raise RuntimeError("Accès refusé : IP non autorisée (whitelist requise dans Bybit)")
+                    elif ret_code == 10017:
+                        raise RuntimeError("Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)")
+                    elif ret_code == 10016:
+                        raise RuntimeError("Limite de requêtes atteinte : ralentis ou réessaie plus tard")
+                    else:
+                        raise RuntimeError(f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\"")
+                
+                return data.get("result", {})
+                
+        except httpx.RequestError as e:
+            raise RuntimeError(f"Erreur réseau/HTTP Bybit : {e}")
+        except Exception as e:
+            if "Erreur" in str(e):
+                raise
+            else:
+                raise RuntimeError(f"Erreur réseau/HTTP Bybit : {e}")
+    
+    def get_wallet_balance(self, account_type: str = "UNIFIED") -> dict:
+        """
+        Récupère le solde du portefeuille.
+        
+        Args:
+            account_type (str): Type de compte (défaut: UNIFIED)
+            
+        Returns:
+            dict: Données brutes du solde
+        """
+        return self._get_private("/v5/account/wallet-balance", {"accountType": account_type})

@@ -1,0 +1,4 @@
+httpx
+python-dotenv
+loguru
+websocket-client
