@@ -18,10 +18,20 @@ def get_settings():
     api_key = os.getenv("BYBIT_API_KEY") or None
     api_secret = os.getenv("BYBIT_API_SECRET") or None
     
+    # Récupérer les nouvelles variables d'environnement pour les filtres
+    spread_max = os.getenv("SPREAD_MAX")
+    volume_min_millions = os.getenv("VOLUME_MIN_MILLIONS")
+    
+    # Convertir en float si présentes, sinon None
+    spread_max = float(spread_max) if spread_max else None
+    volume_min_millions = float(volume_min_millions) if volume_min_millions else None
+    
     return {
         "testnet": os.getenv("TESTNET", "true").lower() == "true",
         "timeout": int(os.getenv("TIMEOUT", "10")),
         "log_level": os.getenv("LOG_LEVEL", "INFO").upper(),
         "api_key": api_key,
-        "api_secret": api_secret
+        "api_secret": api_secret,
+        "spread_max": spread_max,
+        "volume_min_millions": volume_min_millions
     }

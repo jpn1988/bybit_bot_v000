@@ -3,12 +3,18 @@
 # - categorie : "linear" (USDT), "inverse" (USD) ou "both"
 # - funding_min / funding_max : bornes sur le taux de funding (valeurs décimales)
 #   Exemples : 0.0001 = 0.01%   |   -0.0002 = -0.02%
-# - volume_min : volume minimum en USDT (ex: 1000000 = 1M USDT)
+# - volume_min : volume minimum en USDT (ex: 1000000 = 1M USDT) [ANCIEN FORMAT]
+# - volume_min_millions : volume minimum en millions (ex: 5.0 = 5M USDT) [NOUVEAU FORMAT]
+# - spread_max : spread maximum autorisé (ex: 0.003 = 0.30%)
 # - limite : nombre max de paires à afficher (après tri par |funding| décroissant)
+# 
+# PRIORITÉ : Variables ENV > volume_min_millions (fichier) > volume_min (fichier)
 # ============================================
 
 categorie: "linear"      # "linear" | "inverse" | "both"
 funding_min: null        # ex: 0.0001 pour >= 0.01%  | null = pas de min
 funding_max: null        # ex: 0.0005 pour <= 0.05%  | null = pas de max
-volume_min: 1000000      # ex: 1000000 pour >= 1M USDT | null = pas de min
+volume_min: 1000000      # ex: 1000000 pour >= 1M USDT | null = pas de min [ANCIEN]
+volume_min_millions: 5.0 # ex: 5.0 pour >= 5M USDT | null = pas de min [NOUVEAU]
+spread_max: 0.03        # ex: 0.003 pour <= 0.30% | null = pas de filtre
 limite: 10               # ex: 10  | null = pas de limite

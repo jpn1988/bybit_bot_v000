@@ -66,6 +66,26 @@
   - Modifier `src/watchlist_config.fr.yaml` pour ajuster les filtres
 **Résultat :** ✅ OK (système complet et fonctionnel)
 
+## [2025-09-08] — Amélioration du système de watchlist : filtres de spread et volume en millions
+**But :** Ajouter un filtre de spread (bid/ask) et améliorer la gestion du volume avec un format en millions, plus des logs pédagogiques détaillés.
+**Fichiers modifiés :** 
+  - `src/config.py` - Ajout des variables d'environnement SPREAD_MAX et VOLUME_MIN_MILLIONS
+  - `src/run_ws_prices.py` - Pipeline de filtrage enrichi avec spread et volume en millions
+  - `src/watchlist_config.fr.yaml` - Configuration mise à jour avec les nouveaux paramètres
+**Nouvelles fonctionnalités :**
+  - **Filtre de spread** : Calcul automatique du spread (ask1-bid1)/((ask1+bid1)/2) via API REST
+  - **Volume en millions** : Format plus lisible (5.0 = 5M USDT) avec priorité ENV > fichier > ancien format
+  - **Gestion d'erreurs robuste** : Récupération des spreads un par un en cas de symboles invalides
+  - **Tableau simplifié** : Suppression des colonnes Mark Price, Last Price et Âge (s)
+  - **Logs pédagogiques** : Comptes détaillés à chaque étape du filtrage
+**Configuration :**
+  - Variables d'environnement : `VOLUME_MIN_MILLIONS=5` et `SPREAD_MAX=0.003`
+  - Fichier YAML : `volume_min_millions: 5.0` et `spread_max: 0.03`
+**Tests/commandes :** 
+  - `setx VOLUME_MIN_MILLIONS 5 && setx SPREAD_MAX 0.003`
+  - `python src/run_ws_prices.py` → tableau avec colonnes : Symbole | Funding % | Volume (M) | Spread %
+**Résultat :** ✅ OK (filtres fonctionnels, tableau optimisé, logs clairs)
+
 ---
 
 ## 🧩 Modèle d'entrée à réutiliser
