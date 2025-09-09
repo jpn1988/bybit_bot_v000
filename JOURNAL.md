@@ -103,6 +103,102 @@
   - Vérification que `if __name__ == "__main__": main()` est présent
 **Résultat :** ✅ OK (renommage réussi, comportement identique, documentation mise à jour)
 
+## [2025-01-27] — Ajout du filtre de volatilité 5 minutes
+**But :** Ajouter un filtre de volatilité 5 minutes pour éviter les paires trop instables avant l'entrée, déclenché seulement si funding T ≤ 5 min.
+**Fichiers modifiés :** 
+  - `src/config.py` - Ajout de VOLATILITY_MAX_5M (défaut 0.007 = 0.7%)
+  - `src/volatility.py` - Nouveau module de calcul de volatilité
+  - `src/bot.py` - Intégration du filtre dans le flux principal
+  - `README.md` - Documentation de la nouvelle variable d'environnement
+  - `JOURNAL.md` - Documentation du changement
+**Décisions/raisons :**
+  - Filtre basé sur la plage de prix (high-low) des 5 dernières bougies 1 minute
+  - Activation conditionnelle : seulement si funding T ≤ 5 minutes (optimisation)
+  - Cache TTL 60s pour éviter les recalculs inutiles
+  - Gestion d'erreurs robuste avec fallback gracieux
+  - Logs détaillés pour le debugging et le monitoring
+**Fonctionnalités :**
+  - Calcul automatique via API REST Bybit (endpoint kline)
+  - Filtrage par seuil configurable (VOLATILITY_MAX_5M)
+  - Cache en mémoire pour optimiser les performances
+  - Logs pédagogiques avec comptes détaillés
+**Tests/commandes :** 
+  - `setx VOLATILITY_MAX_5M 0.007` (Windows) ou `export VOLATILITY_MAX_5M=0.007` (Linux/Mac)
+  - `python src/bot.py` → vérifier les logs de volatilité pour les symboles proches du funding
+  - Test d'import et de configuration réussi
+**Résultat :** ✅ OK (filtre fonctionnel, intégration propre, documentation complète)
+
+## [2025-01-27] — Amélioration du filtre de volatilité : support min/max et fichier parameters.yaml
+**But :** Permettre le filtrage min/max de volatilité depuis le fichier YAML et renommer le fichier de configuration avec un nom plus approprié.
+**Fichiers modifiés :** 
+  - `src/watchlist_config.fr.yaml` → `src/parameters.yaml` (renommé)
+  - `src/parameters.yaml` - Ajout de volatility_min et volatility_max
+  - `src/config.py` - Support des variables VOLATILITY_MIN et VOLATILITY_MAX
+  - `src/bot.py` - Mise à jour du filtre pour supporter min/max
+  - `README.md` - Documentation du nouveau fichier et paramètres
+  - `JOURNAL.md` - Documentation du changement
+**Décisions/raisons :**
+  - Nom de fichier plus générique : `parameters.yaml` au lieu de `watchlist_config.fr.yaml`
+  - Support des bornes min et max pour la volatilité (plus flexible)
+  - Priorité maintenue : ENV > YAML > valeurs par défaut
+  - Logs améliorés avec affichage des seuils min/max
+  - Gestion d'erreurs robuste avec fallback gracieux
+**Fonctionnalités :**
+  - Paramètres YAML : `volatility_min` et `volatility_max`
+  - Variables d'environnement : `VOLATILITY_MIN` et `VOLATILITY_MAX`
+  - Filtrage conditionnel : seulement si funding T ≤ 5 minutes
+  - Logs détaillés : "seuils: min=0.20% | max=0.70%"
+  - Support des rejets pour volatilité trop faible ou trop élevée
+**Tests/commandes :** 
+  - Configuration YAML testée : volatility_min=null, volatility_max=0.007
+  - Variables d'environnement testées : VOLATILITY_MIN et VOLATILITY_MAX
+  - Import et configuration du bot validés
+**Résultat :** ✅ OK (système min/max fonctionnel, fichier renommé, documentation mise à jour)
+
+## [2025-01-27] — Correction de l'affichage de la volatilité dans le tableau
+**But :** Corriger l'affichage de la volatilité dans le tableau pour tous les symboles, pas seulement ceux avec funding T ≤ 5 min.
+**Fichiers modifiés :** 
+  - `src/bot.py` - Modification du filtre de volatilité et de l'affichage du tableau
+  - `README.md` - Mise à jour de l'exemple d'affichage
+  - `JOURNAL.md` - Documentation du changement
+**Décisions/raisons :**
+  - Problème identifié : la volatilité n'était calculée que pour les symboles avec funding T ≤ 5 min
+  - Solution : calculer la volatilité pour tous les symboles, mais appliquer le filtre seulement pour ceux proches du funding
+  - Affichage : la volatilité est maintenant visible dans le tableau pour tous les symboles
+  - Logs améliorés : distinction entre filtrage et affichage
+**Fonctionnalités :**
+  - Calcul de volatilité pour tous les symboles (pour l'affichage)
+  - Filtrage conditionnel : seulement si funding T ≤ 5 minutes
+  - Logs détaillés : "📊 Volatilité 5m = X% → affiché SYMBOL (funding T > 5 min)"
+  - Tableau mis à jour : colonne "Volatilité %" avec valeurs réelles
+  - Cache TTL 60s pour optimiser les performances
+**Tests/commandes :** 
+  - Import du bot validé avec les nouvelles modifications
+  - Tableau affiche maintenant la volatilité pour tous les symboles
+  - Filtrage fonctionne toujours pour les symboles proches du funding
+**Résultat :** ✅ OK (affichage de la volatilité corrigé, filtrage conditionnel maintenu)
+
+## [2025-01-27] — Suppression de la condition de temps pour le filtre de volatilité
+**But :** Supprimer la condition de temps (funding T ≤ 5 min) du filtre de volatilité pour l'appliquer à tous les symboles.
+**Fichiers modifiés :** 
+  - `src/bot.py` - Modification de la fonction `filter_by_volatility`
+  - `JOURNAL.md` - Documentation du changement
+**Décisions/raisons :**
+  - Demande utilisateur : garder le filtre de volatilité mais enlever la condition sur le temps de funding
+  - Simplification : le filtre s'applique maintenant à tous les symboles, peu importe leur temps de funding
+  - Logique maintenue : calcul et affichage de la volatilité pour tous les symboles
+**Fonctionnalités :**
+  - Filtre de volatilité appliqué à tous les symboles (sans condition de temps)
+  - Logs simplifiés : "🔎 Volatilité 5m = X% → OK SYMBOL" ou "⚠️ Volatilité 5m = X% > seuil max Y% → rejeté SYMBOL"
+  - Message de log mis à jour : "🔎 Évaluation de la volatilité 5m pour tous les symboles…"
+  - Cache TTL 60s maintenu pour optimiser les performances
+**Tests/commandes :** 
+  - Import du bot validé avec les nouvelles modifications
+  - Test en conditions réelles : 2 symboles rejetés (MYXUSDT 4.37%, AVNTUSDT 5.89%) car volatilité > 0.70%
+  - 8 symboles gardés avec volatilité ≤ 0.70%
+  - Tableau affiche correctement la volatilité pour tous les symboles
+**Résultat :** ✅ OK (filtre de volatilité simplifié, appliqué à tous les symboles)
+
 ---
 
 ## 🧩 Modèle d'entrée à réutiliser

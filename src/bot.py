@@ -25,6 +25,7 @@ from logging_setup import setup_logging
 from bybit_client import BybitClient
 from instruments import get_perp_symbols
 from price_store import update, get_snapshot, get_age_seconds
+from volatility import compute_5m_range_pct, get_volatility_cache_key, is_cache_valid
 
 
 def load_config() -> dict:
@@ -35,7 +36,7 @@ def load_config() -> dict:
     Returns:
         dict: Configuration avec categorie, funding_min, funding_max, volume_min_millions, limite
     """
-    config_path = "src/watchlist_config.fr.yaml"
+    config_path = "src/parameters.yaml"
     
     # Valeurs par défaut
     default_config = {
@@ -44,6 +45,9 @@ def load_config() -> dict:
         "funding_max": None,
         "volume_min": None,
         "volume_min_millions": None,
+        "spread_max": None,
+        "volatility_min": None,
+        "volatility_max": None,
         "limite": 10
     }
     
@@ -60,12 +64,18 @@ def load_config() -> dict:
     settings = get_settings()
     env_spread_max = settings.get("spread_max")
     env_volume_min_millions = settings.get("volume_min_millions")
+    env_volatility_min = settings.get("volatility_min")
+    env_volatility_max = settings.get("volatility_max")
     
     # Appliquer les variables d'environnement si présentes
     if env_spread_max is not None:
         default_config["spread_max"] = env_spread_max
     if env_volume_min_millions is not None:
         default_config["volume_min_millions"] = env_volume_min_millions
+    if env_volatility_min is not None:
+        default_config["volatility_min"] = env_volatility_min
+    if env_volatility_max is not None:
+        default_config["volatility_max"] = env_volatility_max
     
     return default_config
 
@@ -402,6 +412,75 @@ def filter_by_spread(symbols_data: list[tuple[str, float, float, str]], spread_d
     return filtered_symbols
 
 
+def filter_by_volatility(symbols_data: list[tuple[str, float, float, str, float]], bybit_client, volatility_min: float, volatility_max: float, logger, volatility_cache: dict) -> list[tuple[str, float, float, str, float]]:
+    """
+    Filtre les symboles par volatilité 5 minutes (pour tous les symboles).
+    
+    Args:
+        symbols_data (list[tuple[str, float, float, str, float]]): Liste des (symbol, funding, volume, funding_time_remaining, spread_pct)
+        bybit_client: Instance du client Bybit
+        volatility_min (float): Volatilité minimum autorisée (0.002 = 0.2%)
+        volatility_max (float): Volatilité maximum autorisée (0.007 = 0.7%)
+        logger: Logger pour les messages
+        volatility_cache (dict): Cache de volatilité {symbol: (timestamp, volatility)}
+        
+    Returns:
+        list[tuple[str, float, float, str, float]]: Liste filtrée par volatilité
+    """
+    if volatility_min is None and volatility_max is None:
+        return symbols_data
+    
+    filtered_symbols = []
+    rejected_count = 0
+    
+    for symbol, funding, volume, funding_time_remaining, spread_pct in symbols_data:
+        # Calculer la volatilité pour tous les symboles
+        cache_key = get_volatility_cache_key(symbol)
+        cached_data = volatility_cache.get(cache_key)
+        
+        if cached_data and is_cache_valid(cached_data[0], ttl_seconds=60):
+            # Utiliser la valeur en cache
+            vol_pct = cached_data[1]
+        else:
+            # Calculer la volatilité
+            vol_pct = compute_5m_range_pct(bybit_client, symbol)
+            
+            if vol_pct is not None:
+                # Mettre en cache
+                volatility_cache[cache_key] = (time.time(), vol_pct)
+            else:
+                # Volatilité indisponible
+                vol_pct = None
+        
+        # Appliquer le filtre de volatilité pour tous les symboles
+        if vol_pct is not None:
+            # Vérifier les seuils de volatilité
+            rejected_reason = None
+            if volatility_min is not None and vol_pct < volatility_min:
+                rejected_reason = f"< seuil min {volatility_min:.2%}"
+            elif volatility_max is not None and vol_pct > volatility_max:
+                rejected_reason = f"> seuil max {volatility_max:.2%}"
+            
+            if rejected_reason:
+                rejected_count += 1
+                continue
+        
+        # Ajouter le symbole avec sa volatilité
+        filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct, vol_pct))
+    
+    # Log des résultats
+    kept_count = len(filtered_symbols)
+    threshold_info = []
+    if volatility_min is not None:
+        threshold_info.append(f"min={volatility_min:.2%}")
+    if volatility_max is not None:
+        threshold_info.append(f"max={volatility_max:.2%}")
+    threshold_str = " | ".join(threshold_info) if threshold_info else "aucun"
+    logger.info(f"✅ Filtre volatilité: gardés={kept_count} | rejetés={rejected_count} (seuils: {threshold_str})")
+    
+    return filtered_symbols
+
+
 def filter_by_funding(perp_data: dict, funding_map: dict, funding_min: float | None, funding_max: float | None, volume_min: float | None, volume_min_millions: float | None, limite: int | None) -> list[tuple[str, float, float, str]]:
     """
     Filtre les symboles par funding et volume, puis trie par |funding| décroissant.
@@ -470,6 +549,7 @@ class PriceTracker:
         self.display_thread = None
         self.symbols = []
         self.funding_data = {}
+        self.volatility_cache = {}  # Cache pour la volatilité {symbol: (timestamp, volatility)}
         
         # Configuration
         settings = get_settings()
@@ -490,7 +570,7 @@ class PriceTracker:
         sys.exit(0)
     
     def _print_price_table(self):
-        """Affiche le tableau des prix aligné avec funding, volume en millions et spread."""
+        """Affiche le tableau des prix aligné avec funding, volume en millions, spread et volatilité."""
         snapshot = get_snapshot()
         
         if not snapshot:
@@ -504,27 +584,40 @@ class PriceTracker:
         funding_w = 12  # Largeur pour le funding
         volume_w = 10  # Largeur pour le volume en millions
         spread_w = 10  # Largeur pour le spread
+        volatility_w = 12  # Largeur pour la volatilité
         funding_time_w = 12  # Largeur pour le temps de funding
         
         # En-tête
-        header = f"{'Symbole':<{symbol_w}} | {'Funding %':>{funding_w}} | {'Volume (M)':>{volume_w}} | {'Spread %':>{spread_w}} | {'Funding T':>{funding_time_w}}"
-        sep = f"{'-'*symbol_w}-+-{'-'*funding_w}-+-{'-'*volume_w}-+-{'-'*spread_w}-+-{'-'*funding_time_w}"
+        header = f"{'Symbole':<{symbol_w}} | {'Funding %':>{funding_w}} | {'Volume (M)':>{volume_w}} | {'Spread %':>{spread_w}} | {'Volatilité %':>{volatility_w}} | {'Funding T':>{funding_time_w}}"
+        sep = f"{'-'*symbol_w}-+-{'-'*funding_w}-+-{'-'*volume_w}-+-{'-'*spread_w}-+-{'-'*volatility_w}-+-{'-'*funding_time_w}"
         
         print("\n" + header)
         print(sep)
         
         # Données
         for symbol, data in self.funding_data.items():
-            # data peut être (funding, volume) ou (funding, volume, spread_pct) ou (funding, volume, funding_time_remaining, spread_pct)
-            if len(data) == 4:
+            # data peut être (funding, volume) ou (funding, volume, spread_pct) ou (funding, volume, funding_time_remaining, spread_pct) ou (funding, volume, funding_time_remaining, spread_pct, volatility_pct)
+            if len(data) == 5:
+                funding, volume, funding_time_remaining, spread_pct, volatility_pct = data
+            elif len(data) == 4:
                 funding, volume, funding_time_remaining, spread_pct = data
+                volatility_pct = None  # Pas de volatilité calculée
             elif len(data) == 3:
                 funding, volume, spread_pct = data
                 funding_time_remaining = "-"
+                volatility_pct = None  # Pas de volatilité calculée
             else:
                 funding, volume = data
                 spread_pct = 0.0  # Valeur par défaut si pas de spread
                 funding_time_remaining = "-"
+                volatility_pct = None  # Pas de volatilité calculée
+            
+            # Essayer de récupérer la volatilité depuis le cache si elle n'est pas déjà présente
+            if volatility_pct is None:
+                cache_key = get_volatility_cache_key(symbol)
+                cached_data = self.volatility_cache.get(cache_key)
+                if cached_data and is_cache_valid(cached_data[0], ttl_seconds=60):
+                    volatility_pct = cached_data[1]
             
             funding_pct = funding * 100.0
             volume_millions = volume / 1_000_000 if volume > 0 else 0.0
@@ -532,7 +625,14 @@ class PriceTracker:
             spread_pct_display = spread_pct * 100.0
             spread_str = f"{spread_pct_display:+.3f}%" if spread_pct > 0 else "-"
             
-            line = f"{symbol:<{symbol_w}} | {funding_pct:+{funding_w-1}.4f}% | {volume_str:>{volume_w}} | {spread_str:>{spread_w}} | {funding_time_remaining:>{funding_time_w}}"
+            # Formatage de la volatilité
+            if volatility_pct is not None:
+                volatility_pct_display = volatility_pct * 100.0
+                volatility_str = f"{volatility_pct_display:+.3f}%"
+            else:
+                volatility_str = "-"
+            
+            line = f"{symbol:<{symbol_w}} | {funding_pct:+{funding_w-1}.4f}% | {volume_str:>{volume_w}} | {spread_str:>{spread_w}} | {volatility_str:>{volatility_w}} | {funding_time_remaining:>{funding_time_w}}"
             print(line)
         
         print()  # Ligne vide après le tableau
@@ -589,12 +689,6 @@ class PriceTracker:
                             timestamp = time.time()
                             
                             update(symbol, mark_price, last_price, timestamp)
-                            # Log seulement la première mise à jour pour chaque symbole
-                            if symbol not in getattr(self, '_logged_symbols', set()):
-                                if not hasattr(self, '_logged_symbols'):
-                                    self._logged_symbols = set()
-                                self._logged_symbols.add(symbol)
-                                self.logger.info(f"✅ Prix mis à jour: {symbol} = {mark_price:.2f} / {last_price:.2f}")
                         except (ValueError, TypeError) as e:
                             self.logger.warning(f"⚠️ Erreur parsing prix pour {symbol}: {e}")
             
@@ -619,7 +713,7 @@ class PriceTracker:
         config = load_config()
         
         # Vérifier si le fichier de config existe
-        config_path = "src/watchlist_config.fr.yaml"
+        config_path = "src/parameters.yaml"
         if not os.path.exists(config_path):
             self.logger.info("ℹ️ Aucun fichier de paramètres trouvé (src/watchlist_config.fr.yaml) → utilisation des valeurs par défaut.")
         
@@ -644,6 +738,8 @@ class PriceTracker:
         volume_min = config.get("volume_min")
         volume_min_millions = config.get("volume_min_millions")
         spread_max = config.get("spread_max")
+        volatility_min = config.get("volatility_min")
+        volatility_max = config.get("volatility_max")
         limite = config.get("limite")
         
         # Afficher les filtres
@@ -651,9 +747,11 @@ class PriceTracker:
         max_display = f"{funding_max:.6f}" if funding_max is not None else "none"
         volume_display = f"{volume_min_millions:.1f}" if volume_min_millions is not None else "none"
         spread_display = f"{spread_max:.4f}" if spread_max is not None else "none"
+        volatility_min_display = f"{volatility_min:.3f}" if volatility_min is not None else "none"
+        volatility_max_display = f"{volatility_max:.3f}" if volatility_max is not None else "none"
         limite_display = str(limite) if limite is not None else "none"
         
-        self.logger.info(f"🎛️ Filtres | catégorie={categorie} | funding_min={min_display} | funding_max={max_display} | volume_min_millions={volume_display} | spread_max={spread_display} | limite={limite_display}")
+        self.logger.info(f"🎛️ Filtres | catégorie={categorie} | funding_min={min_display} | funding_max={max_display} | volume_min_millions={volume_display} | spread_max={spread_display} | volatility_min={volatility_min_display} | volatility_max={volatility_max_display} | limite={limite_display}")
         
         # Récupérer les funding rates selon la catégorie
         funding_map = {}
@@ -719,13 +817,26 @@ class PriceTracker:
                 # Continuer sans le filtre de spread
                 final_symbols = [(symbol, funding, volume, funding_time_remaining, 0.0) for symbol, funding, volume, funding_time_remaining in filtered_symbols]
         
+        # Appliquer le filtre de volatilité si nécessaire
+        if (volatility_min is not None or volatility_max is not None) and final_symbols:
+            try:
+                self.logger.info("🔎 Évaluation de la volatilité 5m pour tous les symboles…")
+                final_symbols = filter_by_volatility(final_symbols, client, volatility_min, volatility_max, self.logger, self.volatility_cache)
+                n2 = len(final_symbols)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erreur lors du calcul de la volatilité : {e}")
+                # Continuer sans le filtre de volatilité
+        
         # Appliquer la limite finale
         if limite is not None and len(final_symbols) > limite:
             final_symbols = final_symbols[:limite]
         n3 = len(final_symbols)
         
         # Log des comptes
-        self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume = {n1} | après spread = {n2} | après tri+limit = {n3}")
+        if volatility_min is not None or volatility_max is not None:
+            self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume = {n1} | après spread = {n2} | après volatilité = {n2} | après tri+limit = {n3}")
+        else:
+            self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume = {n1} | après spread = {n2} | après tri+limit = {n3}")
         
         if not final_symbols:
             self.logger.warning("⚠️ Aucun symbole ne correspond aux critères de filtrage")
@@ -733,11 +844,14 @@ class PriceTracker:
         
         # Log des symboles retenus
         if final_symbols:
-            symbols_list = [symbol for symbol, _, _, _, _ in final_symbols] if len(final_symbols[0]) == 5 else [symbol for symbol, _, _, _ in final_symbols] if len(final_symbols[0]) == 4 else [symbol for symbol, _, _ in final_symbols]
+            symbols_list = [symbol for symbol, _, _, _, _, _ in final_symbols] if len(final_symbols[0]) == 6 else [symbol for symbol, _, _, _, _ in final_symbols] if len(final_symbols[0]) == 5 else [symbol for symbol, _, _, _ in final_symbols] if len(final_symbols[0]) == 4 else [symbol for symbol, _, _ in final_symbols]
             self.logger.info(f"🧭 Symboles retenus (Top {n3}) : {symbols_list}")
             
             # Séparer les symboles par catégorie
-            if len(final_symbols[0]) == 5:
+            if len(final_symbols[0]) == 6:
+                linear_symbols = [symbol for symbol, _, _, _, _, _ in final_symbols if "USDT" in symbol]
+                inverse_symbols = [symbol for symbol, _, _, _, _, _ in final_symbols if "USD" in symbol and "USDT" not in symbol]
+            elif len(final_symbols[0]) == 5:
                 linear_symbols = [symbol for symbol, _, _, _, _ in final_symbols if "USDT" in symbol]
                 inverse_symbols = [symbol for symbol, _, _, _, _ in final_symbols if "USD" in symbol and "USDT" not in symbol]
             elif len(final_symbols[0]) == 4:
@@ -751,12 +865,18 @@ class PriceTracker:
             self.inverse_symbols = inverse_symbols
             
             # Construire funding_data avec les bonnes données
-            if len(final_symbols[0]) == 5:
-                self.funding_data = {symbol: (funding, volume, funding_time_remaining, spread_pct) for symbol, funding, volume, funding_time_remaining, spread_pct in final_symbols}
+            if len(final_symbols[0]) == 6:
+                # Format: (symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct)
+                self.funding_data = {symbol: (funding, volume, funding_time_remaining, spread_pct, volatility_pct) for symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct in final_symbols}
+            elif len(final_symbols[0]) == 5:
+                # Format: (symbol, funding, volume, funding_time_remaining, spread_pct)
+                self.funding_data = {symbol: (funding, volume, funding_time_remaining, spread_pct, None) for symbol, funding, volume, funding_time_remaining, spread_pct in final_symbols}
             elif len(final_symbols[0]) == 4:
-                self.funding_data = {symbol: (funding, volume, funding_time_remaining, 0.0) for symbol, funding, volume, funding_time_remaining in final_symbols}
+                # Format: (symbol, funding, volume, funding_time_remaining)
+                self.funding_data = {symbol: (funding, volume, funding_time_remaining, 0.0, None) for symbol, funding, volume, funding_time_remaining in final_symbols}
             else:
-                self.funding_data = {symbol: (funding, volume, 0.0) for symbol, funding, volume in final_symbols}
+                # Format: (symbol, funding, volume)
+                self.funding_data = {symbol: (funding, volume, "-", 0.0, None) for symbol, funding, volume in final_symbols}
         
         self.logger.info(f"📊 Symboles linear: {len(self.linear_symbols)}, inverse: {len(self.inverse_symbols)}")
         

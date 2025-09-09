@@ -21,10 +21,14 @@ def get_settings():
     # Récupérer les nouvelles variables d'environnement pour les filtres
     spread_max = os.getenv("SPREAD_MAX")
     volume_min_millions = os.getenv("VOLUME_MIN_MILLIONS")
+    volatility_min = os.getenv("VOLATILITY_MIN")
+    volatility_max = os.getenv("VOLATILITY_MAX")
     
     # Convertir en float si présentes, sinon None
     spread_max = float(spread_max) if spread_max else None
     volume_min_millions = float(volume_min_millions) if volume_min_millions else None
+    volatility_min = float(volatility_min) if volatility_min else None
+    volatility_max = float(volatility_max) if volatility_max else None
     
     return {
         "testnet": os.getenv("TESTNET", "true").lower() == "true",
@@ -33,5 +37,7 @@ def get_settings():
         "api_key": api_key,
         "api_secret": api_secret,
         "spread_max": spread_max,
-        "volume_min_millions": volume_min_millions
+        "volume_min_millions": volume_min_millions,
+        "volatility_min": volatility_min,
+        "volatility_max": volatility_max
     }
