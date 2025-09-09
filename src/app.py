@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# NOTE: orchestrateur principal = src/bot.py
 """Orchestrateur pro pour supervision des connexions Bybit (REST + WebSocket public + WebSocket privé)."""
 
 import os

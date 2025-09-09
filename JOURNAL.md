@@ -86,6 +86,23 @@
   - `python src/run_ws_prices.py` → tableau avec colonnes : Symbole | Funding % | Volume (M) | Spread %
 **Résultat :** ✅ OK (filtres fonctionnels, tableau optimisé, logs clairs)
 
+## [2025-01-27] — Renommage de l'orchestrateur principal : run_ws_prices.py → bot.py
+**But :** Faire de `src/bot.py` l'orchestrateur officiel du bot avec un nom plus classique, sans refactor lourd.
+**Fichiers modifiés :** 
+  - `src/run_ws_prices.py` → `src/bot.py` (renommé)
+  - `src/bot.py` - Ajustement des bandeaux de démarrage
+  - `README.md` - Mise à jour des commandes et variables d'environnement
+  - `JOURNAL.md` - Documentation du changement
+**Décisions/raisons :**
+  - Nom plus classique et professionnel pour l'orchestrateur principal
+  - Conservation exacte de la logique actuelle (aucun refactor)
+  - Mise à jour des libellés : "🚀 Orchestrateur du bot (filters + WebSocket prix)"
+  - Message de statut : "🟢 Orchestrateur prêt (WS connectée, flux en cours)"
+**Tests/commandes :** 
+  - `python src/bot.py` → doit afficher les nouveaux titres et fonctionner identiquement
+  - Vérification que `if __name__ == "__main__": main()` est présent
+**Résultat :** ✅ OK (renommage réussi, comportement identique, documentation mise à jour)
+
 ---
 
 ## 🧩 Modèle d'entrée à réutiliser

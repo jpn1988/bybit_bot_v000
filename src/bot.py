@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
+🚀 Orchestrateur du bot (filters + WebSocket prix)
+
 Script pour filtrer les contrats perpétuels par funding ET suivre leurs prix en temps réel.
 
 Usage:
-    python src/run_ws_prices.py
+    python src/bot.py
 """
 
 import os
@@ -476,7 +478,7 @@ class PriceTracker:
         # Configuration du signal handler pour Ctrl+C
         signal.signal(signal.SIGINT, self._signal_handler)
         
-        self.logger.info("🚀 Filtrage par funding + Suivi de prix (WS)")
+        self.logger.info("🚀 Orchestrateur du bot (filters + WebSocket prix)")
         self.logger.info("📂 Configuration chargée")
     
     def _signal_handler(self, signum, frame):
@@ -559,6 +561,7 @@ class PriceTracker:
         
         ws.send(json.dumps(subscribe_message))
         self.logger.info(f"🧭 Souscription tickers → {len(symbols)} symboles")
+        self.logger.info("🟢 Orchestrateur prêt (WS connectée, flux en cours)")
     
     def ws_on_message(self, ws, message):
         """Callback message WebSocket."""

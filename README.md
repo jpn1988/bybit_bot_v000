@@ -6,13 +6,13 @@ Bot de trading automatisé pour Bybit avec WebSocket et API REST, incluant un sy
 
 1. Installer les dépendances : `pip install -r requirements.txt`
 2. Configurer `.env` avec vos clés API Bybit
-3. Lancer l'orchestrateur : `python src/app.py`
+3. Lancer l'orchestrateur : `python src/bot.py`
 
 ## 📊 Système de watchlist avancé
 
 ### Suivi des prix en temps réel avec filtrage intelligent
 ```bash
-python src/run_ws_prices.py
+python src/bot.py
 ```
 
 ### Configuration
@@ -32,10 +32,18 @@ limite: 10               # ex: 10 symboles max
 # Windows
 setx VOLUME_MIN_MILLIONS 5        # min 5M USDT
 setx SPREAD_MAX 0.003             # max 0.30% spread
+setx FUNDING_MIN 0.0001           # min 0.01% funding
+setx FUNDING_MAX 0.0005           # max 0.05% funding
+setx CATEGORY linear              # linear | inverse | both
+setx LIMIT 10                     # nombre max de symboles
 
 # Linux/Mac
 export VOLUME_MIN_MILLIONS=5
 export SPREAD_MAX=0.003
+export FUNDING_MIN=0.0001
+export FUNDING_MAX=0.0005
+export CATEGORY=linear
+export LIMIT=10
 ```
 
 ### Fonctionnalités avancées
@@ -55,7 +63,7 @@ setx VOLUME_MIN_MILLIONS 5
 setx SPREAD_MAX 0.003
 
 # 2. Lancer le suivi des prix
-python src/run_ws_prices.py
+python src/bot.py
 ```
 
 **Résultat attendu :**
@@ -74,8 +82,8 @@ OPENUSDT |     -0.2277% |       34.0 |    +0.069%
 ## 📁 Structure du projet
 
 ### Scripts principaux
+- `src/bot.py` - **ORCHESTRATEUR PRINCIPAL** : Suivi des prix avec filtrage
 - `src/app.py` - Orchestrateur (REST + WebSockets + comptage perp)
-- `src/run_ws_prices.py` - **NOUVEAU** : Suivi des prix avec filtrage
 - `src/main.py` - Point d'entrée principal (REST API)
 
 ### Modules de base
@@ -101,7 +109,7 @@ OPENUSDT |     -0.2277% |       34.0 |    +0.069%
   3. Vérifier les logs (simples, compréhensibles).
 
 ## 🎯 Commandes utiles
-- **Suivi des prix avec filtres** : `python src/run_ws_prices.py`
+- **Orchestrateur principal** : `python src/bot.py`
 - **Orchestrateur complet** : `python src/app.py`
 - **REST privé (solde)** : `python src/main.py`
 - **WS publique (test)** : `python src/run_ws_public.py`
