@@ -4,6 +4,7 @@ import time
 import hashlib
 import hmac
 import httpx
+from config import get_settings
 
 
 class BybitClient:
@@ -145,3 +146,26 @@ class BybitClient:
             dict: Données brutes du solde
         """
         return self._get_private("/v5/account/wallet-balance", {"accountType": account_type})
+
+
+def get_bybit_client() -> BybitClient:
+    """
+    Crée et retourne une instance de BybitClient configurée avec les paramètres du fichier .env.
+    
+    Returns:
+        BybitClient: Instance configurée du client Bybit
+        
+    Raises:
+        RuntimeError: Si les clés API sont manquantes
+    """
+    settings = get_settings()
+    
+    if not settings['api_key'] or not settings['api_secret']:
+        raise RuntimeError("Clés API manquantes : ajoute BYBIT_API_KEY et BYBIT_API_SECRET dans .env")
+    
+    return BybitClient(
+        testnet=settings['testnet'],
+        timeout=settings['timeout'],
+        api_key=settings['api_key'],
+        api_secret=settings['api_secret']
+    )

@@ -170,7 +170,7 @@ def calculate_funding_time_remaining(next_funding_time: str | None) -> str:
         next_funding_time (str | None): Timestamp du prochain funding (format ISO ou timestamp)
         
     Returns:
-        str: Temps restant formaté (ex: "2h 15m" ou "45m" ou "-")
+        str: Temps restant formaté (ex: "2h 15m 30s" ou "45m 30s" ou "30s" ou "-")
     """
     if not next_funding_time:
         return "-"
@@ -201,16 +201,19 @@ def calculate_funding_time_remaining(next_funding_time: str | None) -> str:
         if time_diff.total_seconds() <= 0:
             return "-"
         
-        # Convertir en heures et minutes
+        # Convertir en heures, minutes et secondes
         total_seconds = int(time_diff.total_seconds())
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
         
         # Formater le résultat
         if hours > 0:
-            return f"{hours}h {minutes}m"
+            return f"{hours}h {minutes}m {seconds}s"
+        elif minutes > 0:
+            return f"{minutes}m {seconds}s"
         else:
-            return f"{minutes}m"
+            return f"{seconds}s"
             
     except (ValueError, TypeError, OSError):
         return "-"
@@ -414,21 +417,19 @@ def filter_by_spread(symbols_data: list[tuple[str, float, float, str]], spread_d
 
 def filter_by_volatility(symbols_data: list[tuple[str, float, float, str, float]], bybit_client, volatility_min: float, volatility_max: float, logger, volatility_cache: dict) -> list[tuple[str, float, float, str, float]]:
     """
-    Filtre les symboles par volatilité 5 minutes (pour tous les symboles).
+    Calcule la volatilité 5 minutes pour tous les symboles et applique les filtres si définis.
     
     Args:
         symbols_data (list[tuple[str, float, float, str, float]]): Liste des (symbol, funding, volume, funding_time_remaining, spread_pct)
         bybit_client: Instance du client Bybit
-        volatility_min (float): Volatilité minimum autorisée (0.002 = 0.2%)
-        volatility_max (float): Volatilité maximum autorisée (0.007 = 0.7%)
+        volatility_min (float): Volatilité minimum autorisée (0.002 = 0.2%) ou None
+        volatility_max (float): Volatilité maximum autorisée (0.007 = 0.7%) ou None
         logger: Logger pour les messages
         volatility_cache (dict): Cache de volatilité {symbol: (timestamp, volatility)}
         
     Returns:
-        list[tuple[str, float, float, str, float]]: Liste filtrée par volatilité
+        list[tuple[str, float, float, str, float]]: Liste avec volatilité calculée et filtrée si nécessaire
     """
-    if volatility_min is None and volatility_max is None:
-        return symbols_data
     
     filtered_symbols = []
     rejected_count = 0
@@ -452,18 +453,19 @@ def filter_by_volatility(symbols_data: list[tuple[str, float, float, str, float]
                 # Volatilité indisponible
                 vol_pct = None
         
-        # Appliquer le filtre de volatilité pour tous les symboles
-        if vol_pct is not None:
-            # Vérifier les seuils de volatilité
-            rejected_reason = None
-            if volatility_min is not None and vol_pct < volatility_min:
-                rejected_reason = f"< seuil min {volatility_min:.2%}"
-            elif volatility_max is not None and vol_pct > volatility_max:
-                rejected_reason = f"> seuil max {volatility_max:.2%}"
-            
-            if rejected_reason:
-                rejected_count += 1
-                continue
+        # Appliquer le filtre de volatilité seulement si des seuils sont définis
+        if volatility_min is not None or volatility_max is not None:
+            if vol_pct is not None:
+                # Vérifier les seuils de volatilité
+                rejected_reason = None
+                if volatility_min is not None and vol_pct < volatility_min:
+                    rejected_reason = f"< seuil min {volatility_min:.2%}"
+                elif volatility_max is not None and vol_pct > volatility_max:
+                    rejected_reason = f"> seuil max {volatility_max:.2%}"
+                
+                if rejected_reason:
+                    rejected_count += 1
+                    continue
         
         # Ajouter le symbole avec sa volatilité
         filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct, vol_pct))
@@ -476,7 +478,7 @@ def filter_by_volatility(symbols_data: list[tuple[str, float, float, str, float]
     if volatility_max is not None:
         threshold_info.append(f"max={volatility_max:.2%}")
     threshold_str = " | ".join(threshold_info) if threshold_info else "aucun"
-    logger.info(f"✅ Filtre volatilité: gardés={kept_count} | rejetés={rejected_count} (seuils: {threshold_str})")
+    logger.info(f"✅ Calcul volatilité: gardés={kept_count} | rejetés={rejected_count} (seuils: {threshold_str})")
     
     return filtered_symbols
 
@@ -549,7 +551,10 @@ class PriceTracker:
         self.display_thread = None
         self.symbols = []
         self.funding_data = {}
+        self.original_funding_data = {}  # Données de funding originales avec next_funding_time
         self.volatility_cache = {}  # Cache pour la volatilité {symbol: (timestamp, volatility)}
+        self.start_time = time.time()  # Timestamp de démarrage pour le calcul du temps de funding
+        self.realtime_data = {}  # Données en temps réel via WebSocket {symbol: {funding_rate, volume24h, bid1, ask1, next_funding_time, ...}}
         
         # Configuration
         settings = get_settings()
@@ -569,6 +574,110 @@ class PriceTracker:
             self.ws.close()
         sys.exit(0)
     
+    def _update_realtime_data(self, symbol: str, ticker_data: dict):
+        """
+        Met à jour les données en temps réel pour un symbole donné.
+        
+        Args:
+            symbol (str): Symbole à mettre à jour
+            ticker_data (dict): Données du ticker reçues via WebSocket
+        """
+        try:
+            # Extraire toutes les données disponibles du flux tickers
+            realtime_info = {
+                'funding_rate': ticker_data.get('fundingRate'),
+                'volume24h': ticker_data.get('volume24h'),
+                'bid1_price': ticker_data.get('bid1Price'),
+                'ask1_price': ticker_data.get('ask1Price'),
+                'next_funding_time': ticker_data.get('nextFundingTime'),
+                'mark_price': ticker_data.get('markPrice'),
+                'last_price': ticker_data.get('lastPrice'),
+                'timestamp': time.time()
+            }
+            
+            # Stocker les données en temps réel seulement si on a au moins quelques données valides
+            if any(realtime_info[key] is not None for key in ['funding_rate', 'volume24h', 'bid1_price', 'ask1_price', 'next_funding_time']):
+                self.realtime_data[symbol] = realtime_info
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur mise à jour données temps réel pour {symbol}: {e}")
+    
+    
+    def _recalculate_funding_time(self, symbol: str, original_funding_time: str) -> str:
+        """
+        Recalcule le temps de funding pour un symbole donné.
+        
+        Args:
+            symbol (str): Symbole à analyser
+            original_funding_time (str): Temps de funding original (ex: "6h 5m 21s")
+            
+        Returns:
+            str: Temps restant formaté ou "-" si indisponible
+        """
+        # Vérifier si on a des données en temps réel avec next_funding_time
+        realtime_info = self.realtime_data.get(symbol, {})
+        if realtime_info.get('next_funding_time'):
+            try:
+                # Utiliser le timestamp en temps réel
+                next_funding_timestamp = realtime_info['next_funding_time']
+                if next_funding_timestamp:
+                    return calculate_funding_time_remaining(str(next_funding_timestamp))
+            except (ValueError, TypeError):
+                pass  # Fallback sur le calcul manuel
+        
+        if original_funding_time == "-":
+            return "-"
+        
+        # Vérifier si c'est un timestamp (nombre)
+        try:
+            if original_funding_time and original_funding_time.isdigit():
+                return calculate_funding_time_remaining(original_funding_time)
+        except (ValueError, TypeError, AttributeError):
+            pass
+        
+        try:
+            # Parser le temps original (format: "6h 5m 21s" ou "2h 5m 21s")
+            import re
+            
+            # Extraire les heures, minutes et secondes
+            match = re.match(r'(\d+)h\s+(\d+)m\s+(\d+)s', original_funding_time)
+            if not match:
+                return original_funding_time
+            
+            hours = int(match.group(1))
+            minutes = int(match.group(2))
+            seconds = int(match.group(3))
+            
+            # Convertir en secondes totales
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            
+            # Calculer le temps écoulé depuis le démarrage
+            elapsed_time = time.time() - self.start_time
+            
+            # Soustraire le temps écoulé
+            remaining_seconds = total_seconds - int(elapsed_time)
+            
+            # Si le temps est écoulé, retourner "-"
+            if remaining_seconds <= 0:
+                return "-"
+            
+            # Reconvertir en heures, minutes et secondes
+            hours = remaining_seconds // 3600
+            minutes = (remaining_seconds % 3600) // 60
+            seconds = remaining_seconds % 60
+            
+            # Formater le résultat
+            if hours > 0:
+                return f"{hours}h {minutes}m {seconds}s"
+            elif minutes > 0:
+                return f"{minutes}m {seconds}s"
+            else:
+                return f"{seconds}s"
+                
+        except Exception:
+            # En cas d'erreur, retourner le temps original
+            return original_funding_time
+    
     def _print_price_table(self):
         """Affiche le tableau des prix aligné avec funding, volume en millions, spread et volatilité."""
         snapshot = get_snapshot()
@@ -585,7 +694,7 @@ class PriceTracker:
         volume_w = 10  # Largeur pour le volume en millions
         spread_w = 10  # Largeur pour le spread
         volatility_w = 12  # Largeur pour la volatilité
-        funding_time_w = 12  # Largeur pour le temps de funding
+        funding_time_w = 15  # Largeur pour le temps de funding (avec secondes)
         
         # En-tête
         header = f"{'Symbole':<{symbol_w}} | {'Funding %':>{funding_w}} | {'Volume (M)':>{volume_w}} | {'Spread %':>{spread_w}} | {'Volatilité %':>{volatility_w}} | {'Funding T':>{funding_time_w}}"
@@ -596,34 +705,115 @@ class PriceTracker:
         
         # Données
         for symbol, data in self.funding_data.items():
-            # data peut être (funding, volume) ou (funding, volume, spread_pct) ou (funding, volume, funding_time_remaining, spread_pct) ou (funding, volume, funding_time_remaining, spread_pct, volatility_pct)
-            if len(data) == 5:
-                funding, volume, funding_time_remaining, spread_pct, volatility_pct = data
-            elif len(data) == 4:
-                funding, volume, funding_time_remaining, spread_pct = data
-                volatility_pct = None  # Pas de volatilité calculée
-            elif len(data) == 3:
-                funding, volume, spread_pct = data
-                funding_time_remaining = "-"
-                volatility_pct = None  # Pas de volatilité calculée
-            else:
-                funding, volume = data
-                spread_pct = 0.0  # Valeur par défaut si pas de spread
-                funding_time_remaining = "-"
-                volatility_pct = None  # Pas de volatilité calculée
+            # Récupérer les données en temps réel si disponibles
+            realtime_info = self.realtime_data.get(symbol, {})
             
-            # Essayer de récupérer la volatilité depuis le cache si elle n'est pas déjà présente
-            if volatility_pct is None:
+            # Utiliser les données en temps réel si disponibles, sinon afficher null
+            if realtime_info:
+                # Données en temps réel disponibles - gérer les valeurs None
+                funding_rate = realtime_info.get('funding_rate')
+                funding = float(funding_rate) if funding_rate is not None else None
+                
+                volume24h = realtime_info.get('volume24h')
+                volume = float(volume24h) if volume24h is not None else None
+                
+                funding_time_remaining = realtime_info.get('next_funding_time', '-')
+                if funding_time_remaining is None:
+                    funding_time_remaining = '-'
+                
+                # Calculer le spread en temps réel si on a bid/ask
+                spread_pct = None
+                if realtime_info.get('bid1_price') and realtime_info.get('ask1_price'):
+                    try:
+                        bid_price = float(realtime_info['bid1_price'])
+                        ask_price = float(realtime_info['ask1_price'])
+                        if bid_price > 0 and ask_price > 0:
+                            spread_pct = (ask_price - bid_price) / bid_price
+                    except (ValueError, TypeError):
+                        pass  # Garder spread_pct = None en cas d'erreur
+                
+                # Récupérer la volatilité depuis le cache (pas disponible en temps réel)
+                volatility_pct = None
                 cache_key = get_volatility_cache_key(symbol)
                 cached_data = self.volatility_cache.get(cache_key)
-                if cached_data and is_cache_valid(cached_data[0], ttl_seconds=60):
+                if cached_data and is_cache_valid(cached_data[0], ttl_seconds=300):
                     volatility_pct = cached_data[1]
+                else:
+                    # Cache expiré, essayer de recalculer la volatilité
+                    try:
+                        import sys
+                        import os
+                        # Ajouter le répertoire parent au path pour les imports
+                        parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                        if parent_dir not in sys.path:
+                            sys.path.insert(0, parent_dir)
+                        
+                        from src.volatility import compute_5m_range_pct
+                        from src.bybit_client import get_bybit_client
+                        client = get_bybit_client()
+                        volatility_pct = compute_5m_range_pct(client, symbol)
+                        if volatility_pct is not None:
+                            # Mettre à jour le cache
+                            self.volatility_cache[cache_key] = (time.time(), volatility_pct)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Erreur recalcul volatilité pour {symbol}: {e}")
+            else:
+                # Pas de données en temps réel disponibles - afficher null
+                funding = None
+                volume = None
+                funding_time_remaining = "-"
+                spread_pct = None
+                volatility_pct = None
+                
+                # Essayer de récupérer la volatilité depuis le cache si elle n'est pas déjà présente
+                if volatility_pct is None:
+                    cache_key = get_volatility_cache_key(symbol)
+                    cached_data = self.volatility_cache.get(cache_key)
+                    if cached_data and is_cache_valid(cached_data[0], ttl_seconds=300):
+                        volatility_pct = cached_data[1]
+                    else:
+                        # Cache expiré, essayer de recalculer la volatilité
+                        try:
+                            import sys
+                            import os
+                            # Ajouter le répertoire parent au path pour les imports
+                            parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                            if parent_dir not in sys.path:
+                                sys.path.insert(0, parent_dir)
+                            
+                            from src.volatility import compute_5m_range_pct
+                            from src.bybit_client import get_bybit_client
+                            client = get_bybit_client()
+                            volatility_pct = compute_5m_range_pct(client, symbol)
+                            if volatility_pct is not None:
+                                # Mettre à jour le cache
+                                self.volatility_cache[cache_key] = (time.time(), volatility_pct)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Erreur recalcul volatilité pour {symbol}: {e}")
             
-            funding_pct = funding * 100.0
-            volume_millions = volume / 1_000_000 if volume > 0 else 0.0
-            volume_str = f"{volume_millions:,.1f}" if volume > 0 else "-"
-            spread_pct_display = spread_pct * 100.0
-            spread_str = f"{spread_pct_display:+.3f}%" if spread_pct > 0 else "-"
+            # Recalculer le temps de funding en temps réel
+            current_funding_time = self._recalculate_funding_time(symbol, funding_time_remaining)
+            if current_funding_time is None:
+                current_funding_time = "-"
+            
+            # Gérer l'affichage des valeurs null
+            if funding is not None:
+                funding_pct = funding * 100.0
+                funding_str = f"{funding_pct:+{funding_w-1}.4f}%"
+            else:
+                funding_str = "null"
+            
+            if volume is not None and volume > 0:
+                volume_millions = volume / 1_000_000
+                volume_str = f"{volume_millions:,.1f}"
+            else:
+                volume_str = "null"
+            
+            if spread_pct is not None:
+                spread_pct_display = spread_pct * 100.0
+                spread_str = f"{spread_pct_display:+.3f}%"
+            else:
+                spread_str = "null"
             
             # Formatage de la volatilité
             if volatility_pct is not None:
@@ -632,18 +822,18 @@ class PriceTracker:
             else:
                 volatility_str = "-"
             
-            line = f"{symbol:<{symbol_w}} | {funding_pct:+{funding_w-1}.4f}% | {volume_str:>{volume_w}} | {spread_str:>{spread_w}} | {volatility_str:>{volatility_w}} | {funding_time_remaining:>{funding_time_w}}"
+            line = f"{symbol:<{symbol_w}} | {funding_str:>{funding_w}} | {volume_str:>{volume_w}} | {spread_str:>{spread_w}} | {volatility_str:>{volatility_w}} | {current_funding_time:>{funding_time_w}}"
             print(line)
         
         print()  # Ligne vide après le tableau
     
     def _display_loop(self):
-        """Boucle d'affichage toutes les 5 secondes."""
+        """Boucle d'affichage toutes les 15 secondes."""
         while self.running:
             self._print_price_table()
             
-            # Attendre 5 secondes
-            for _ in range(50):  # 50 * 0.1s = 5s
+            # Attendre 15 secondes
+            for _ in range(150):  # 150 * 0.1s = 15s
                 if not self.running:
                     break
                 time.sleep(0.1)
@@ -688,7 +878,12 @@ class PriceTracker:
                             last_price = float(last_price)
                             timestamp = time.time()
                             
+                            # Mettre à jour les prix dans le store
                             update(symbol, mark_price, last_price, timestamp)
+                            
+                            # Récupérer et stocker toutes les données en temps réel
+                            self._update_realtime_data(symbol, ticker_data)
+                            
                         except (ValueError, TypeError) as e:
                             self.logger.warning(f"⚠️ Erreur parsing prix pour {symbol}: {e}")
             
@@ -715,7 +910,9 @@ class PriceTracker:
         # Vérifier si le fichier de config existe
         config_path = "src/parameters.yaml"
         if not os.path.exists(config_path):
-            self.logger.info("ℹ️ Aucun fichier de paramètres trouvé (src/watchlist_config.fr.yaml) → utilisation des valeurs par défaut.")
+            self.logger.info("ℹ️ Aucun fichier de paramètres trouvé (src/parameters.yaml) → utilisation des valeurs par défaut.")
+        else:
+            self.logger.info("ℹ️ Configuration chargée depuis src/parameters.yaml")
         
         # Créer un client Bybit pour récupérer l'URL publique
         client = BybitClient(
@@ -817,8 +1014,8 @@ class PriceTracker:
                 # Continuer sans le filtre de spread
                 final_symbols = [(symbol, funding, volume, funding_time_remaining, 0.0) for symbol, funding, volume, funding_time_remaining in filtered_symbols]
         
-        # Appliquer le filtre de volatilité si nécessaire
-        if (volatility_min is not None or volatility_max is not None) and final_symbols:
+        # Calculer la volatilité pour tous les symboles (même sans filtre)
+        if final_symbols:
             try:
                 self.logger.info("🔎 Évaluation de la volatilité 5m pour tous les symboles…")
                 final_symbols = filter_by_volatility(final_symbols, client, volatility_min, volatility_max, self.logger, self.volatility_cache)
@@ -833,10 +1030,7 @@ class PriceTracker:
         n3 = len(final_symbols)
         
         # Log des comptes
-        if volatility_min is not None or volatility_max is not None:
-            self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume = {n1} | après spread = {n2} | après volatilité = {n2} | après tri+limit = {n3}")
-        else:
-            self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume = {n1} | après spread = {n2} | après tri+limit = {n3}")
+        self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume = {n1} | après spread = {n2} | après volatilité = {n2} | après tri+limit = {n3}")
         
         if not final_symbols:
             self.logger.warning("⚠️ Aucun symbole ne correspond aux critères de filtrage")
@@ -877,6 +1071,9 @@ class PriceTracker:
             else:
                 # Format: (symbol, funding, volume)
                 self.funding_data = {symbol: (funding, volume, "-", 0.0, None) for symbol, funding, volume in final_symbols}
+            
+            # Les données en temps réel seront initialisées uniquement via WebSocket
+            # Pas d'initialisation avec des données statiques pour garantir la fraîcheur
         
         self.logger.info(f"📊 Symboles linear: {len(self.linear_symbols)}, inverse: {len(self.inverse_symbols)}")
         

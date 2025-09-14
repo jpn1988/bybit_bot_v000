@@ -20,5 +20,5 @@ volume_min: 1000000      # ex: 1000000 pour >= 1M USDT | null = pas de min [ANCI
 volume_min_millions: 5.0 # ex: 5.0 pour >= 5M USDT | null = pas de min [NOUVEAU]
 spread_max: 0.03        # ex: 0.003 pour <= 0.30% | null = pas de filtre
 volatility_min: null    # ex: 0.002 pour >= 0.20% | null = pas de min [NOUVEAU]
-volatility_max: 0.007   # ex: 0.007 pour <= 0.70% | null = pas de max [NOUVEAU]
-limite: 10               # ex: 10  | null = pas de limite
+volatility_max: null   # ex: 0.007 pour <= 0.70% | null = pas de max [NOUVEAU]
+limite: 100               # ex: 10  | null = pas de limite
