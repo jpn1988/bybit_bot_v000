@@ -1,4 +1,6 @@
-httpx
-python-dotenv
-loguru
-websocket-client
+httpx==0.27.0
+python-dotenv==1.0.1
+loguru==0.7.2
+websocket-client==1.8.0
+aiohttp==3.9.5
+PyYAML==6.0.2

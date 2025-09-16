@@ -4,6 +4,7 @@ import time
 import hashlib
 import hmac
 import httpx
+import random
 from config import get_settings
 
 
@@ -86,42 +87,70 @@ class BybitClient:
         if query_string:
             url += f"?{query_string}"
         
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(url, headers=headers)
-                
-                # Vérifier le statut HTTP
-                if response.status_code >= 400:
-                    raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{response.text[:100]}\"")
-                
-                data = response.json()
-                
-                # Vérifier le retCode
-                if data.get("retCode") != 0:
-                    ret_code = data.get("retCode")
-                    ret_msg = data.get("retMsg", "")
+        attempts = 0
+        max_attempts = 4
+        backoff_base = 0.5
+        last_error: Exception | None = None
+        while attempts < max_attempts:
+            attempts += 1
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    response = client.get(url, headers=headers)
                     
-                    # Messages d'erreur pédagogiques selon le retCode
-                    if ret_code in [10005, 10006]:
-                        raise RuntimeError("Authentification échouée : clé/secret invalides ou signature incorrecte")
-                    elif ret_code == 10018:
-                        raise RuntimeError("Accès refusé : IP non autorisée (whitelist requise dans Bybit)")
-                    elif ret_code == 10017:
-                        raise RuntimeError("Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)")
-                    elif ret_code == 10016:
-                        raise RuntimeError("Limite de requêtes atteinte : ralentis ou réessaie plus tard")
-                    else:
-                        raise RuntimeError(f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\"")
-                
-                return data.get("result", {})
-                
-        except httpx.RequestError as e:
-            raise RuntimeError(f"Erreur réseau/HTTP Bybit : {e}")
-        except Exception as e:
-            if "Erreur" in str(e):
-                raise
-            else:
-                raise RuntimeError(f"Erreur réseau/HTTP Bybit : {e}")
+                    # HTTP errors (4xx/5xx)
+                    if response.status_code >= 500:
+                        raise httpx.HTTPStatusError("Server error", request=None, response=response)
+                    if response.status_code == 429:
+                        # Respecter Retry-After si présent
+                        retry_after = response.headers.get("Retry-After")
+                        delay = float(retry_after) if retry_after else backoff_base * (2 ** (attempts - 1))
+                        delay += random.uniform(0, 0.25)
+                        time.sleep(delay)
+                        continue
+                    if response.status_code >= 400:
+                        # Erreurs client non récupérables
+                        detail = response.text[:100]
+                        raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{detail}\"")
+                    
+                    data = response.json()
+                    
+                    # API retCode handling
+                    if data.get("retCode") != 0:
+                        ret_code = data.get("retCode")
+                        ret_msg = data.get("retMsg", "")
+                        if ret_code in [10005, 10006]:
+                            raise RuntimeError("Authentification échouée : clé/secret invalides ou signature incorrecte")
+                        elif ret_code == 10018:
+                            raise RuntimeError("Accès refusé : IP non autorisée (whitelist requise dans Bybit)")
+                        elif ret_code == 10017:
+                            raise RuntimeError("Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)")
+                        elif ret_code == 10016:
+                            # Rate limit: backoff + jitter puis retry
+                            retry_after = response.headers.get("Retry-After")
+                            delay = float(retry_after) if retry_after else backoff_base * (2 ** (attempts - 1))
+                            delay += random.uniform(0, 0.25)
+                            time.sleep(delay)
+                            if attempts < max_attempts:
+                                continue
+                            raise RuntimeError("Limite de requêtes atteinte : ralentis ou réessaie plus tard")
+                        else:
+                            raise RuntimeError(f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\"")
+                    
+                    return data.get("result", {})
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                last_error = e
+                if attempts >= max_attempts:
+                    break
+                delay = backoff_base * (2 ** (attempts - 1)) + random.uniform(0, 0.25)
+                time.sleep(delay)
+            except Exception as e:
+                # Propager les erreurs connues formatées
+                if "Erreur" in str(e):
+                    raise
+                last_error = e
+                break
+        # Échec après retries
+        raise RuntimeError(f"Erreur réseau/HTTP Bybit : {last_error}")
     
     def public_base_url(self) -> str:
         """
@@ -146,6 +175,20 @@ class BybitClient:
             dict: Données brutes du solde
         """
         return self._get_private("/v5/account/wallet-balance", {"accountType": account_type})
+
+
+class BybitPublicClient:
+    """Client public Bybit v5 (aucune clé requise)."""
+
+    def __init__(self, testnet: bool = True, timeout: int = 10):
+        self.testnet = testnet
+        self.timeout = timeout
+
+    def public_base_url(self) -> str:
+        """Retourne l'URL de base publique (testnet ou mainnet)."""
+        if self.testnet:
+            return "https://api-testnet.bybit.com"
+        return "https://api.bybit.com"
 
 
 def get_bybit_client() -> BybitClient:

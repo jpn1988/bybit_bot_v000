@@ -14,11 +14,14 @@
 # ============================================
 
 categorie: "linear"      # "linear" | "inverse" | "both"
-funding_min: null        # ex: 0.0001 pour >= 0.01%  | null = pas de min
+funding_min: 0.00001        # ex: 0.0001 pour >= 0.01%  | null = pas de min
 funding_max: null        # ex: 0.0005 pour <= 0.05%  | null = pas de max
 volume_min: 1000000      # ex: 1000000 pour >= 1M USDT | null = pas de min [ANCIEN]
-volume_min_millions: 5.0 # ex: 5.0 pour >= 5M USDT | null = pas de min [NOUVEAU]
-spread_max: 0.03        # ex: 0.003 pour <= 0.30% | null = pas de filtre
+volume_min_millions: 5 # ex: 5.0 pour >= 5M USDT | null = pas de min [NOUVEAU]
+# Normalisation: spread exprimé en ratio (0.003 = 0.30%)
+spread_max: 0.0003       # ex: 0.003 pour <= 0.30% | null = pas de filtre
 volatility_min: null    # ex: 0.002 pour >= 0.20% | null = pas de min [NOUVEAU]
 volatility_max: null   # ex: 0.007 pour <= 0.70% | null = pas de max [NOUVEAU]
-limite: 100               # ex: 10  | null = pas de limite
+limite: null           # ex: 10  | null = pas de limite
+funding_time_min_minutes: 0  # Optionnel: minimum 30 minutes avant funding
+funding_time_max_minutes: 120  # Optionnel: maximum 120 minutes avant funding

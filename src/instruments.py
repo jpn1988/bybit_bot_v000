@@ -1,6 +1,8 @@
 """Module pour récupérer et filtrer les instruments perpétuels Bybit."""
 
 import httpx
+from http_utils import get_rate_limiter
+_rate_limiter = get_rate_limiter()
 from typing import Dict, List
 
 
@@ -33,6 +35,7 @@ def fetch_instruments_info(base_url: str, category: str, timeout: int = 10) -> L
             params["cursor"] = cursor
             
         try:
+            _rate_limiter.acquire()
             with httpx.Client(timeout=timeout) as client:
                 response = client.get(url, params=params)
                 
@@ -117,6 +120,7 @@ def get_perp_symbols(base_url: str, timeout: int = 10) -> Dict:
     """
     linear_symbols = []
     inverse_symbols = []
+    categories: Dict[str, str] = {}
     
     # Récupérer les instruments linear
     linear_instruments = fetch_instruments_info(base_url, "linear", timeout)
@@ -125,6 +129,7 @@ def get_perp_symbols(base_url: str, timeout: int = 10) -> Dict:
             symbol = extract_symbol(item)
             if symbol:
                 linear_symbols.append(symbol)
+                categories[symbol] = "linear"
     
     # Récupérer les instruments inverse
     inverse_instruments = fetch_instruments_info(base_url, "inverse", timeout)
@@ -133,9 +138,31 @@ def get_perp_symbols(base_url: str, timeout: int = 10) -> Dict:
             symbol = extract_symbol(item)
             if symbol:
                 inverse_symbols.append(symbol)
+                categories[symbol] = "inverse"
     
     return {
         "linear": linear_symbols,
         "inverse": inverse_symbols,
-        "total": len(linear_symbols) + len(inverse_symbols)
+        "total": len(linear_symbols) + len(inverse_symbols),
+        "categories": categories,  # mapping officiel symbole -> catégorie ('linear'|'inverse')
     }
+
+
+def category_of_symbol(symbol: str, categories: Dict[str, str] | None = None) -> str:
+    """
+    Retourne la catégorie officielle d'un symbole si connue, sinon une heuristique sûre.
+
+    Args:
+        symbol (str): Symbole Bybit
+        categories (Dict[str, str] | None): Mapping officiel symbole->catégorie ('linear'|'inverse')
+
+    Returns:
+        str: 'linear' ou 'inverse'
+    """
+    try:
+        if categories and symbol in categories and categories[symbol] in ("linear", "inverse"):
+            return categories[symbol]
+        # Heuristique conservatrice: USDT => linear, sinon inverse
+        return "linear" if "USDT" in symbol else "inverse"
+    except Exception:
+        return "linear" if "USDT" in symbol else "inverse"

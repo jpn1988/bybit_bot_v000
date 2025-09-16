@@ -9,7 +9,7 @@ Usage:
 import sys
 from config import get_settings
 from logging_setup import setup_logging
-from bybit_client import BybitClient
+from bybit_client import BybitPublicClient
 from instruments import get_perp_symbols
 
 
@@ -24,13 +24,10 @@ def main():
         logger.info("🚀 Lancement du comptage des perp disponibles")
         logger.info(f"📂 Configuration chargée (testnet={settings['testnet']})")
         
-        # Créer un client Bybit pour récupérer l'URL publique
-        # On utilise des clés factices car on n'a besoin que de l'URL publique
-        client = BybitClient(
+        # Créer un client PUBLIC pour récupérer l'URL publique (aucune clé requise)
+        client = BybitPublicClient(
             testnet=settings["testnet"],
             timeout=settings["timeout"],
-            api_key="dummy_key",  # Clé factice pour l'URL publique
-            api_secret="dummy_secret"  # Secret factice pour l'URL publique
         )
         
         base_url = client.public_base_url()

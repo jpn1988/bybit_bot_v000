@@ -12,7 +12,7 @@ import signal
 import websocket
 from config import get_settings
 from logging_setup import setup_logging
-from bybit_client import BybitClient
+from bybit_client import BybitClient, BybitPublicClient
 from instruments import get_perp_symbols
 
 
@@ -53,6 +53,12 @@ class Orchestrator:
         # Configuration du signal handler pour Ctrl+C
         signal.signal(signal.SIGINT, self._signal_handler)
         
+        # Channels privés par défaut (configurable via env WS_PRIV_CHANNELS)
+        import os
+        default_channels = "wallet,order"
+        env_channels = os.getenv("WS_PRIV_CHANNELS", default_channels)
+        self.ws_private_channels = [ch.strip() for ch in env_channels.split(",") if ch.strip()]
+
         self.logger.info("🚀 Lancement orchestrateur (REST + WS public + WS privé)")
         self.logger.info(f"📂 Configuration chargée (testnet={self.testnet})")
     
@@ -147,6 +153,14 @@ class Orchestrator:
                 
                 if (success is True and data.get("op") == "auth") or (ret_code == 0 and data.get("op") == "auth"):
                     self.logger.info("✅ Authentification WS privée réussie")
+                    # Resubscribe automatique aux topics privés configurés
+                    if self.ws_private_channels:
+                        sub_msg = {"op": "subscribe", "args": self.ws_private_channels}
+                        try:
+                            ws.send(json.dumps(sub_msg))
+                            self.logger.info(f"🧭 Souscription privée → {self.ws_private_channels}")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Échec souscription privée: {e}")
                 else:
                     self.logger.error(f"⛔ Auth WS privée échouée : retCode={ret_code} retMsg=\"{ret_msg}\"")
                     ws.close()
@@ -277,12 +291,10 @@ class Orchestrator:
         
         # 2. Détection de l'univers perp
         try:
-            # Créer un client temporaire pour récupérer l'URL publique
-            temp_client = BybitClient(
+            # Créer un client PUBLIC pour récupérer l'URL publique (aucune clé requise)
+            temp_client = BybitPublicClient(
                 testnet=self.testnet,
                 timeout=10,
-                api_key=self.api_key or "dummy_key",
-                api_secret=self.api_secret or "dummy_secret"
             )
             base_url = temp_client.public_base_url()
             
