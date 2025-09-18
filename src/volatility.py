@@ -6,17 +6,61 @@ Calcule la volatilité basée sur la plage de prix (high-low) des 5 dernières b
 """
 
 import time
-import httpx
 import asyncio
 import aiohttp
-import asyncio
-from typing import Optional, Dict, List, Tuple
-from instruments import category_of_symbol
-from http_utils import get_rate_limiter
+from typing import Optional, Dict, List
+from collections import deque
+try:
+    from .instruments import category_of_symbol
+    from .http_utils import get_rate_limiter
+except ImportError:
+    from instruments import category_of_symbol
+    from http_utils import get_rate_limiter
 
 
 """La version synchrone compute_5m_range_pct a été retirée pour éviter les écarts de logique.
 Utiliser compute_volatility_batch_async avec category_of_symbol et un cache partagé."""
+
+
+class AsyncRateLimiter:
+    """Rate limiter asynchrone (fenêtre glissante) pour éviter les blocages dans l'event loop.
+    
+    max_calls: nombre max d'appels dans window_seconds.
+    """
+    
+    def __init__(self, max_calls: int = 5, window_seconds: float = 1.0):
+        self.max_calls = max_calls
+        self.window_seconds = window_seconds
+        self._timestamps = deque()
+        self._lock = asyncio.Lock()
+    
+    async def acquire(self):
+        """Attend de manière asynchrone si nécessaire pour respecter la limite."""
+        while True:
+            now = time.time()
+            async with self._lock:
+                # Retirer les timestamps hors fenêtre
+                while self._timestamps and now - self._timestamps[0] > self.window_seconds:
+                    self._timestamps.popleft()
+                if len(self._timestamps) < self.max_calls:
+                    self._timestamps.append(now)
+                    return
+                # Temps à attendre jusqu'à expiration du plus ancien
+                wait_time = self.window_seconds - (now - self._timestamps[0])
+            if wait_time > 0:
+                await asyncio.sleep(min(wait_time, 0.05))
+
+
+def get_async_rate_limiter() -> AsyncRateLimiter:
+    """Construit un rate limiter asynchrone à partir des variables d'environnement."""
+    try:
+        import os
+        max_calls = int(os.getenv("PUBLIC_HTTP_MAX_CALLS_PER_SEC", "5"))
+        window = float(os.getenv("PUBLIC_HTTP_WINDOW_SECONDS", "1"))
+    except Exception:
+        max_calls = 5
+        window = 1.0
+    return AsyncRateLimiter(max_calls=max_calls, window_seconds=window)
 
 
 def get_volatility_cache_key(symbol: str) -> str:
@@ -67,11 +111,11 @@ async def compute_volatility_batch_async(bybit_client, symbols: List[str], timeo
     
     # Limiter la concurrence globale pour éviter le rate limit (plus conservateur)
     sem = asyncio.Semaphore(5)
-    rate_limiter = get_rate_limiter()
+    async_rate_limiter = get_async_rate_limiter()
 
     async def limited_task(sym: str):
-        # Respecter le rate limiter avant chaque requête
-        rate_limiter.acquire()
+        # Respecter le rate limiter asynchrone avant chaque requête
+        await async_rate_limiter.acquire()
         async with sem:
             return await _compute_single_volatility_async(session, base_url, sym, symbol_categories)
 

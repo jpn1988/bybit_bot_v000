@@ -4,9 +4,6 @@
 
 import os
 import time
-import json
-import hmac
-import hashlib
 import threading
 import signal
 import websocket
@@ -14,6 +11,7 @@ from config import get_settings
 from logging_setup import setup_logging
 from bybit_client import BybitClient, BybitPublicClient
 from instruments import get_perp_symbols
+from ws_private import PrivateWSClient
 
 
 class Orchestrator:
@@ -42,6 +40,7 @@ class Orchestrator:
         # WebSocket instances
         self.ws_public = None
         self.ws_private = None
+        self.ws_private_client = None
         
         # Threads
         self.ws_public_thread = None
@@ -68,15 +67,6 @@ class Orchestrator:
         self.close()
         exit(0)
     
-    def _generate_ws_signature(self, expires_ms: int) -> str:
-        """Génère la signature HMAC-SHA256 pour l'authentification WebSocket."""
-        payload = f"GET/realtime{expires_ms}"
-        signature = hmac.new(
-            self.api_secret.encode('utf-8'),
-            payload.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        return signature
     
     def check_rest_private(self):
         """Vérifie la connexion REST privée."""
@@ -123,71 +113,24 @@ class Orchestrator:
         self.logger.info(f"🔌 WS publique fermée (code={close_status_code}, reason={close_msg})")
         self.ws_public_status = "DISCONNECTED"
     
-    def ws_private_on_open(self, ws):
-        """Callback ouverture WebSocket privée."""
-        self.logger.info("🌐 WS privée ouverte")
-        self.ws_private_status = "CONNECTED"
-        
-        # Authentification immédiate
-        expires_ms = int((time.time() + 60) * 1000)
-        signature = self._generate_ws_signature(expires_ms)
-        
-        auth_message = {
-            "op": "auth",
-            "args": [self.api_key, expires_ms, signature]
-        }
-        
-        self.logger.info("🪪 Authentification en cours…")
-        ws.send(json.dumps(auth_message))
-    
-    def ws_private_on_message(self, ws, message):
-        """Callback message WebSocket privée."""
-        try:
-            data = json.loads(message)
-            
-            # Gestion de l'authentification
-            if data.get("op") == "auth":
-                ret_code = data.get("retCode", -1)
-                ret_msg = data.get("retMsg", "")
-                success = data.get("success", False)
-                
-                if (success is True and data.get("op") == "auth") or (ret_code == 0 and data.get("op") == "auth"):
-                    self.logger.info("✅ Authentification WS privée réussie")
-                    # Resubscribe automatique aux topics privés configurés
-                    if self.ws_private_channels:
-                        sub_msg = {"op": "subscribe", "args": self.ws_private_channels}
-                        try:
-                            ws.send(json.dumps(sub_msg))
-                            self.logger.info(f"🧭 Souscription privée → {self.ws_private_channels}")
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ Échec souscription privée: {e}")
-                else:
-                    self.logger.error(f"⛔ Auth WS privée échouée : retCode={ret_code} retMsg=\"{ret_msg}\"")
-                    ws.close()
-            
-            # Gestion des pong
-            elif data.get("op") == "pong":
-                self.logger.info("↔️ Pong reçu (privé)")
-            
-            # Autres messages
-            else:
-                message_preview = str(data)[:50] + "..." if len(str(data)) > 50 else str(data)
-                self.logger.debug(f"WS privée: {message_preview}")
-                
-        except json.JSONDecodeError:
-            self.logger.debug(f"Message brut WS privée: {message[:50]}...")
-        except Exception as e:
-            self.logger.debug(f"Erreur parsing WS privée: {e}")
-    
-    def ws_private_on_error(self, ws, error):
-        """Callback erreur WebSocket privée."""
-        self.logger.warning(f"⚠️ WS privée erreur : {error}")
-        self.ws_private_status = "DISCONNECTED"
-    
-    def ws_private_on_close(self, ws, close_status_code, close_msg):
-        """Callback fermeture WebSocket privée."""
-        self.logger.info(f"🔌 WS privée fermée (code={close_status_code}, reason={close_msg})")
-        self.ws_private_status = "DISCONNECTED"
+    def _bind_private_ws_callbacks(self, client: PrivateWSClient):
+        """Lie les callbacks du client WS privé aux états de l'orchestrateur."""
+        def _on_open():
+            self.logger.info("🌐 WS privée ouverte")
+            self.ws_private_status = "CONNECTED"
+        def _on_close(code, reason):
+            self.logger.info(f"🔌 WS privée fermée (code={code}, reason={reason})")
+            self.ws_private_status = "DISCONNECTED"
+        def _on_error(err):
+            self.logger.warning(f"⚠️ WS privée erreur : {err}")
+            self.ws_private_status = "DISCONNECTED"
+        def _on_auth_ok():
+            self.logger.info("✅ Authentification WS privée réussie")
+
+        client.on_open_cb = _on_open
+        client.on_close_cb = _on_close
+        client.on_error_cb = _on_error
+        client.on_auth_success = _on_auth_ok
     
     def ws_public_runner(self):
         """Runner WebSocket publique avec reconnexion."""
@@ -226,40 +169,16 @@ class Orchestrator:
                 break
     
     def ws_private_runner(self):
-        """Runner WebSocket privée avec reconnexion."""
-        url = "wss://stream-testnet.bybit.com/v5/private" if self.testnet else "wss://stream.bybit.com/v5/private"
-        delay_index = 0
-        
-        while self.running:
-            try:
-                self.ws_private = websocket.WebSocketApp(
-                    url,
-                    on_open=self.ws_private_on_open,
-                    on_message=self.ws_private_on_message,
-                    on_error=self.ws_private_on_error,
-                    on_close=self.ws_private_on_close
-                )
-                
-                self.ws_private.run_forever(ping_interval=20, ping_timeout=10)
-                
-            except Exception as e:
-                if self.running:
-                    self.logger.error(f"Erreur WS privée: {e}")
-            
-            # Reconnexion avec backoff
-            if self.running:
-                delay = self.reconnect_delays[min(delay_index, len(self.reconnect_delays) - 1)]
-                self.logger.warning(f"🔁 WS privée déconnectée → reconnexion dans {delay}s")
-                
-                for _ in range(delay):
-                    if not self.running:
-                        break
-                    time.sleep(1)
-                
-                if delay_index < len(self.reconnect_delays) - 1:
-                    delay_index += 1
-            else:
-                break
+        """Runner WebSocket privée via PrivateWSClient."""
+        self.ws_private_client = PrivateWSClient(
+            testnet=self.testnet,
+            api_key=self.api_key,
+            api_secret=self.api_secret,
+            channels=self.ws_private_channels,
+            logger=self.logger,
+        )
+        self._bind_private_ws_callbacks(self.ws_private_client)
+        self.ws_private_client.run()
     
     def health_check_loop(self):
         """Boucle de health-check périodique."""
@@ -340,8 +259,8 @@ class Orchestrator:
             # Fermer les WebSockets
             if self.ws_public:
                 self.ws_public.close()
-            if self.ws_private:
-                self.ws_private.close()
+            if self.ws_private_client:
+                self.ws_private_client.close()
             
             self.logger.info("🏁 Orchestrateur arrêté")
 

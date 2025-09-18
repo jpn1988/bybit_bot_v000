@@ -2,27 +2,22 @@
 
 ## Résumé des améliorations
 
-Ce document détaille les optimisations de performance appliquées au bot Bybit pour réduire significativement le temps de récupération des données API.
+Ce document détaille les optimisations de performance appliquées au bot Bybit pour réduire significativement le temps de récupération des données API, en cohérence avec le code actuel.
 
 ## 🎯 Objectif
 
-Réduire le temps de récupération des données de **60-70%** tout en conservant la même qualité et fiabilité.
+Réduire le temps de récupération et de calcul tout en respectant les limites API et en améliorant la robustesse.
 
 ## 📊 Optimisations appliquées
 
-### 1. Augmentation de la taille des batches
-
-**Avant :**
-```python
-batch_size = 50  # Limite sous-optimale
-```
+### 1. Pagination maximale sur les tickers
 
 **Après :**
 ```python
-batch_size = 200  # Limite maximum de l'API Bybit
+params = {"category": category, "limit": 1000}  # Limite maximum Bybit
 ```
 
-**Impact :** Réduction du nombre de requêtes de 75% (4x moins de requêtes pour le même nombre de symboles).
+**Impact :** Moins de pages à parcourir pour couvrir tous les tickers; réduction globale des appels.
 
 ### 2. Suppression des délais artificiels
 
@@ -33,147 +28,95 @@ time.sleep(0.1)  # 100ms entre chaque batch
 
 **Après :**
 ```python
-# Délais supprimés - traitement en parallèle
+# Délais supprimés - pagination + fallback suffisent
 ```
 
-**Impact :** Élimination des délais d'attente inutiles entre les requêtes.
+**Impact :** Élimination des attentes inutiles.
 
-### 3. Parallélisation avec ThreadPoolExecutor
+### 3. Récupération des spreads via pagination + fallback
 
-**Avant :**
+**Implémentation actuelle :**
 ```python
-# Traitement séquentiel des batches
-for batch in batches:
-    process_batch(batch)
+# /v5/market/tickers avec limit=1000 et pagination
+params = {"category": category, "limit": 1000}
+# Fallback unitaire pour symboles manquants
+_fetch_single_spread(base_url, symbol, timeout, category)
 ```
 
-**Après :**
-```python
-# Traitement parallèle avec ThreadPoolExecutor
-with ThreadPoolExecutor(max_workers=4) as executor:
-    futures = [executor.submit(process_batch, batch) for batch in batches]
-    for future in as_completed(futures):
-        result = future.result()
-```
-
-**Impact :** Traitement simultané de jusqu'à 4 batches, réduction drastique du temps total.
+**Impact :** Bonne couverture avec un nombre d'appels maîtrisé; robustesse accrue en cas d'échec partiel.
 
 ### 4. Optimisation de fetch_funding_map()
 
-**Avant :**
-```python
-"limit": 1000  # Déjà optimal
-```
-
 **Après :**
 ```python
-"limit": 1000  # Maintenu à la limite maximum avec commentaires explicatifs
+"limit": 1000  # Limite maximum avec gestion d'erreur détaillée
 ```
 
-**Impact :** Confirmation que la limite est déjà optimale, ajout de documentation.
+**Impact :** Utilisation systématique de la limite max + logs d'erreurs contextuels.
 
 ### 5. Parallélisation du calcul de volatilité avec async/await
 
-**Avant :**
-```python
-# Traitement séquentiel - TRÈS LENT
-for symbol in symbols_data:
-    vol_pct = compute_5m_range_pct(bybit_client, symbol)  # Un appel à la fois
-```
-
 **Après :**
 ```python
-# Traitement parallèle avec async/await - TRÈS RAPIDE
+# Parallélisation contrôlée (semaphore) + rate limiter
+sem = asyncio.Semaphore(5)
+rate_limiter = get_rate_limiter()
 async def compute_volatility_batch_async(bybit_client, symbols, timeout=10):
     async with aiohttp.ClientSession() as session:
-        tasks = [_compute_single_volatility_async(session, base_url, symbol) 
-                for symbol in symbols]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        async def limited(sym):
+            rate_limiter.acquire()
+            async with sem:
+                return await _compute_single_volatility_async(session, base_url, sym)
+        results = await asyncio.gather(*[limited(s) for s in symbols], return_exceptions=True)
 ```
 
-**Impact :** Réduction du temps de calcul de volatilité de 80-90% (de 15-25s à 1-2s pour 50 symboles).
-
-### 6. Gestion d'erreur robuste
-
-**Nouveau :**
-```python
-def _process_batch_spread(base_url, symbol_batch, timeout, category, batch_idx):
-    """Fonction helper pour la parallélisation avec gestion d'erreur robuste."""
-    try:
-        # Traitement du batch
-        return batch_result
-    except Exception as e:
-        # Fallback sur traitement individuel des symboles
-        return fallback_result
-```
-
-**Impact :** Résilience accrue en cas d'erreur sur un batch spécifique.
+**Impact :** Réduction substantielle du temps de calcul (selon réseau). Concurrence plafonnée à 5 pour éviter le rate limiting.
 
 ## 🔧 Modifications techniques
 
 ### Imports ajoutés
 ```python
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
 import aiohttp
 ```
 
 ### Fonctions modifiées
-- `fetch_spread_data()` : Complètement refactorisée avec parallélisation
-- `fetch_funding_map()` : Documentation des optimisations
-- `_process_batch_spread()` : Nouvelle fonction helper pour la parallélisation
-- `filter_by_volatility()` : Refactorisée avec version async
-- `filter_by_volatility_async()` : Nouvelle fonction async pour la parallélisation
-
-### Nouvelles fonctions
-- `compute_volatility_batch_async()` : Calcul de volatilité en parallèle
-- `_compute_single_volatility_async()` : Helper async pour un symbole
+- `fetch_spread_data()` : Pagination 1000 + fallback unitaire
+- `fetch_funding_map()` : Limite 1000 + gestion d'erreur détaillée
+- `filter_by_volatility()` / `filter_by_volatility_async()` : Version async + semaphore + rate limiter
 
 ### Fonctions conservées
-- `_fetch_single_spread()` : Inchangée, utilisée comme fallback
-- `compute_5m_range_pct()` : Inchangée, utilisée pour les recalculs individuels
-- Toutes les autres fonctions : Inchangées pour maintenir la compatibilité
+- `_fetch_single_spread()` : Fallback unitaire
 
-## 📈 Résultats attendus
+## 📈 Résultats attendus (indicatifs)
 
 ### Temps de récupération (spreads)
-- **Avant :** ~10-15 secondes pour 1000 symboles
-- **Après :** ~3-5 secondes pour 1000 symboles
-- **Amélioration :** 60-70% de réduction
+- Selon la taille de l'univers et la latence réseau, avec pagination 1000 + fallback : amélioration sensible vs limites faibles.
 
 ### Temps de calcul (volatilité)
-- **Avant :** 15-25 secondes pour 50 symboles
-- **Après :** 1-2 secondes pour 50 symboles
-- **Amélioration :** 80-90% de réduction
+- Concurrence contrôlée (5) + rate limiter: typiquement quelques secondes pour 50 symboles (variable selon réseau/API).
 
 ### Nombre de requêtes (spreads)
-- **Avant :** 20 requêtes pour 1000 symboles (50 par batch)
-- **Après :** 5 requêtes pour 1000 symboles (200 par batch)
-- **Amélioration :** 75% de réduction
+- Réduction via `limit=1000` et pagination; fallback unitaire pour manquants.
 
 ### Parallélisation
-- **Spreads :** Jusqu'à 4 batches traités simultanément (ThreadPoolExecutor)
-- **Volatilité :** Tous les symboles traités simultanément (async/await)
-- **Amélioration :** 4x plus rapide (spreads) + 10-20x plus rapide (volatilité)
+- **Spreads :** Pagination + fallback, sans parallélisation explicite côté spreads
+- **Volatilité :** Async/await avec semaphore (5)
 
 ## 🛡️ Sécurité et fiabilité
 
 ### Gestion des erreurs
-- Fallback automatique sur traitement individuel en cas d'erreur de batch
-- Limitation à 4 workers pour éviter le rate limiting
-- Conservation de toute la logique d'erreur existante
+- Fallback automatique sur traitement unitaire en cas d'échec de page
+- Rate limiter configurable pour lisser les appels
+- Conservation de la logique d'erreur existante
 
 ### Compatibilité
 - Aucun changement d'interface publique
 - Même format de données retournées
-- Même comportement en cas d'erreur
 
 ### Rate limiting
-- Limitation à 4 workers simultanés (spreads)
-- Parallélisation illimitée pour la volatilité (async/await)
-- Respect des limites de l'API Bybit
-- Gestion robuste des erreurs de rate limit
-- Nouvelle dépendance : `aiohttp` pour les requêtes async
+- Rate limiter configurable via `PUBLIC_HTTP_MAX_CALLS_PER_SEC` et `PUBLIC_HTTP_WINDOW_SECONDS`
+- Concurrence async plafonnée (semaphore=5) pour la volatilité
 
 ## 🚀 Utilisation
 
@@ -183,19 +126,17 @@ Aucun changement requis dans l'utilisation du bot. Les optimisations sont transp
 python src/bot.py
 ```
 
-Les logs indiqueront maintenant les optimisations actives :
+Les logs indiquent les optimisations actives :
 ```
 📡 Récupération des funding rates pour linear (optimisé)…
-🔎 Récupération spreads linear (optimisé: batch=200, parallèle) pour 500 symboles…
-🔎 Calcul volatilité async (parallèle) pour 50 symboles…
+🔎 Récupération spreads linear (pagination 1000) …
+🔎 Calcul volatilité async (parallèle, sem=5) pour 50 symboles…
 ✅ Calcul volatilité async: gardés=45 | rejetés=5 (seuils: min=0.20% | max=0.70%)
 ```
 
 ## 📝 Notes techniques
 
-- Les optimisations sont compatibles avec les environnements testnet et production
-- La parallélisation des spreads est limitée à 4 workers pour éviter la surcharge de l'API
-- La parallélisation de la volatilité utilise async/await pour un traitement illimité
-- Tous les délais artificiels ont été supprimés car la parallélisation les rend inutiles
-- La gestion d'erreur robuste garantit qu'aucune donnée n'est perdue en cas d'erreur partielle
-- La nouvelle dépendance `aiohttp` est requise pour les optimisations de volatilité
+- Compatibles testnet et production
+- Le rate limiter public peut être ajusté via ENV
+- Les délais artificiels ont été supprimés car la pagination et le cache suffisent
+- La gestion d'erreur garantit qu'aucune donnée utile n'est perdue en cas d'erreur partielle

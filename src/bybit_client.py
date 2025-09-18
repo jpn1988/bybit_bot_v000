@@ -6,6 +6,7 @@ import hmac
 import httpx
 import random
 from config import get_settings
+from metrics import record_api_call
 
 
 class BybitClient:
@@ -91,6 +92,8 @@ class BybitClient:
         max_attempts = 4
         backoff_base = 0.5
         last_error: Exception | None = None
+        start_time = time.time()
+        
         while attempts < max_attempts:
             attempts += 1
             try:
@@ -136,6 +139,10 @@ class BybitClient:
                         else:
                             raise RuntimeError(f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\"")
                     
+                    # Enregistrer les métriques de succès
+                    latency = time.time() - start_time
+                    record_api_call(latency, success=True)
+                    
                     return data.get("result", {})
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 last_error = e
@@ -149,6 +156,10 @@ class BybitClient:
                     raise
                 last_error = e
                 break
+        # Enregistrer les métriques d'erreur
+        latency = time.time() - start_time
+        record_api_call(latency, success=False)
+        
         # Échec après retries
         raise RuntimeError(f"Erreur réseau/HTTP Bybit : {last_error}")
     

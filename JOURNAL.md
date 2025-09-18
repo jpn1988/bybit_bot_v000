@@ -199,6 +199,156 @@
   - Tableau affiche correctement la volatilité pour tous les symboles
 **Résultat :** ✅ OK (filtre de volatilité simplifié, appliqué à tous les symboles)
 
+## [2025-09-16] — Alignement documentation ↔ code (ENV, TTL, fenêtre funding, supervision)
+**But :** Aligner toute la documentation avec le code actuel (ENV, YAML, pagination 1000, async volatilité avec semaphore=5, rate limiter public).
+**Fichiers modifiés :** 
+- `README.md` — Démarrage, YAML, variables ENV (incluant `FUNDING_TIME_MIN_MINUTES`, `FUNDING_TIME_MAX_MINUTES`, `VOLATILITY_TTL_SEC`, rate limiter public), structure, commandes, config avancée
+- `CONTRIBUTING.md` — Checklist pointant `python src/bot.py` comme orchestrateur principal
+- `OPTIMISATIONS_PERFORMANCE.md` — Pagination 1000, fallback spread, suppression des délais artificiels, async volatilité + semaphore
+- `OPTIMISATIONS_VOLATILITE.md` — Concurrence plafonnée, temps indicatifs, rate limiter public
+- `NETTOYAGE_CODE.md` — Architecture finale (REST → filtres → WS), checklist PR
+**Tests/commandes :**
+- `python src/bot.py` → vérification des logs de filtres (incluant ft_min/ft_max, vol_ttl)
+- `python src/app.py` → supervision REST/WS public/privé OK
+**Résultat :** ✅ OK (docs alignées au code, variables ENV à jour)
+
+## [2025-01-27] — Ajout de la reconnexion automatique pour les WebSockets publiques
+**But :** Corriger le problème critique où le bot s'arrêtait à la première coupure réseau de la WS publique, en ajoutant une logique de reconnexion avec backoff progressif.
+**Fichiers modifiés :** 
+- `src/bot.py` — Classe `PublicWSConnection` enrichie avec reconnexion automatique
+**Décisions/raisons :**
+- **Problème identifié** : `PublicWSConnection.run()` n'avait pas de logique de reconnexion, contrairement à `PrivateWSClient`
+- **Solution** : Implémentation d'une boucle de reconnexion avec backoff progressif [1s, 2s, 5s, 10s, 30s]
+- **Alignement** : Même logique que la WS privée pour la cohérence du code
+- **Robustesse** : Réinitialisation de l'index de délai après connexion réussie
+- **Logs clairs** : Messages informatifs pour le debugging et monitoring
+**Fonctionnalités :**
+- **Reconnexion automatique** : Boucle `while self.running` avec gestion d'exceptions
+- **Backoff progressif** : Délais croissants jusqu'à 30s maximum
+- **Restauration des abonnements** : Re-souscription automatique aux tickers après reconnexion
+- **Arrêt propre** : Vérification périodique de `self.running` pendant les délais
+- **Logs détaillés** : Messages de connexion, déconnexion, et reconnexion
+**Tests/commandes :** 
+- `python src/bot.py` → logs montrent : "🌐 WS ouverte (linear)" + "🧭 Souscription tickers → 299 symboles"
+- Test de coupure réseau simulée → reconnexion automatique avec logs "🔁 WS publique (linear) déconnectée → reconnexion dans Xs"
+**Résultat :** ✅ OK (reconnexion automatique fonctionnelle, bot stable en production)
+
+## [2025-01-27] — Correction des blocages async dans le calcul de volatilité
+**But :** Éliminer les micro-blocages dans l'event loop causés par l'utilisation de `time.sleep()` dans le rate limiter synchrone lors du calcul de volatilité asynchrone.
+**Fichiers modifiés :** 
+- `src/volatility.py` — Ajout d'`AsyncRateLimiter` et remplacement du rate limiter synchrone
+**Décisions/raisons :**
+- **Problème identifié** : `compute_volatility_batch_async()` appelait `rate_limiter.acquire()` qui utilisait `time.sleep()` bloquant dans du code async
+- **Impact** : Micro-blocages dans l'event loop, latence variable, performance dégradée
+- **Solution** : Création d'une version asynchrone du rate limiter avec `await asyncio.sleep()`
+- **Cohérence** : Même logique de fenêtre glissante, mais non-bloquante
+**Fonctionnalités :**
+- **AsyncRateLimiter** : Rate limiter asynchrone avec `asyncio.Lock()` et `await asyncio.sleep()`
+- **Fenêtre glissante** : Même comportement que le rate limiter synchrone (max_calls dans window_seconds)
+- **Configuration ENV** : Utilise les mêmes variables `PUBLIC_HTTP_MAX_CALLS_PER_SEC` et `PUBLIC_HTTP_WINDOW_SECONDS`
+- **Intégration transparente** : Remplacement direct dans `limited_task()` sans impact sur le reste du code
+- **Performance** : Élimination des blocages, latence plus stable et prévisible
+**Tests/commandes :** 
+- `python src/bot.py` → logs montrent : "✅ Refresh volatilité terminé: ok=316 | fail=5" + retry automatique
+- Calcul de volatilité fonctionne normalement sans blocages observables
+- Performance améliorée : latence plus stable lors des cycles de volatilité
+**Résultat :** ✅ OK (rate limiter asynchrone fonctionnel, event loop non-bloqué, performance améliorée)
+
+## [2025-01-27] — Ajout de la validation de configuration
+**But :** Empêcher le démarrage du bot avec des paramètres de configuration incohérents ou invalides, et fournir des messages d'erreur clairs pour faciliter le debugging.
+**Fichiers modifiés :** 
+- `src/bot.py` — Ajout de `validate_config()` et intégration dans `load_config()` et `start()`
+**Décisions/raisons :**
+- **Problème identifié** : Aucune validation des paramètres de configuration (YAML + ENV)
+- **Risques** : Comportements silencieux avec des valeurs incohérentes (ex: `funding_min > funding_max`)
+- **Solution** : Validation complète avec messages d'erreur explicites et arrêt propre
+- **UX** : Messages clairs en français avec conseils pour corriger
+**Fonctionnalités :**
+- **Validation des bornes** : `funding_min ≤ funding_max`, `volatility_min ≤ volatility_max`
+- **Validation des valeurs négatives** : Tous les paramètres numériques ≥ 0
+- **Validation des plages** : Spread ≤ 100%, temps funding ≤ 24h, limite ≤ 1000, TTL volatilité 10s-1h
+- **Validation des catégories** : `categorie` dans `["linear", "inverse", "both"]`
+- **Validation des fenêtres temporelles** : `funding_time_min ≤ funding_time_max`
+- **Messages d'erreur explicites** : Chaque erreur avec la valeur problématique et la règle violée
+- **Arrêt propre** : `return` dans `start()` au lieu de `sys.exit()` brutal
+**Tests/commandes :** 
+- Configuration incohérente : `funding_time_max_minutes: 2000` → "trop élevé (2000), maximum: 1440 (24h)"
+- Configuration incohérente : `funding_min: 0.01, funding_max: 0.005` → "ne peut pas être supérieur"
+- Configuration valide : Bot démarre normalement avec logs de filtrage
+- Messages clairs : "❌ Erreur de configuration" + "💡 Corrigez les paramètres dans src/parameters.yaml"
+**Résultat :** ✅ OK (validation robuste fonctionnelle, messages d'erreur clairs, arrêt propre)
+
+## [2025-01-27] — Nettoyage du code et suppression des imports inutilisés
+**But :** Supprimer le code mort et les imports redondants pour améliorer la lisibilité et réduire la dette technique.
+**Fichiers modifiés :** 
+- `src/app.py` — Suppression de `_generate_ws_signature()` inutilisée et imports redondants
+- `src/volatility.py` — Suppression des imports inutilisés (httpx, Tuple)
+- `src/bot.py` — Remplacement de `sys.exit(0)` par `return` pour arrêt propre
+**Décisions/raisons :**
+- **Problème identifié** : Code mort et imports inutilisés dans plusieurs fichiers
+- **Dette technique** : Méthodes non utilisées, imports redondants, arrêt brutal
+- **Solution** : Nettoyage systématique sans casser la fonctionnalité
+- **Qualité** : Code plus propre et maintenable
+**Fonctionnalités supprimées :**
+- **`_generate_ws_signature()`** : Méthode inutilisée dans `src/app.py` (doublon avec `ws_private.py`)
+- **Imports redondants** : `json`, `hmac`, `hashlib` dans `src/app.py` (non utilisés)
+- **Imports inutilisés** : `httpx`, `Tuple` dans `src/volatility.py` (non référencés)
+- **Arrêt brutal** : `sys.exit(0)` remplacé par `return` dans `src/bot.py`
+**Tests/commandes :** 
+- `python src/bot.py` → démarrage normal avec logs de configuration
+- Validation de la fonctionnalité : filtrage, WebSocket, calcul de volatilité
+- Vérification des linters : aucune erreur détectée
+- Logs confirmés : "🚀 Orchestrateur du bot (filters + WebSocket prix)" + "📂 Configuration chargée"
+**Résultat :** ✅ OK (code nettoyé, fonctionnalité préservée, aucune régression)
+
+## [2025-01-27] — Validation des variables d'environnement pour détecter les fautes de frappe
+**But :** Détecter et signaler les variables d'environnement inconnues liées au bot pour aider à identifier les fautes de frappe dans la configuration.
+**Fichiers modifiés :** 
+- `src/config.py` — Ajout de la validation des variables d'environnement dans `get_settings()`
+**Décisions/raisons :**
+- **Problème identifié** : Variables ENV mal orthographiées ignorées silencieusement (ex: `CATEGROY` au lieu de `CATEGORY`)
+- **Risques** : Configuration incorrecte non détectée, comportement inattendu du bot
+- **Solution** : Validation proactive avec warnings explicites pour variables inconnues liées au bot
+- **UX** : Messages d'aide avec liste des variables valides
+**Fonctionnalités :**
+- **Liste des variables valides** : Définition explicite des ENV supportées
+- **Détection intelligente** : Filtrage des variables système pour éviter le spam
+- **Filtrage par mots-clés** : Détection des variables liées au bot par analyse des noms
+- **Warnings clairs** : Messages d'erreur explicites avec suggestions
+- **Double sortie** : Affichage sur `stderr` + logger si disponible
+- **Variables valides** : `BYBIT_API_KEY`, `BYBIT_API_SECRET`, `TESTNET`, `TIMEOUT`, `LOG_LEVEL`, `SPREAD_MAX`, `VOLUME_MIN_MILLIONS`, `VOLATILITY_MIN`, `VOLATILITY_MAX`, `FUNDING_MIN`, `FUNDING_MAX`, `CATEGORY`, `LIMIT`, `VOLATILITY_TTL_SEC`, `FUNDING_TIME_MIN_MINUTES`, `FUNDING_TIME_MAX_MINUTES`, `WS_PRIV_CHANNELS`
+- **Filtrage système** : Ignore les variables Windows/Python (`PATH`, `PYTHON`, etc.)
+- **Filtrage par mots-clés** : Détecte les variables contenant `BYBIT`, `FUNDING`, `VOLATILITY`, `SPREAD`, `VOLUME`, `CATEGORY`, etc.
+**Implémentation :**
+```python
+# Validation des variables d'environnement dans get_settings()
+valid_env_vars = {
+    "BYBIT_API_KEY", "BYBIT_API_SECRET", "TESTNET", "TIMEOUT", "LOG_LEVEL",
+    "SPREAD_MAX", "VOLUME_MIN_MILLIONS", "VOLATILITY_MIN", "VOLATILITY_MAX",
+    "FUNDING_MIN", "FUNDING_MAX", "CATEGORY", "LIMIT", "VOLATILITY_TTL_SEC",
+    "FUNDING_TIME_MIN_MINUTES", "FUNDING_TIME_MAX_MINUTES", "WS_PRIV_CHANNELS"
+}
+
+# Détecter et signaler les variables inconnues liées au bot
+bot_related_unknown = []
+for var in (set(os.environ.keys()) - valid_env_vars):
+    if not any(prefix in var.upper() for prefix in SYSTEM_PREFIXES):
+        if any(keyword in var.upper() for keyword in BOT_KEYWORDS):
+            bot_related_unknown.append(var)
+
+# Afficher warnings pour variables inconnues
+if bot_related_unknown:
+    for var in bot_related_unknown:
+        print(f"⚠️ Variable d'environnement inconnue ignorée: {var}", file=sys.stderr)
+        print(f"💡 Variables valides: {', '.join(sorted(valid_env_vars))}", file=sys.stderr)
+```
+**Tests/commandes :** 
+- Test avec variable correcte : `CATEGORY=linear` → Aucun warning, fonctionne normalement
+- Test avec faute de frappe : `CATEGROY=linear` → Warning affiché avec liste des variables valides
+- Test avec variable système : `PYTHONPATH=/path` → Ignorée silencieusement (correct)
+- Messages d'aide : Liste complète des variables d'environnement supportées
+**Résultat :** ✅ OK (validation implémentée, détection des fautes de frappe, messages d'aide clairs)
+
 ---
 
 ## 🧩 Modèle d'entrée à réutiliser

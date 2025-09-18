@@ -38,6 +38,9 @@ from bybit_client import BybitClient, BybitPublicClient
 from instruments import get_perp_symbols, category_of_symbol
 from price_store import update, get_snapshot, purge_expired
 from volatility import get_volatility_cache_key, is_cache_valid, compute_volatility_batch_async
+from errors import NoSymbolsError, FundingUnavailableError
+from metrics import record_filter_result, record_ws_connection, record_ws_error
+from metrics_monitor import start_metrics_monitoring
 
 
 class PublicWSConnection:
@@ -51,6 +54,10 @@ class PublicWSConnection:
         self.on_ticker_callback = on_ticker_callback  # callable(ticker_data: dict)
         self.ws = None
         self.running = False
+        
+        # Configuration de reconnexion avec backoff
+        self.reconnect_delays = [1, 2, 5, 10, 30]  # secondes
+        self.current_delay_index = 0
 
     def _build_url(self) -> str:
         if self.category == "linear":
@@ -60,15 +67,26 @@ class PublicWSConnection:
 
     def _on_open(self, ws):
         self.logger.info(f"🌐 WS ouverte ({self.category})")
-        subscribe_message = {
-            "op": "subscribe",
-            "args": [f"tickers.{symbol}" for symbol in self.symbols]
-        }
-        try:
-            ws.send(json.dumps(subscribe_message))
-            self.logger.info(f"🧭 Souscription tickers → {len(self.symbols)} symboles")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Erreur souscription {self.category}: {e}")
+        
+        # Enregistrer la connexion WebSocket
+        record_ws_connection(connected=True)
+        
+        # Réinitialiser l'index de délai de reconnexion après une connexion réussie
+        self.current_delay_index = 0
+        
+        # S'abonner aux tickers pour tous les symboles
+        if self.symbols:
+            subscribe_message = {
+                "op": "subscribe",
+                "args": [f"tickers.{symbol}" for symbol in self.symbols]
+            }
+            try:
+                ws.send(json.dumps(subscribe_message))
+                self.logger.info(f"🧭 Souscription tickers → {len(self.symbols)} symboles ({self.category})")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erreur souscription {self.category}: {e}")
+        else:
+            self.logger.warning(f"⚠️ Aucun symbole à suivre pour {self.category}")
 
     def _on_message(self, ws, message):
         try:
@@ -85,23 +103,61 @@ class PublicWSConnection:
     def _on_error(self, ws, error):
         if self.running:
             self.logger.warning(f"⚠️ WS erreur ({self.category}) : {error}")
+            record_ws_error()
 
     def _on_close(self, ws, close_status_code, close_msg):
         if self.running:
             self.logger.info(f"🔌 WS fermée ({self.category}) (code={close_status_code}, reason={close_msg})")
 
     def run(self):
-        """Boucle bloquante de connexion WS (run_forever)."""
+        """Boucle principale avec reconnexion automatique et backoff progressif."""
         self.running = True
-        url = self._build_url()
-        self.ws = websocket.WebSocketApp(
-            url,
-            on_open=self._on_open,
-            on_message=self._on_message,
-            on_error=self._on_error,
-            on_close=self._on_close
-        )
-        self.ws.run_forever(ping_interval=20, ping_timeout=10)
+        
+        while self.running:
+            try:
+                try:
+                    self.logger.info(f"🔐 Connexion à la WebSocket publique ({self.category})…")
+                except Exception:
+                    pass
+                
+                url = self._build_url()
+                self.ws = websocket.WebSocketApp(
+                    url,
+                    on_open=self._on_open,
+                    on_message=self._on_message,
+                    on_error=self._on_error,
+                    on_close=self._on_close
+                )
+                
+                self.ws.run_forever(ping_interval=20, ping_timeout=10)
+                
+            except Exception as e:
+                if self.running:
+                    try:
+                        self.logger.error(f"Erreur connexion WS publique ({self.category}): {e}")
+                    except Exception:
+                        pass
+            
+            # Reconnexion avec backoff progressif
+            if self.running:
+                delay = self.reconnect_delays[min(self.current_delay_index, len(self.reconnect_delays) - 1)]
+                try:
+                    self.logger.warning(f"🔁 WS publique ({self.category}) déconnectée → reconnexion dans {delay}s")
+                    record_ws_connection(connected=False)  # Enregistrer la reconnexion
+                except Exception:
+                    pass
+                
+                # Attendre le délai avec vérification périodique de l'arrêt
+                for _ in range(delay):
+                    if not self.running:
+                        break
+                    time.sleep(1)
+                
+                # Augmenter l'index de délai pour le prochain backoff (jusqu'à la limite)
+                if self.current_delay_index < len(self.reconnect_delays) - 1:
+                    self.current_delay_index += 1
+            else:
+                break
 
     def close(self):
         self.running = False
@@ -110,6 +166,112 @@ class PublicWSConnection:
                 self.ws.close()
             except Exception:
                 pass
+
+def validate_config(config: dict) -> None:
+    """
+    Valide la cohérence des paramètres de configuration.
+    
+    Args:
+        config (dict): Configuration à valider
+        
+    Raises:
+        ValueError: Si des paramètres sont incohérents ou invalides
+    """
+    errors = []
+    
+    # Validation des bornes de funding
+    funding_min = config.get("funding_min")
+    funding_max = config.get("funding_max")
+    
+    if funding_min is not None and funding_max is not None:
+        if funding_min > funding_max:
+            errors.append(f"funding_min ({funding_min}) ne peut pas être supérieur à funding_max ({funding_max})")
+    
+    # Validation des bornes de volatilité
+    volatility_min = config.get("volatility_min")
+    volatility_max = config.get("volatility_max")
+    
+    if volatility_min is not None and volatility_max is not None:
+        if volatility_min > volatility_max:
+            errors.append(f"volatility_min ({volatility_min}) ne peut pas être supérieur à volatility_max ({volatility_max})")
+    
+    # Validation des valeurs négatives
+    if funding_min is not None and funding_min < 0:
+        errors.append(f"funding_min ne peut pas être négatif ({funding_min})")
+    
+    if funding_max is not None and funding_max < 0:
+        errors.append(f"funding_max ne peut pas être négatif ({funding_max})")
+    
+    if volatility_min is not None and volatility_min < 0:
+        errors.append(f"volatility_min ne peut pas être négatif ({volatility_min})")
+    
+    if volatility_max is not None and volatility_max < 0:
+        errors.append(f"volatility_max ne peut pas être négatif ({volatility_max})")
+    
+    # Validation du spread
+    spread_max = config.get("spread_max")
+    if spread_max is not None:
+        if spread_max < 0:
+            errors.append(f"spread_max ne peut pas être négatif ({spread_max})")
+        if spread_max > 1.0:  # 100% de spread maximum
+            errors.append(f"spread_max trop élevé ({spread_max}), maximum recommandé: 1.0 (100%)")
+    
+    # Validation des volumes
+    volume_min = config.get("volume_min")
+    volume_min_millions = config.get("volume_min_millions")
+    
+    if volume_min is not None and volume_min < 0:
+        errors.append(f"volume_min ne peut pas être négatif ({volume_min})")
+    
+    if volume_min_millions is not None and volume_min_millions < 0:
+        errors.append(f"volume_min_millions ne peut pas être négatif ({volume_min_millions})")
+    
+    # Validation des paramètres temporels de funding
+    ft_min = config.get("funding_time_min_minutes")
+    ft_max = config.get("funding_time_max_minutes")
+    
+    if ft_min is not None:
+        if ft_min < 0:
+            errors.append(f"funding_time_min_minutes ne peut pas être négatif ({ft_min})")
+        if ft_min > 1440:  # 24 heures maximum
+            errors.append(f"funding_time_min_minutes trop élevé ({ft_min}), maximum: 1440 (24h)")
+    
+    if ft_max is not None:
+        if ft_max < 0:
+            errors.append(f"funding_time_max_minutes ne peut pas être négatif ({ft_max})")
+        if ft_max > 1440:  # 24 heures maximum
+            errors.append(f"funding_time_max_minutes trop élevé ({ft_max}), maximum: 1440 (24h)")
+    
+    if ft_min is not None and ft_max is not None:
+        if ft_min > ft_max:
+            errors.append(f"funding_time_min_minutes ({ft_min}) ne peut pas être supérieur à funding_time_max_minutes ({ft_max})")
+    
+    # Validation de la catégorie
+    categorie = config.get("categorie")
+    if categorie not in ["linear", "inverse", "both"]:
+        errors.append(f"categorie invalide ({categorie}), valeurs autorisées: linear, inverse, both")
+    
+    # Validation de la limite
+    limite = config.get("limite")
+    if limite is not None:
+        if limite < 1:
+            errors.append(f"limite doit être positive ({limite})")
+        if limite > 1000:
+            errors.append(f"limite trop élevée ({limite}), maximum recommandé: 1000")
+    
+    # Validation du TTL de volatilité
+    vol_ttl = config.get("volatility_ttl_sec")
+    if vol_ttl is not None:
+        if vol_ttl < 10:
+            errors.append(f"volatility_ttl_sec trop faible ({vol_ttl}), minimum: 10 secondes")
+        if vol_ttl > 3600:
+            errors.append(f"volatility_ttl_sec trop élevé ({vol_ttl}), maximum: 3600 secondes (1h)")
+    
+    # Lever une erreur si des problèmes ont été détectés
+    if errors:
+        error_msg = "Configuration invalide détectée:\n" + "\n".join(f"  - {error}" for error in errors)
+        raise ValueError(error_msg)
+
 
 def load_config() -> dict:
     """
@@ -187,6 +349,9 @@ def load_config() -> dict:
         default_config["funding_time_min_minutes"] = env_ft_min
     if env_ft_max is not None:
         default_config["funding_time_max_minutes"] = env_ft_max
+    
+    # Valider la configuration finale
+    validate_config(default_config)
     
     return default_config
 
@@ -859,6 +1024,9 @@ class PriceTracker:
         
         self.logger.info("🚀 Orchestrateur du bot (filters + WebSocket prix)")
         self.logger.info("📂 Configuration chargée")
+        
+        # Démarrer le monitoring des métriques
+        start_metrics_monitoring(interval_minutes=5)
     
     def _signal_handler(self, signum, frame):
         """Gestionnaire de signal pour Ctrl+C."""
@@ -870,7 +1038,7 @@ class PriceTracker:
                 conn.close()
         except Exception:
             pass
-        sys.exit(0)
+        return
     
     def _update_realtime_data(self, symbol: str, ticker_data: dict):
         """
@@ -1077,8 +1245,13 @@ class PriceTracker:
     
     def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""
-        # Charger la configuration
-        config = load_config()
+        # Charger et valider la configuration
+        try:
+            config = load_config()
+        except ValueError as e:
+            self.logger.error(f"❌ Erreur de configuration : {e}")
+            self.logger.error("💡 Corrigez les paramètres dans src/parameters.yaml ou les variables d'environnement")
+            return  # Arrêt propre sans sys.exit
         
         # Vérifier si le fichier de config existe
         config_path = "src/parameters.yaml"
@@ -1150,7 +1323,7 @@ class PriceTracker:
         
         if not funding_map:
             self.logger.warning("⚠️ Aucun funding disponible pour la catégorie sélectionnée")
-            sys.exit(1)
+            raise FundingUnavailableError("Aucun funding disponible pour la catégorie sélectionnée")
         
         # Stocker les next_funding_time originaux pour fallback (REST)
         try:
@@ -1250,12 +1423,19 @@ class PriceTracker:
             final_symbols = final_symbols[:limite]
         n3 = len(final_symbols)
         
+        # Enregistrer les métriques des filtres
+        record_filter_result("funding_volume_time", n1, n0 - n1)
+        if spread_max is not None:
+            record_filter_result("spread", n2, n1 - n2)
+        record_filter_result("volatility", n2, n2 - n2)  # Pas de rejet par volatilité dans ce cas
+        record_filter_result("final_limit", n3, n2 - n3)
+        
         # Log des comptes
         self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume/temps = {n1} | après spread = {n2} | après volatilité = {n2} | après tri+limit = {n3}")
         
         if not final_symbols:
             self.logger.warning("⚠️ Aucun symbole ne correspond aux critères de filtrage")
-            sys.exit(1)
+            raise NoSymbolsError("Aucun symbole ne correspond aux critères de filtrage")
         
         # Log des symboles retenus
         if final_symbols:
@@ -1316,7 +1496,7 @@ class PriceTracker:
             self._start_single_connection("inverse", self.inverse_symbols)
         else:
             self.logger.warning("⚠️ Aucun symbole valide trouvé")
-            sys.exit(1)
+            raise NoSymbolsError("Aucun symbole valide trouvé")
     
     def _handle_ticker(self, ticker_data: dict):
         """Callback thread-safe appelé par les connexions WS isolées pour chaque tick."""
@@ -1495,7 +1675,7 @@ def main():
     except Exception as e:
         tracker.logger.error(f"❌ Erreur : {e}")
         tracker.running = False
-        sys.exit(1)
+        # Laisser le code appelant décider (ne pas sys.exit ici)
 
 
 if __name__ == "__main__":

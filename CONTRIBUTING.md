@@ -14,7 +14,7 @@
 - [ ] README à jour si comportement utilisateur changé
 - [ ] Logs lisibles (FR simple, emojis OK)
 - [ ] Pas de code inutile / fichiers orphelins
-- [ ] `python src/app.py` démarre et s'arrête proprement
+- [ ] `python src/bot.py` démarre et s'arrête proprement (et `python src/app.py` si utilisé)
 
 ## 4) Style des commits (optionnel mais utile)
 - `chore:` maintenance / docs
