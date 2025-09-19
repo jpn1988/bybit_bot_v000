@@ -144,7 +144,7 @@ REXUSDT  |     +0.4951% |      121.9 |    +0.050% |     +0.320% |          45m
 - **WS privée (test)** : `python src/run_ws_private.py`
 
 ## 🔧 Configuration avancée
-- **Variables d'environnement clés** : `TESTNET`, `LOG_LEVEL`, `VOLUME_MIN_MILLIONS`, `SPREAD_MAX`, `VOLATILITY_MIN`, `VOLATILITY_MAX`, `FUNDING_MIN`, `FUNDING_MAX`, `FUNDING_TIME_MIN_MINUTES`, `FUNDING_TIME_MAX_MINUTES`, `VOLATILITY_TTL_SEC`, `CATEGORY`, `LIMIT`, `PUBLIC_HTTP_MAX_CALLS_PER_SEC`, `PUBLIC_HTTP_WINDOW_SECONDS`
+- **Variables d'environnement clés** : `TESTNET`, `TIMEOUT`, `LOG_LEVEL`, `VOLUME_MIN_MILLIONS`, `SPREAD_MAX`, `VOLATILITY_MIN`, `VOLATILITY_MAX`, `FUNDING_MIN`, `FUNDING_MAX`, `FUNDING_TIME_MIN_MINUTES`, `FUNDING_TIME_MAX_MINUTES`, `VOLATILITY_TTL_SEC`, `CATEGORY`, `LIMIT`, `PUBLIC_HTTP_MAX_CALLS_PER_SEC`, `PUBLIC_HTTP_WINDOW_SECONDS`
 - **Clés privées (.env)** : `BYBIT_API_KEY`, `BYBIT_API_SECRET` (requis pour `src/app.py` et `src/main.py`)
 - **Fichier de config** : `src/parameters.yaml`
 - **Priorité** : ENV > fichier YAML > valeurs par défaut

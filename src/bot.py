@@ -4,14 +4,12 @@
 
 Script pour filtrer les contrats perpétuels par funding ET suivre leurs prix en temps réel.
 
-OPTIMISATIONS PERFORMANCE APPLIQUÉES:
-- fetch_spread_data(): batch_size augmenté de 50 à 200 (limite max API Bybit)
-- fetch_spread_data(): suppression des délais time.sleep(0.1) entre batches
-- fetch_spread_data(): parallélisation avec ThreadPoolExecutor (max 4 workers)
-- fetch_funding_map(): limite maintenue à 1000 (maximum supporté par l'API)
-- filter_by_volatility(): parallélisation async/await avec aiohttp et asyncio.gather()
-- Gestion d'erreur robuste pour les requêtes parallèles
-- Réduction estimée du temps de récupération: 60-70% (spreads) + 80-90% (volatilité)
+OPTIMISATIONS PERFORMANCE APPLIQUÉES (alignées avec la doc):
+- fetch_funding_map(): limite 1000 (maximum API Bybit) + pagination robuste
+- fetch_spread_data(): pagination 1000 + fallback unitaire (pas de ThreadPoolExecutor)
+- filter_by_volatility(): parallélisation async/await (aiohttp + asyncio.gather) + semaphore(5)
+- Rate limiting configurable via ENV (PUBLIC_HTTP_MAX_CALLS_PER_SEC, PUBLIC_HTTP_WINDOW_SECONDS)
+- Gestion d'erreur robuste et logs informatifs
 
 Usage:
     python src/bot.py
@@ -27,7 +25,6 @@ import yaml
 import httpx
 import websocket
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from http_utils import get_rate_limiter
 try:
     from .config import get_settings
@@ -83,6 +80,8 @@ class PublicWSConnection:
             try:
                 ws.send(json.dumps(subscribe_message))
                 self.logger.info(f"🧭 Souscription tickers → {len(self.symbols)} symboles ({self.category})")
+            except (json.JSONEncodeError, ConnectionError, OSError) as e:
+                self.logger.error(f"Erreur souscription WebSocket {self.category}: {type(e).__name__}: {e}")
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur souscription {self.category}: {e}")
         else:
@@ -97,6 +96,8 @@ class PublicWSConnection:
                     self.on_ticker_callback(ticker_data)
         except json.JSONDecodeError as e:
             self.logger.warning(f"⚠️ Erreur JSON ({self.category}): {e}")
+        except (KeyError, TypeError, AttributeError) as e:
+            self.logger.warning(f"⚠️ Erreur parsing données ({self.category}): {type(e).__name__}: {e}")
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur parsing ({self.category}): {e}")
 
@@ -131,6 +132,12 @@ class PublicWSConnection:
                 
                 self.ws.run_forever(ping_interval=20, ping_timeout=10)
                 
+            except (ConnectionError, OSError, TimeoutError) as e:
+                if self.running:
+                    try:
+                        self.logger.error(f"Erreur connexion réseau WS publique ({self.category}): {type(e).__name__}: {e}")
+                    except Exception:
+                        pass
             except Exception as e:
                 if self.running:
                     try:
@@ -500,8 +507,51 @@ def calculate_funding_time_remaining(next_funding_time: str | int | float | None
         if minutes > 0:
             return f"{minutes}m {seconds}s"
         return f"{seconds}s"
-    except Exception:
+    except (ValueError, TypeError, OSError) as e:
+        # Erreurs de conversion ou système
+        import logging
+        logging.getLogger(__name__).error(f"Erreur calcul temps funding formaté: {type(e).__name__}: {e}")
         return "-"
+    except Exception as e:
+        # Erreur inattendue
+        import logging
+        logging.getLogger(__name__).error(f"Erreur inattendue calcul temps funding: {type(e).__name__}: {e}")
+        return "-"
+
+
+def calculate_funding_minutes_remaining(next_funding_time: str | int | float | None) -> float | None:
+    """Retourne les minutes restantes avant le prochain funding (pour filtrage). Utilise la logique centralisée."""
+    if not next_funding_time:
+        return None
+    try:
+        import datetime
+        funding_dt: datetime.datetime | None = None
+        if isinstance(next_funding_time, (int, float)):
+            funding_dt = datetime.datetime.fromtimestamp(float(next_funding_time) / 1000, tz=datetime.timezone.utc)
+        elif isinstance(next_funding_time, str):
+            if next_funding_time.isdigit():
+                funding_dt = datetime.datetime.fromtimestamp(float(next_funding_time) / 1000, tz=datetime.timezone.utc)
+            else:
+                funding_dt = datetime.datetime.fromisoformat(next_funding_time.replace('Z', '+00:00'))
+                if funding_dt.tzinfo is None:
+                    funding_dt = funding_dt.replace(tzinfo=datetime.timezone.utc)
+        if funding_dt is None:
+            return None
+        now = datetime.datetime.now(datetime.timezone.utc)
+        delta_sec = (funding_dt - now).total_seconds()
+        if delta_sec <= 0:
+            return None
+        return delta_sec / 60.0  # Convertir en minutes
+    except (ValueError, TypeError, OSError) as e:
+        # Erreurs de conversion ou système
+        import logging
+        logging.getLogger(__name__).error(f"Erreur calcul minutes funding: {type(e).__name__}: {e}")
+        return None
+    except Exception as e:
+        # Erreur inattendue
+        import logging
+        logging.getLogger(__name__).error(f"Erreur inattendue calcul minutes funding: {type(e).__name__}: {e}")
+        return None
 
 
 def fetch_spread_data(base_url: str, symbols: list[str], timeout: int, category: str = "linear") -> dict[str, float]:
@@ -564,7 +614,8 @@ def fetch_spread_data(base_url: str, symbols: list[str], timeout: int, category:
                                     mid = (a + b) / 2
                                     if mid > 0:
                                         found[sym] = (a - b) / mid
-                        except Exception:
+                        except (ValueError, TypeError) as e:
+                            # Erreur de conversion numérique - ignorer silencieusement
                             pass
                 # Fin pagination
                 next_cursor = result.get("nextPageCursor")
@@ -574,12 +625,32 @@ def fetch_spread_data(base_url: str, symbols: list[str], timeout: int, category:
                 if not next_cursor:
                     break
                 cursor = next_cursor
-        except Exception as e:
-            # On ne stoppe pas le flux complet: on tente une récupération unitaire pour les manquants
+        except (httpx.RequestError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            # Erreurs réseau/HTTP spécifiques
+            try:
+                from logging_setup import setup_logging
+                setup_logging().error(
+                    f"Erreur réseau spread paginé page={page_index} category={category}: {type(e).__name__}: {e}"
+                )
+            except Exception:
+                pass
+            break
+        except (ValueError, TypeError, KeyError) as e:
+            # Erreurs de données/parsing
             try:
                 from logging_setup import setup_logging
                 setup_logging().warning(
-                    f"⚠️ Spread paginé erreur page={page_index} category={category} error={e}"
+                    f"Erreur données spread paginé page={page_index} category={category}: {type(e).__name__}: {e}"
+                )
+            except Exception:
+                pass
+            break
+        except Exception as e:
+            # Erreur inattendue
+            try:
+                from logging_setup import setup_logging
+                setup_logging().error(
+                    f"Erreur inattendue spread paginé page={page_index} category={category}: {type(e).__name__}: {e}"
                 )
             except Exception:
                 pass
@@ -591,7 +662,8 @@ def fetch_spread_data(base_url: str, symbols: list[str], timeout: int, category:
             val = _fetch_single_spread(base_url, s, timeout, category)
             if val is not None:
                 found[s] = val
-        except Exception:
+        except (httpx.RequestError, ValueError, TypeError) as e:
+            # Erreurs réseau ou conversion - ignorer silencieusement pour le fallback
             pass
     return found
 
@@ -948,29 +1020,8 @@ def filter_by_funding(perp_data: dict, funding_map: dict, funding_min: float | N
             
             # Appliquer le filtre temporel si demandé
             if funding_time_min_minutes is not None or funding_time_max_minutes is not None:
-                # Convertir next_funding_time en minutes restantes
-                minutes_remaining: float | None = None
-                try:
-                    import datetime
-                    if next_funding_time:
-                        if isinstance(next_funding_time, (int, float)):
-                            target_dt = datetime.datetime.fromtimestamp(float(next_funding_time) / 1000, tz=datetime.timezone.utc)
-                        elif isinstance(next_funding_time, str):
-                            if next_funding_time.isdigit():
-                                target_dt = datetime.datetime.fromtimestamp(float(next_funding_time) / 1000, tz=datetime.timezone.utc)
-                            else:
-                                target_dt = datetime.datetime.fromisoformat(next_funding_time.replace('Z', '+00:00'))
-                                if target_dt.tzinfo is None:
-                                    target_dt = target_dt.replace(tzinfo=datetime.timezone.utc)
-                        else:
-                            target_dt = None
-                        if target_dt is not None:
-                            now_dt = datetime.datetime.now(datetime.timezone.utc)
-                            delta_sec = (target_dt - now_dt).total_seconds()
-                            if delta_sec > 0:
-                                minutes_remaining = delta_sec / 60.0
-                except Exception:
-                    minutes_remaining = None
+                # Utiliser la fonction centralisée pour calculer les minutes restantes
+                minutes_remaining = calculate_funding_minutes_remaining(next_funding_time)
                 
                 # Si pas de temps valide alors qu'on filtre, rejeter
                 if minutes_remaining is None:
@@ -1010,6 +1061,7 @@ class PriceTracker:
         # self.start_time supprimé: on s'appuie uniquement sur nextFundingTime côté Bybit
         self.realtime_data = {}  # Données en temps réel via WebSocket {symbol: {funding_rate, volume24h, bid1, ask1, next_funding_time, ...}}
         self._realtime_lock = threading.Lock()  # Verrou pour protéger realtime_data
+        self._first_display = True  # Indicateur pour la première exécution de l'affichage
         self._ws_conns: list[PublicWSConnection] = []
         self._ws_threads: list[threading.Thread] = []
         self._vol_refresh_thread: threading.Thread | None = None
@@ -1098,7 +1150,9 @@ class PriceTracker:
         snapshot = get_snapshot()
         
         if not snapshot:
-            print("Aucune donnée de prix disponible")
+            if self._first_display:
+                print("⏳ En attente de la première donnée WebSocket…")
+                self._first_display = False  # Ne plus afficher ce message
             return
         
         # Calculer les largeurs de colonnes

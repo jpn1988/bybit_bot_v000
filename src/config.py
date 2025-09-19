@@ -20,7 +20,9 @@ def get_settings():
         "BYBIT_API_KEY", "BYBIT_API_SECRET", "TESTNET", "TIMEOUT", "LOG_LEVEL",
         "SPREAD_MAX", "VOLUME_MIN_MILLIONS", "VOLATILITY_MIN", "VOLATILITY_MAX",
         "FUNDING_MIN", "FUNDING_MAX", "CATEGORY", "LIMIT", "VOLATILITY_TTL_SEC",
-        "FUNDING_TIME_MIN_MINUTES", "FUNDING_TIME_MAX_MINUTES", "WS_PRIV_CHANNELS"
+        "FUNDING_TIME_MIN_MINUTES", "FUNDING_TIME_MAX_MINUTES", "WS_PRIV_CHANNELS",
+        # Variables de rate limiting public (utilisées par volatility.get_async_rate_limiter)
+        "PUBLIC_HTTP_MAX_CALLS_PER_SEC", "PUBLIC_HTTP_WINDOW_SECONDS",
     }
     
     # Détecter les variables d'environnement inconnues

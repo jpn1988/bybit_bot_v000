@@ -3,7 +3,7 @@
 import os
 import sys
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from pathlib import Path
 
 # Ajouter le répertoire src au path pour les imports

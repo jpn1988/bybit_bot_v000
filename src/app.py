@@ -53,7 +53,6 @@ class Orchestrator:
         signal.signal(signal.SIGINT, self._signal_handler)
         
         # Channels privés par défaut (configurable via env WS_PRIV_CHANNELS)
-        import os
         default_channels = "wallet,order"
         env_channels = os.getenv("WS_PRIV_CHANNELS", default_channels)
         self.ws_private_channels = [ch.strip() for ch in env_channels.split(",") if ch.strip()]

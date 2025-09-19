@@ -150,8 +150,16 @@ class BybitClient:
                     break
                 delay = backoff_base * (2 ** (attempts - 1)) + random.uniform(0, 0.25)
                 time.sleep(delay)
+            except (httpx.RequestError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                # Erreurs réseau/HTTP spécifiques
+                last_error = e
+                break
+            except (ValueError, TypeError, KeyError) as e:
+                # Erreurs de données/parsing
+                last_error = e
+                break
             except Exception as e:
-                # Propager les erreurs connues formatées
+                # Erreur inattendue - propager si c'est une erreur formatée connue
                 if "Erreur" in str(e):
                     raise
                 last_error = e

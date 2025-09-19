@@ -57,7 +57,10 @@ def get_async_rate_limiter() -> AsyncRateLimiter:
         import os
         max_calls = int(os.getenv("PUBLIC_HTTP_MAX_CALLS_PER_SEC", "5"))
         window = float(os.getenv("PUBLIC_HTTP_WINDOW_SECONDS", "1"))
-    except Exception:
+    except (ValueError, TypeError) as e:
+        # Log de l'erreur de conversion pour debugging
+        import logging
+        logging.getLogger(__name__).warning(f"Erreur conversion variables d'environnement rate limiter: {e}")
         max_calls = 5
         window = 1.0
     return AsyncRateLimiter(max_calls=max_calls, window_seconds=window)
@@ -145,7 +148,8 @@ async def compute_volatility_batch_async(bybit_client, symbols: List[str], timeo
                             f"timeout={timeout}s error={result}"
                         )
                     )
-                except Exception:
+                except (ImportError, AttributeError) as e:
+                    # Erreur de logging - ne pas bloquer le flux
                     pass
                 volatility_results[symbol] = None
             else:
@@ -192,7 +196,8 @@ async def _compute_single_volatility_async(session: aiohttp.ClientSession, base_
                             f"interval={params['interval']} timeout={session.timeout.total} status={response.status}"
                         )
                     )
-                except Exception:
+                except (ImportError, AttributeError) as e:
+                    # Erreur de logging - ne pas bloquer le flux
                     pass
                 return None
             
@@ -208,7 +213,8 @@ async def _compute_single_volatility_async(session: aiohttp.ClientSession, base_
                             f"interval={params['interval']} retCode={data.get('retCode')} retMsg=\"{data.get('retMsg','')}\""
                         )
                     )
-                except Exception:
+                except (ImportError, AttributeError) as e:
+                    # Erreur de logging - ne pas bloquer le flux
                     pass
                 return None
             
@@ -252,6 +258,13 @@ async def _compute_single_volatility_async(session: aiohttp.ClientSession, base_
             
             return vol_pct
             
-    except Exception:
-        # En cas d'erreur, retourner None
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError, KeyError, IndexError) as e:
+        # Erreurs spécifiques : réseau, timeout, conversion, accès données
+        import logging
+        logging.getLogger(__name__).error(f"Erreur calcul volatilité pour {symbol}: {type(e).__name__}: {e}")
+        return None
+    except Exception as e:
+        # Erreur inattendue - log pour debugging
+        import logging
+        logging.getLogger(__name__).error(f"Erreur inattendue calcul volatilité pour {symbol}: {type(e).__name__}: {e}")
         return None

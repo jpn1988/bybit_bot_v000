@@ -1,8 +1,6 @@
 """Tests pour le système de métriques."""
 
 import pytest
-import time
-import threading
 from unittest.mock import patch, Mock
 from metrics import MetricsCollector, record_api_call, record_filter_result, record_ws_connection, record_ws_error, get_metrics_summary, reset_metrics
 from metrics_monitor import MetricsMonitor
