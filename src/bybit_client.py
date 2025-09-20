@@ -7,12 +7,19 @@ import httpx
 import random
 from config import get_settings
 from metrics import record_api_call
+from http_client_manager import get_http_client
 
 
 class BybitClient:
     """Client pour interagir avec l'API privée Bybit v5."""
     
-    def __init__(self, testnet: bool = True, timeout: int = 10, api_key: str | None = None, api_secret: str | None = None):
+    def __init__(
+        self, 
+        testnet: bool = True, 
+        timeout: int = 10, 
+        api_key: str | None = None, 
+        api_secret: str | None = None
+    ):
         """
         Initialise le client Bybit.
         
@@ -97,53 +104,59 @@ class BybitClient:
         while attempts < max_attempts:
             attempts += 1
             try:
-                with httpx.Client(timeout=self.timeout) as client:
-                    response = client.get(url, headers=headers)
-                    
-                    # HTTP errors (4xx/5xx)
-                    if response.status_code >= 500:
-                        raise httpx.HTTPStatusError("Server error", request=None, response=response)
-                    if response.status_code == 429:
-                        # Respecter Retry-After si présent
+                client = get_http_client(timeout=self.timeout)
+                response = client.get(url, headers=headers)
+                
+                # HTTP errors (4xx/5xx)
+                if response.status_code >= 500:
+                    raise httpx.HTTPStatusError("Server error", request=None, response=response)
+                if response.status_code == 429:
+                    # Respecter Retry-After si présent
+                    retry_after = response.headers.get("Retry-After")
+                    delay = (float(retry_after) if retry_after 
+                            else backoff_base * (2 ** (attempts - 1)))
+                    delay += random.uniform(0, 0.25)
+                    time.sleep(delay)
+                    continue
+                if response.status_code >= 400:
+                    # Erreurs client non récupérables
+                    detail = response.text[:100]
+                    raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{detail}\"")
+                
+                data = response.json()
+                
+                # API retCode handling
+                if data.get("retCode") != 0:
+                    ret_code = data.get("retCode")
+                    ret_msg = data.get("retMsg", "")
+                    if ret_code in [10005, 10006]:
+                        raise RuntimeError(
+                            "Authentification échouée : clé/secret invalides ou signature incorrecte"
+                        )
+                    elif ret_code == 10018:
+                        raise RuntimeError("Accès refusé : IP non autorisée (whitelist requise dans Bybit)")
+                    elif ret_code == 10017:
+                        raise RuntimeError(
+                            "Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)"
+                        )
+                    elif ret_code == 10016:
+                        # Rate limit: backoff + jitter puis retry
                         retry_after = response.headers.get("Retry-After")
-                        delay = float(retry_after) if retry_after else backoff_base * (2 ** (attempts - 1))
+                        delay = (float(retry_after) if retry_after 
+                                else backoff_base * (2 ** (attempts - 1)))
                         delay += random.uniform(0, 0.25)
                         time.sleep(delay)
-                        continue
-                    if response.status_code >= 400:
-                        # Erreurs client non récupérables
-                        detail = response.text[:100]
-                        raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{detail}\"")
-                    
-                    data = response.json()
-                    
-                    # API retCode handling
-                    if data.get("retCode") != 0:
-                        ret_code = data.get("retCode")
-                        ret_msg = data.get("retMsg", "")
-                        if ret_code in [10005, 10006]:
-                            raise RuntimeError("Authentification échouée : clé/secret invalides ou signature incorrecte")
-                        elif ret_code == 10018:
-                            raise RuntimeError("Accès refusé : IP non autorisée (whitelist requise dans Bybit)")
-                        elif ret_code == 10017:
-                            raise RuntimeError("Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)")
-                        elif ret_code == 10016:
-                            # Rate limit: backoff + jitter puis retry
-                            retry_after = response.headers.get("Retry-After")
-                            delay = float(retry_after) if retry_after else backoff_base * (2 ** (attempts - 1))
-                            delay += random.uniform(0, 0.25)
-                            time.sleep(delay)
-                            if attempts < max_attempts:
-                                continue
-                            raise RuntimeError("Limite de requêtes atteinte : ralentis ou réessaie plus tard")
-                        else:
-                            raise RuntimeError(f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\"")
-                    
-                    # Enregistrer les métriques de succès
-                    latency = time.time() - start_time
-                    record_api_call(latency, success=True)
-                    
-                    return data.get("result", {})
+                        if attempts < max_attempts:
+                            continue
+                        raise RuntimeError("Limite de requêtes atteinte : ralentis ou réessaie plus tard")
+                    else:
+                        raise RuntimeError(f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\"")
+                
+                # Enregistrer les métriques de succès
+                latency = time.time() - start_time
+                record_api_call(latency, success=True)
+                
+                return data.get("result", {})
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 last_error = e
                 if attempts >= max_attempts:

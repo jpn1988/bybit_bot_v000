@@ -25,7 +25,9 @@ import yaml
 import httpx
 import websocket
 import asyncio
+import atexit
 from http_utils import get_rate_limiter
+from http_client_manager import get_http_client, close_all_http_clients
 try:
     from .config import get_settings
 except ImportError:
@@ -398,60 +400,60 @@ def fetch_funding_map(base_url: str, category: str, timeout: int) -> dict[str, f
             page_index += 1
             # Respecter le rate limit avant chaque appel
             rate_limiter.acquire()
-            with httpx.Client(timeout=timeout) as client:
-                response = client.get(url, params=params)
-                
-                # Vérifier le statut HTTP
-                if response.status_code >= 400:
-                    raise RuntimeError(
-                        (
-                            f"Erreur HTTP Bybit GET {url} | category={category} limit={params.get('limit')} "
-                            f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
-                            f"collected={len(funding_map)} | status={response.status_code} "
-                            f"detail=\"{response.text[:200]}\""
-                        )
+            client = get_http_client(timeout=timeout)
+            response = client.get(url, params=params)
+            
+            # Vérifier le statut HTTP
+            if response.status_code >= 400:
+                raise RuntimeError(
+                    (
+                        f"Erreur HTTP Bybit GET {url} | category={category} limit={params.get('limit')} "
+                        f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
+                        f"collected={len(funding_map)} | status={response.status_code} "
+                        f"detail=\"{response.text[:200]}\""
                     )
-                
-                data = response.json()
-                
-                # Vérifier le retCode
-                if data.get("retCode") != 0:
-                    ret_code = data.get("retCode")
-                    ret_msg = data.get("retMsg", "")
-                    raise RuntimeError(
-                        (
-                            f"Erreur API Bybit GET {url} | category={category} limit={params.get('limit')} "
-                            f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
-                            f"collected={len(funding_map)} | retCode={ret_code} retMsg=\"{ret_msg}\""
-                        )
+                )
+            
+            data = response.json()
+            
+            # Vérifier le retCode
+            if data.get("retCode") != 0:
+                ret_code = data.get("retCode")
+                ret_msg = data.get("retMsg", "")
+                raise RuntimeError(
+                    (
+                        f"Erreur API Bybit GET {url} | category={category} limit={params.get('limit')} "
+                        f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
+                        f"collected={len(funding_map)} | retCode={ret_code} retMsg=\"{ret_msg}\""
                     )
+                )
+            
+            result = data.get("result", {})
+            tickers = result.get("list", [])
+            
+            # Extraire les funding rates, volumes et temps de funding
+            for ticker in tickers:
+                symbol = ticker.get("symbol", "")
+                funding_rate = ticker.get("fundingRate")
+                volume_24h = ticker.get("volume24h")
+                next_funding_time = ticker.get("nextFundingTime")
                 
-                result = data.get("result", {})
-                tickers = result.get("list", [])
-                
-                # Extraire les funding rates, volumes et temps de funding
-                for ticker in tickers:
-                    symbol = ticker.get("symbol", "")
-                    funding_rate = ticker.get("fundingRate")
-                    volume_24h = ticker.get("volume24h")
-                    next_funding_time = ticker.get("nextFundingTime")
-                    
-                    if symbol and funding_rate is not None:
-                        try:
-                            funding_map[symbol] = {
-                                "funding": float(funding_rate),
-                                "volume": float(volume_24h) if volume_24h is not None else 0.0,
-                                "next_funding_time": next_funding_time
-                            }
-                        except (ValueError, TypeError):
-                            # Ignorer si les données ne sont pas convertibles en float
-                            pass
-                
-                # Vérifier s'il y a une page suivante
-                next_page_cursor = result.get("nextPageCursor")
-                if not next_page_cursor:
-                    break
-                cursor = next_page_cursor
+                if symbol and funding_rate is not None:
+                    try:
+                        funding_map[symbol] = {
+                            "funding": float(funding_rate),
+                            "volume": float(volume_24h) if volume_24h is not None else 0.0,
+                            "next_funding_time": next_funding_time
+                        }
+                    except (ValueError, TypeError):
+                        # Ignorer si les données ne sont pas convertibles en float
+                        pass
+            
+            # Vérifier s'il y a une page suivante
+            next_page_cursor = result.get("nextPageCursor")
+            if not next_page_cursor:
+                break
+            cursor = next_page_cursor
                 
         except httpx.RequestError as e:
             raise RuntimeError(
@@ -581,50 +583,50 @@ def fetch_spread_data(base_url: str, symbols: list[str], timeout: int, category:
             params.pop("cursor", None)
         try:
             rate_limiter.acquire()
-            with httpx.Client(timeout=timeout) as client:
-                resp = client.get(url, params=params)
-                if resp.status_code >= 400:
-                    raise RuntimeError(
-                        (
-                            f"Erreur HTTP Bybit GET {url} | category={category} page={page_index} "
-                            f"limit={params.get('limit')} cursor={params.get('cursor','-')} status={resp.status_code} "
-                            f"detail=\"{resp.text[:200]}\""
-                        )
+            client = get_http_client(timeout=timeout)
+            resp = client.get(url, params=params)
+            if resp.status_code >= 400:
+                raise RuntimeError(
+                    (
+                        f"Erreur HTTP Bybit GET {url} | category={category} page={page_index} "
+                        f"limit={params.get('limit')} cursor={params.get('cursor','-')} status={resp.status_code} "
+                        f"detail=\"{resp.text[:200]}\""
                     )
-                data = resp.json()
-                if data.get("retCode") != 0:
-                    raise RuntimeError(
-                        (
-                            f"Erreur API Bybit GET {url} | category={category} page={page_index} "
-                            f"retCode={data.get('retCode')} retMsg=\"{data.get('retMsg','')}\""
-                        )
+                )
+            data = resp.json()
+            if data.get("retCode") != 0:
+                raise RuntimeError(
+                    (
+                        f"Erreur API Bybit GET {url} | category={category} page={page_index} "
+                        f"retCode={data.get('retCode')} retMsg=\"{data.get('retMsg','')}\""
                     )
-                result = data.get("result", {})
-                tickers = result.get("list", [])
-                for t in tickers:
-                    sym = t.get("symbol")
-                    if sym in wanted:
-                        bid1 = t.get("bid1Price")
-                        ask1 = t.get("ask1Price")
-                        try:
-                            if bid1 is not None and ask1 is not None:
-                                b = float(bid1)
-                                a = float(ask1)
-                                if b > 0 and a > 0:
-                                    mid = (a + b) / 2
-                                    if mid > 0:
-                                        found[sym] = (a - b) / mid
-                        except (ValueError, TypeError) as e:
-                            # Erreur de conversion numérique - ignorer silencieusement
-                            pass
-                # Fin pagination
-                next_cursor = result.get("nextPageCursor")
-                # Arrêt anticipé si on a tout trouvé
-                if len(found) >= len(wanted):
-                    break
-                if not next_cursor:
-                    break
-                cursor = next_cursor
+                )
+            result = data.get("result", {})
+            tickers = result.get("list", [])
+            for t in tickers:
+                sym = t.get("symbol")
+                if sym in wanted:
+                    bid1 = t.get("bid1Price")
+                    ask1 = t.get("ask1Price")
+                    try:
+                        if bid1 is not None and ask1 is not None:
+                            b = float(bid1)
+                            a = float(ask1)
+                            if b > 0 and a > 0:
+                                mid = (a + b) / 2
+                                if mid > 0:
+                                    found[sym] = (a - b) / mid
+                    except (ValueError, TypeError) as e:
+                        # Erreur de conversion numérique - ignorer silencieusement
+                        pass
+            # Fin pagination
+            next_cursor = result.get("nextPageCursor")
+            # Arrêt anticipé si on a tout trouvé
+            if len(found) >= len(wanted):
+                break
+            if not next_cursor:
+                break
+            cursor = next_cursor
         except (httpx.RequestError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
             # Erreurs réseau/HTTP spécifiques
             try:
@@ -696,71 +698,71 @@ def _process_batch_spread(base_url: str, symbol_batch: list[str], timeout: int, 
         # Respecter le rate limiter global
         rate_limiter = get_rate_limiter()
         rate_limiter.acquire()
-        with httpx.Client(timeout=timeout) as client:
-            response = client.get(url, params=params)
+        client = get_http_client(timeout=timeout)
+        response = client.get(url, params=params)
+        
+        # Vérifier le statut HTTP
+        if response.status_code >= 400:
+            sample = ",".join(symbol_batch[:5])
+            raise RuntimeError(
+                (
+                    f"Erreur HTTP Bybit GET {url} | category={category} batch_idx={batch_idx} "
+                    f"batch_size={len(symbol_batch)} sample=[{sample}] timeout={timeout}s "
+                    f"status={response.status_code} detail=\"{response.text[:200]}\""
+                )
+            )
+        
+        data = response.json()
+        
+        # Vérifier le retCode
+        if data.get("retCode") != 0:
+            ret_code = data.get("retCode")
+            ret_msg = data.get("retMsg", "")
             
-            # Vérifier le statut HTTP
-            if response.status_code >= 400:
+            # Si erreur de symbole invalide, essayer un par un
+            if ret_code == 10001 and "symbol invalid" in ret_msg.lower():
+                # Récupérer les spreads un par un pour ce batch
+                for symbol in symbol_batch:
+                    try:
+                        single_spread = _fetch_single_spread(base_url, symbol, timeout, category)
+                        if single_spread:
+                            batch_spread_data[symbol] = single_spread
+                    except Exception:
+                        # Ignorer les symboles qui échouent
+                        pass
+                return batch_spread_data
+            else:
                 sample = ",".join(symbol_batch[:5])
                 raise RuntimeError(
                     (
-                        f"Erreur HTTP Bybit GET {url} | category={category} batch_idx={batch_idx} "
+                        f"Erreur API Bybit GET {url} | category={category} batch_idx={batch_idx} "
                         f"batch_size={len(symbol_batch)} sample=[{sample}] timeout={timeout}s "
-                        f"status={response.status_code} detail=\"{response.text[:200]}\""
+                        f"retCode={ret_code} retMsg=\"{ret_msg}\""
                     )
                 )
+        
+        result = data.get("result", {})
+        tickers = result.get("list", [])
+        
+        # Extraire les données de spread
+        for ticker in tickers:
+            symbol = ticker.get("symbol", "")
+            bid1_price = ticker.get("bid1Price")
+            ask1_price = ticker.get("ask1Price")
             
-            data = response.json()
-            
-            # Vérifier le retCode
-            if data.get("retCode") != 0:
-                ret_code = data.get("retCode")
-                ret_msg = data.get("retMsg", "")
-                
-                # Si erreur de symbole invalide, essayer un par un
-                if ret_code == 10001 and "symbol invalid" in ret_msg.lower():
-                    # Récupérer les spreads un par un pour ce batch
-                    for symbol in symbol_batch:
-                        try:
-                            single_spread = _fetch_single_spread(base_url, symbol, timeout, category)
-                            if single_spread:
-                                batch_spread_data[symbol] = single_spread
-                        except Exception:
-                            # Ignorer les symboles qui échouent
-                            pass
-                    return batch_spread_data
-                else:
-                    sample = ",".join(symbol_batch[:5])
-                    raise RuntimeError(
-                        (
-                            f"Erreur API Bybit GET {url} | category={category} batch_idx={batch_idx} "
-                            f"batch_size={len(symbol_batch)} sample=[{sample}] timeout={timeout}s "
-                            f"retCode={ret_code} retMsg=\"{ret_msg}\""
-                        )
-                    )
-            
-            result = data.get("result", {})
-            tickers = result.get("list", [])
-            
-            # Extraire les données de spread
-            for ticker in tickers:
-                symbol = ticker.get("symbol", "")
-                bid1_price = ticker.get("bid1Price")
-                ask1_price = ticker.get("ask1Price")
-                
-                if symbol and bid1_price is not None and ask1_price is not None:
-                    try:
-                        bid1 = float(bid1_price)
-                        ask1 = float(ask1_price)
-                        
-                        # Calculer le spread en pourcentage
-                        # spread_pct = (ask1 - bid1) / ((ask1 + bid1)/2)
-                        if bid1 > 0 and ask1 > 0:
-                            spread_pct = (ask1 - bid1) / ((ask1 + bid1) / 2)
-                            batch_spread_data[symbol] = spread_pct
-                    except (ValueError, TypeError, ZeroDivisionError):
-                        # Ignorer si les données ne sont pas convertibles ou si division par zéro
-                        pass
+            if symbol and bid1_price is not None and ask1_price is not None:
+                try:
+                    bid1 = float(bid1_price)
+                    ask1 = float(ask1_price)
+                    
+                    # Calculer le spread en pourcentage
+                    # spread_pct = (ask1 - bid1) / ((ask1 + bid1)/2)
+                    if bid1 > 0 and ask1 > 0:
+                        spread_pct = (ask1 - bid1) / ((ask1 + bid1) / 2)
+                        batch_spread_data[symbol] = spread_pct
+                except (ValueError, TypeError, ZeroDivisionError):
+                    # Ignorer si les données ne sont pas convertibles ou si division par zéro
+                    pass
                 
     except httpx.RequestError as e:
         sample = ",".join(symbol_batch[:5])
@@ -807,49 +809,49 @@ def _fetch_single_spread(base_url: str, symbol: str, timeout: int, category: str
         
         rate_limiter = get_rate_limiter()
         rate_limiter.acquire()
-        with httpx.Client(timeout=timeout) as client:
-            response = client.get(url, params=params)
-            
-            if response.status_code >= 400:
-                raise RuntimeError(
-                    (
-                        f"Erreur HTTP Bybit GET {url} | category={category} symbol={symbol} "
-                        f"timeout={timeout}s status={response.status_code} detail=\"{response.text[:200]}\""
-                    )
+        client = get_http_client(timeout=timeout)
+        response = client.get(url, params=params)
+        
+        if response.status_code >= 400:
+            raise RuntimeError(
+                (
+                    f"Erreur HTTP Bybit GET {url} | category={category} symbol={symbol} "
+                    f"timeout={timeout}s status={response.status_code} detail=\"{response.text[:200]}\""
                 )
-            
-            data = response.json()
-            
-            if data.get("retCode") != 0:
-                ret_code = data.get("retCode")
-                ret_msg = data.get("retMsg", "")
-                raise RuntimeError(
-                    (
-                        f"Erreur API Bybit GET {url} | category={category} symbol={symbol} "
-                        f"timeout={timeout}s retCode={ret_code} retMsg=\"{ret_msg}\""
-                    )
+            )
+        
+        data = response.json()
+        
+        if data.get("retCode") != 0:
+            ret_code = data.get("retCode")
+            ret_msg = data.get("retMsg", "")
+            raise RuntimeError(
+                (
+                    f"Erreur API Bybit GET {url} | category={category} symbol={symbol} "
+                    f"timeout={timeout}s retCode={ret_code} retMsg=\"{ret_msg}\""
                 )
-            
-            result = data.get("result", {})
-            tickers = result.get("list", [])
-            
-            if not tickers:
-                return None
-            
-            ticker = tickers[0]
-            bid1_price = ticker.get("bid1Price")
-            ask1_price = ticker.get("ask1Price")
-            
-            if bid1_price is not None and ask1_price is not None:
-                try:
-                    bid1 = float(bid1_price)
-                    ask1 = float(ask1_price)
-                    
-                    if bid1 > 0 and ask1 > 0:
-                        spread_pct = (ask1 - bid1) / ((ask1 + bid1) / 2)
-                        return spread_pct
-                except (ValueError, TypeError, ZeroDivisionError):
-                    pass
+            )
+        
+        result = data.get("result", {})
+        tickers = result.get("list", [])
+        
+        if not tickers:
+            return None
+        
+        ticker = tickers[0]
+        bid1_price = ticker.get("bid1Price")
+        ask1_price = ticker.get("ask1Price")
+        
+        if bid1_price is not None and ask1_price is not None:
+            try:
+                bid1 = float(bid1_price)
+                ask1 = float(ask1_price)
+                
+                if bid1 > 0 and ask1 > 0:
+                    spread_pct = (ask1 - bid1) / ((ask1 + bid1) / 2)
+                    return spread_pct
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass
         
         return None
         
@@ -883,7 +885,16 @@ def filter_by_spread(symbols_data: list[tuple[str, float, float, str]], spread_d
     return filtered_symbols
 
 
-async def filter_by_volatility_async(symbols_data: list[tuple[str, float, float, str, float]], bybit_client, volatility_min: float, volatility_max: float, logger, volatility_cache: dict, ttl_seconds: int | None = None, symbol_categories: dict[str, str] | None = None) -> list[tuple[str, float, float, str, float]]:
+async def filter_by_volatility_async(
+    symbols_data: list[tuple[str, float, float, str, float]], 
+    bybit_client, 
+    volatility_min: float, 
+    volatility_max: float, 
+    logger, 
+    volatility_cache: dict, 
+    ttl_seconds: int | None = None, 
+    symbol_categories: dict[str, str] | None = None
+) -> list[tuple[str, float, float, str, float]]:
     """
     Calcule la volatilité 5 minutes pour tous les symboles et applique les filtres si définis.
     OPTIMISÉ: Utilise compute_volatility_batch_async() pour paralléliser les appels API.
@@ -948,40 +959,66 @@ async def filter_by_volatility_async(symbols_data: list[tuple[str, float, float,
                 if rejected_reason:
                     rejected_count += 1
                     continue
+            else:
+                # Symbole sans volatilité calculée - le rejeter si des filtres sont actifs
+                rejected_count += 1
+                continue
         
         # Ajouter le symbole avec sa volatilité
         filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct, vol_pct))
     
-    # Log des résultats
+    # Log des résultats avec format cohérent
     kept_count = len(filtered_symbols)
     threshold_info = []
     if volatility_min is not None:
         threshold_info.append(f"min={volatility_min:.2%}")
     if volatility_max is not None:
         threshold_info.append(f"max={volatility_max:.2%}")
-    threshold_str = " | ".join(threshold_info) if threshold_info else "aucun"
-    logger.info(f"✅ Calcul volatilité async: gardés={kept_count} | rejetés={rejected_count} (seuils: {threshold_str})")
+    threshold_str = " | ".join(threshold_info) if threshold_info else "aucun seuil"
+    logger.info(f"✅ Filtre volatilité : gardés={kept_count} | rejetés={rejected_count} (seuils {threshold_str})")
     
     return filtered_symbols
 
 
-def filter_by_volatility(symbols_data: list[tuple[str, float, float, str, float]], bybit_client, volatility_min: float, volatility_max: float, logger, volatility_cache: dict, ttl_seconds: int | None = None, symbol_categories: dict[str, str] | None = None) -> list[tuple[str, float, float, str, float]]:
+def filter_by_volatility(
+    symbols_data: list[tuple[str, float, float, str, float]], 
+    bybit_client, 
+    volatility_min: float, 
+    volatility_max: float, 
+    logger, 
+    volatility_cache: dict, 
+    ttl_seconds: int | None = None, 
+    symbol_categories: dict[str, str] | None = None
+) -> list[tuple[str, float, float, str, float]]:
     """
     Version synchrone de filter_by_volatility pour compatibilité.
     Utilise asyncio.run() pour exécuter la version async.
     """
-    return asyncio.run(filter_by_volatility_async(symbols_data, bybit_client, volatility_min, volatility_max, logger, volatility_cache, ttl_seconds, symbol_categories))
+    return asyncio.run(filter_by_volatility_async(
+        symbols_data, bybit_client, volatility_min, volatility_max, 
+        logger, volatility_cache, ttl_seconds, symbol_categories
+    ))
 
 
-def filter_by_funding(perp_data: dict, funding_map: dict, funding_min: float | None, funding_max: float | None, volume_min: float | None, volume_min_millions: float | None, limite: int | None, funding_time_min_minutes: int | None = None, funding_time_max_minutes: int | None = None) -> list[tuple[str, float, float, str]]:
+def filter_by_funding(
+    perp_data: dict, 
+    funding_map: dict, 
+    funding_min: float | None, 
+    funding_max: float | None, 
+    volume_min: float | None, 
+    volume_min_millions: float | None, 
+    limite: int | None, 
+    funding_time_min_minutes: int | None = None, 
+    funding_time_max_minutes: int | None = None
+) -> list[tuple[str, float, float, str]]:
     """
     Filtre les symboles par funding, volume et fenêtre temporelle avant funding, puis trie par |funding| décroissant.
     
     Args:
         perp_data (dict): Données des perpétuels (linear, inverse, total)
         funding_map (dict): Dictionnaire des funding rates, volumes et temps de funding
-        funding_min (float | None): Funding minimum
-        funding_max (float | None): Funding maximum
+        funding_min (float | None): Funding minimum en valeur absolue (ex: 0.01 = 1%)
+        funding_max (float | None): Funding maximum en valeur absolue (ex: 0.05 = 5%)
         volume_min (float | None): Volume minimum (ancien format)
         volume_min_millions (float | None): Volume minimum en millions (nouveau format)
         limite (int | None): Limite du nombre d'éléments
@@ -990,6 +1027,10 @@ def filter_by_funding(perp_data: dict, funding_map: dict, funding_min: float | N
         
     Returns:
         list[tuple[str, float, float, str]]: Liste des (symbol, funding, volume, funding_time_remaining) triés
+        
+    Note:
+        Les filtres funding_min et funding_max utilisent la valeur absolue du funding.
+        Ainsi, un funding de +0.02% ou -0.02% passe tous les deux si 0.01 <= |funding| <= 0.05.
     """
     # Récupérer tous les symboles perpétuels
     all_symbols = list(set(perp_data["linear"] + perp_data["inverse"]))
@@ -1010,10 +1051,10 @@ def filter_by_funding(perp_data: dict, funding_map: dict, funding_min: float | N
             volume = data["volume"]
             next_funding_time = data.get("next_funding_time")
             
-            # Appliquer les bornes funding/volume
-            if funding_min is not None and funding < funding_min:
+            # Appliquer les bornes funding/volume (utiliser valeur absolue pour funding)
+            if funding_min is not None and abs(funding) < funding_min:
                 continue
-            if funding_max is not None and funding > funding_max:
+            if funding_max is not None and abs(funding) > funding_max:
                 continue
             if effective_volume_min is not None and volume < effective_volume_min:
                 continue
@@ -1026,9 +1067,11 @@ def filter_by_funding(perp_data: dict, funding_map: dict, funding_min: float | N
                 # Si pas de temps valide alors qu'on filtre, rejeter
                 if minutes_remaining is None:
                     continue
-                if funding_time_min_minutes is not None and minutes_remaining < float(funding_time_min_minutes):
+                if (funding_time_min_minutes is not None and 
+                    minutes_remaining < float(funding_time_min_minutes)):
                     continue
-                if funding_time_max_minutes is not None and minutes_remaining > float(funding_time_max_minutes):
+                if (funding_time_max_minutes is not None and 
+                    minutes_remaining > float(funding_time_max_minutes)):
                     continue
             
             # Calculer le temps restant avant le prochain funding (formaté)
@@ -1052,6 +1095,9 @@ class PriceTracker:
     def __init__(self):
         self.logger = setup_logging()
         self.running = True
+        
+        # S'assurer que les clients HTTP sont fermés à l'arrêt
+        atexit.register(close_all_http_clients)
         self.ws = None
         self.display_thread = None
         self.symbols = []
@@ -1112,7 +1158,9 @@ class PriceTracker:
                 'mark_price': ticker_data.get('markPrice'),
                 'last_price': ticker_data.get('lastPrice'),
             }
-            if any(incoming[key] is not None for key in ['funding_rate', 'volume24h', 'bid1_price', 'ask1_price', 'next_funding_time']):
+            # Vérifier si des données importantes sont présentes
+            important_keys = ['funding_rate', 'volume24h', 'bid1_price', 'ask1_price', 'next_funding_time']
+            if any(incoming[key] is not None for key in important_keys):
                 with self._realtime_lock:
                     current = self.realtime_data.get(symbol, {})
                     merged = dict(current) if current else {}
@@ -1151,7 +1199,7 @@ class PriceTracker:
         
         if not snapshot:
             if self._first_display:
-                print("⏳ En attente de la première donnée WebSocket…")
+                self.logger.info("⏳ En attente de la première donnée WS…")
                 self._first_display = False  # Ne plus afficher ce message
             return
         
@@ -1166,8 +1214,15 @@ class PriceTracker:
         funding_time_w = 15  # Largeur pour le temps de funding (avec secondes)
         
         # En-tête
-        header = f"{'Symbole':<{symbol_w}} | {'Funding %':>{funding_w}} | {'Volume (M)':>{volume_w}} | {'Spread %':>{spread_w}} | {'Volatilité %':>{volatility_w}} | {'Funding T':>{funding_time_w}}"
-        sep = f"{'-'*symbol_w}-+-{'-'*funding_w}-+-{'-'*volume_w}-+-{'-'*spread_w}-+-{'-'*volatility_w}-+-{'-'*funding_time_w}"
+        header = (
+            f"{'Symbole':<{symbol_w}} | {'Funding %':>{funding_w}} | "
+            f"{'Volume (M)':>{volume_w}} | {'Spread %':>{spread_w}} | "
+            f"{'Volatilité %':>{volatility_w}} | {'Funding T':>{funding_time_w}}"
+        )
+        sep = (
+            f"{'-'*symbol_w}-+-{'-'*funding_w}-+-{'-'*volume_w}-+-"
+            f"{'-'*spread_w}-+-{'-'*volatility_w}-+-{'-'*funding_time_w}"
+        )
         
         print("\n" + header)
         print(sep)
@@ -1279,7 +1334,11 @@ class PriceTracker:
             else:
                 volatility_str = "-"
             
-            line = f"{symbol:<{symbol_w}} | {funding_str:>{funding_w}} | {volume_str:>{volume_w}} | {spread_str:>{spread_w}} | {volatility_str:>{volatility_w}} | {current_funding_time:>{funding_time_w}}"
+            line = (
+                f"{symbol:<{symbol_w}} | {funding_str:>{funding_w}} | "
+                f"{volume_str:>{volume_w}} | {spread_str:>{spread_w}} | "
+                f"{volatility_str:>{volatility_w}} | {current_funding_time:>{funding_time_w}}"
+            )
             print(line)
         
         print()  # Ligne vide après le tableau
@@ -1358,7 +1417,13 @@ class PriceTracker:
         ft_min_display = str(funding_time_min_minutes) if funding_time_min_minutes is not None else "none"
         ft_max_display = str(funding_time_max_minutes) if funding_time_max_minutes is not None else "none"
         
-        self.logger.info(f"🎛️ Filtres | catégorie={categorie} | funding_min={min_display} | funding_max={max_display} | volume_min_millions={volume_display} | spread_max={spread_display} | volatility_min={volatility_min_display} | volatility_max={volatility_max_display} | ft_min(min)={ft_min_display} | ft_max(min)={ft_max_display} | limite={limite_display} | vol_ttl={self.volatility_ttl_sec}s")
+        self.logger.info(
+            f"🎛️ Filtres | catégorie={categorie} | funding_min={min_display} | "
+            f"funding_max={max_display} | volume_min_millions={volume_display} | "
+            f"spread_max={spread_display} | volatility_min={volatility_min_display} | "
+            f"volatility_max={volatility_max_display} | ft_min(min)={ft_min_display} | "
+            f"ft_max(min)={ft_max_display} | limite={limite_display} | vol_ttl={self.volatility_ttl_sec}s"
+        )
         
         # Récupérer les funding rates selon la catégorie
         # OPTIMISATION: fetch_funding_map() utilise maintenant la limite maximum (1000) de l'API
@@ -1370,9 +1435,18 @@ class PriceTracker:
             self.logger.info("📡 Récupération des funding rates pour inverse (optimisé)…")
             funding_map = fetch_funding_map(base_url, "inverse", 10)
         else:  # "both"
-            self.logger.info("📡 Récupération des funding rates pour linear+inverse (optimisé)…")
-            linear_funding = fetch_funding_map(base_url, "linear", 10)
-            inverse_funding = fetch_funding_map(base_url, "inverse", 10)
+            self.logger.info("📡 Récupération des funding rates pour linear+inverse (optimisé: parallèle)…")
+            # Paralléliser les requêtes linear et inverse
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # Lancer les deux requêtes en parallèle
+                linear_future = executor.submit(fetch_funding_map, base_url, "linear", 10)
+                inverse_future = executor.submit(fetch_funding_map, base_url, "inverse", 10)
+                
+                # Attendre les résultats
+                linear_funding = linear_future.result()
+                inverse_funding = inverse_future.result()
+            
             funding_map = {**linear_funding, **inverse_funding}  # Merger (priorité au dernier)
         
         if not funding_map:
@@ -1429,16 +1503,29 @@ class PriceTracker:
                 inverse_symbols_for_spread = [s for s in symbols_to_check if category_of_symbol(s, self.symbol_categories) == "inverse"]
                 
                 # OPTIMISATION: fetch_spread_data() utilise maintenant des batches de 200 et de la parallélisation
-                # Récupérer les spreads pour chaque catégorie
-                if linear_symbols_for_spread:
-                    self.logger.info(f"🔎 Récupération spreads linear (optimisé: batch=200, parallèle) pour {len(linear_symbols_for_spread)} symboles…")
-                    linear_spread_data = fetch_spread_data(base_url, linear_symbols_for_spread, 10, "linear")
-                    spread_data.update(linear_spread_data)
-                
-                if inverse_symbols_for_spread:
-                    self.logger.info(f"🔎 Récupération spreads inverse (optimisé: batch=200, parallèle) pour {len(inverse_symbols_for_spread)} symboles…")
-                    inverse_spread_data = fetch_spread_data(base_url, inverse_symbols_for_spread, 10, "inverse")
-                    spread_data.update(inverse_spread_data)
+                # Paralléliser les requêtes de spreads pour linear et inverse
+                if linear_symbols_for_spread or inverse_symbols_for_spread:
+                    self.logger.info(f"🔎 Récupération spreads (optimisé: batch=200, parallèle) - linear: {len(linear_symbols_for_spread)}, inverse: {len(inverse_symbols_for_spread)}…")
+                    
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=2) as executor:
+                        futures = {}
+                        
+                        # Lancer les requêtes en parallèle si nécessaire
+                        if linear_symbols_for_spread:
+                            futures['linear'] = executor.submit(fetch_spread_data, base_url, linear_symbols_for_spread, 10, "linear")
+                        
+                        if inverse_symbols_for_spread:
+                            futures['inverse'] = executor.submit(fetch_spread_data, base_url, inverse_symbols_for_spread, 10, "inverse")
+                        
+                        # Récupérer les résultats
+                        if 'linear' in futures:
+                            linear_spread_data = futures['linear'].result()
+                            spread_data.update(linear_spread_data)
+                        
+                        if 'inverse' in futures:
+                            inverse_spread_data = futures['inverse'].result()
+                            spread_data.update(inverse_spread_data)
                 
                 final_symbols = filter_by_spread(filtered_symbols, spread_data, spread_max)
                 n2 = len(final_symbols)
@@ -1454,6 +1541,7 @@ class PriceTracker:
                 final_symbols = [(symbol, funding, volume, funding_time_remaining, 0.0) for symbol, funding, volume, funding_time_remaining in filtered_symbols]
         
         # Calculer la volatilité pour tous les symboles (même sans filtre)
+        n_before_volatility = len(final_symbols) if final_symbols else 0
         if final_symbols:
             try:
                 self.logger.info("🔎 Évaluation de la volatilité 5m pour tous les symboles…")
@@ -1467,10 +1555,13 @@ class PriceTracker:
                     ttl_seconds=self.volatility_ttl_sec,
                     symbol_categories=self.symbol_categories,
                 )
-                n2 = len(final_symbols)
+                n_after_volatility = len(final_symbols)
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur lors du calcul de la volatilité : {e}")
+                n_after_volatility = n_before_volatility
                 # Continuer sans le filtre de volatilité
+        else:
+            n_after_volatility = 0
         
         # Appliquer la limite finale
         if limite is not None and len(final_symbols) > limite:
@@ -1481,11 +1572,11 @@ class PriceTracker:
         record_filter_result("funding_volume_time", n1, n0 - n1)
         if spread_max is not None:
             record_filter_result("spread", n2, n1 - n2)
-        record_filter_result("volatility", n2, n2 - n2)  # Pas de rejet par volatilité dans ce cas
-        record_filter_result("final_limit", n3, n2 - n3)
+        record_filter_result("volatility", n_after_volatility, n_before_volatility - n_after_volatility)
+        record_filter_result("final_limit", n3, n_after_volatility - n3)
         
         # Log des comptes
-        self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume/temps = {n1} | après spread = {n2} | après volatilité = {n2} | après tri+limit = {n3}")
+        self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume/temps = {n1} | après spread = {n2} | après volatilité = {n_after_volatility} | après tri+limit = {n3}")
         
         if not final_symbols:
             self.logger.warning("⚠️ Aucun symbole ne correspond aux critères de filtrage")
@@ -1493,22 +1584,54 @@ class PriceTracker:
         
         # Log des symboles retenus
         if final_symbols:
-            symbols_list = [symbol for symbol, _, _, _, _, _ in final_symbols] if len(final_symbols[0]) == 6 else [symbol for symbol, _, _, _, _ in final_symbols] if len(final_symbols[0]) == 5 else [symbol for symbol, _, _, _ in final_symbols] if len(final_symbols[0]) == 4 else [symbol for symbol, _, _ in final_symbols]
+            # Extraire les symboles selon le format du tuple
+            if len(final_symbols[0]) == 6:
+                symbols_list = [symbol for symbol, _, _, _, _, _ in final_symbols]
+            elif len(final_symbols[0]) == 5:
+                symbols_list = [symbol for symbol, _, _, _, _ in final_symbols]
+            elif len(final_symbols[0]) == 4:
+                symbols_list = [symbol for symbol, _, _, _ in final_symbols]
+            else:
+                symbols_list = [symbol for symbol, _, _ in final_symbols]
             self.logger.info(f"🧭 Symboles retenus (Top {n3}) : {symbols_list}")
             
             # Séparer les symboles par catégorie
             if len(final_symbols[0]) == 6:
-                linear_symbols = [symbol for symbol, _, _, _, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "linear"]
-                inverse_symbols = [symbol for symbol, _, _, _, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "inverse"]
+                linear_symbols = [
+                    symbol for symbol, _, _, _, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
+                ]
+                inverse_symbols = [
+                    symbol for symbol, _, _, _, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
+                ]
             elif len(final_symbols[0]) == 5:
-                linear_symbols = [symbol for symbol, _, _, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "linear"]
-                inverse_symbols = [symbol for symbol, _, _, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "inverse"]
+                linear_symbols = [
+                    symbol for symbol, _, _, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
+                ]
+                inverse_symbols = [
+                    symbol for symbol, _, _, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
+                ]
             elif len(final_symbols[0]) == 4:
-                linear_symbols = [symbol for symbol, _, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "linear"]
-                inverse_symbols = [symbol for symbol, _, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "inverse"]
+                linear_symbols = [
+                    symbol for symbol, _, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
+                ]
+                inverse_symbols = [
+                    symbol for symbol, _, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
+                ]
             else:
-                linear_symbols = [symbol for symbol, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "linear"]
-                inverse_symbols = [symbol for symbol, _, _ in final_symbols if category_of_symbol(symbol, self.symbol_categories) == "inverse"]
+                linear_symbols = [
+                    symbol for symbol, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
+                ]
+                inverse_symbols = [
+                    symbol for symbol, _, _ in final_symbols 
+                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
+                ]
             
             self.linear_symbols = linear_symbols
             self.inverse_symbols = inverse_symbols
@@ -1516,16 +1639,28 @@ class PriceTracker:
             # Construire funding_data avec les bonnes données
             if len(final_symbols[0]) == 6:
                 # Format: (symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct)
-                self.funding_data = {symbol: (funding, volume, funding_time_remaining, spread_pct, volatility_pct) for symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct in final_symbols}
+                self.funding_data = {
+                    symbol: (funding, volume, funding_time_remaining, spread_pct, volatility_pct) 
+                    for symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct in final_symbols
+                }
             elif len(final_symbols[0]) == 5:
                 # Format: (symbol, funding, volume, funding_time_remaining, spread_pct)
-                self.funding_data = {symbol: (funding, volume, funding_time_remaining, spread_pct, None) for symbol, funding, volume, funding_time_remaining, spread_pct in final_symbols}
+                self.funding_data = {
+                    symbol: (funding, volume, funding_time_remaining, spread_pct, None) 
+                    for symbol, funding, volume, funding_time_remaining, spread_pct in final_symbols
+                }
             elif len(final_symbols[0]) == 4:
                 # Format: (symbol, funding, volume, funding_time_remaining)
-                self.funding_data = {symbol: (funding, volume, funding_time_remaining, 0.0, None) for symbol, funding, volume, funding_time_remaining in final_symbols}
+                self.funding_data = {
+                    symbol: (funding, volume, funding_time_remaining, 0.0, None) 
+                    for symbol, funding, volume, funding_time_remaining in final_symbols
+                }
             else:
                 # Format: (symbol, funding, volume)
-                self.funding_data = {symbol: (funding, volume, "-", 0.0, None) for symbol, funding, volume in final_symbols}
+                self.funding_data = {
+                    symbol: (funding, volume, "-", 0.0, None) 
+                    for symbol, funding, volume in final_symbols
+                }
             
             # Les données en temps réel seront initialisées uniquement via WebSocket
             # Pas d'initialisation avec des données statiques pour garantir la fraîcheur
@@ -1570,7 +1705,13 @@ class PriceTracker:
 
     def _start_single_connection(self, category: str, symbols: list):
         """Démarre une connexion WebSocket pour une seule catégorie via une instance isolée."""
-        conn = PublicWSConnection(category=category, symbols=symbols, testnet=self.testnet, logger=self.logger, on_ticker_callback=self._handle_ticker)
+        conn = PublicWSConnection(
+            category=category, 
+            symbols=symbols, 
+            testnet=self.testnet, 
+            logger=self.logger, 
+            on_ticker_callback=self._handle_ticker
+        )
         self._ws_conns = [conn]
         # Démarrer l'affichage
         self.display_thread = threading.Thread(target=self._display_loop)
@@ -1586,8 +1727,20 @@ class PriceTracker:
         self.display_thread.daemon = True
         self.display_thread.start()
         # Créer connexions isolées
-        linear_conn = PublicWSConnection(category="linear", symbols=self.linear_symbols, testnet=self.testnet, logger=self.logger, on_ticker_callback=self._handle_ticker)
-        inverse_conn = PublicWSConnection(category="inverse", symbols=self.inverse_symbols, testnet=self.testnet, logger=self.logger, on_ticker_callback=self._handle_ticker)
+        linear_conn = PublicWSConnection(
+            category="linear", 
+            symbols=self.linear_symbols, 
+            testnet=self.testnet, 
+            logger=self.logger, 
+            on_ticker_callback=self._handle_ticker
+        )
+        inverse_conn = PublicWSConnection(
+            category="inverse", 
+            symbols=self.inverse_symbols, 
+            testnet=self.testnet, 
+            logger=self.logger, 
+            on_ticker_callback=self._handle_ticker
+        )
         self._ws_conns = [linear_conn, inverse_conn]
         # Lancer en parallèle
         linear_thread = threading.Thread(target=linear_conn.run)

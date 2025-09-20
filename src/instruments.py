@@ -3,6 +3,7 @@
 import httpx
 from http_utils import get_rate_limiter
 _rate_limiter = get_rate_limiter()
+from http_client_manager import get_http_client
 from typing import Dict, List
 
 
@@ -36,30 +37,30 @@ def fetch_instruments_info(base_url: str, category: str, timeout: int = 10) -> L
             
         try:
             _rate_limiter.acquire()
-            with httpx.Client(timeout=timeout) as client:
-                response = client.get(url, params=params)
-                
-                # Vérifier le statut HTTP
-                if response.status_code >= 400:
-                    raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{response.text[:100]}\"")
-                
-                data = response.json()
-                
-                # Vérifier le retCode
-                if data.get("retCode") != 0:
-                    ret_code = data.get("retCode")
-                    ret_msg = data.get("retMsg", "")
-                    raise RuntimeError(f"Erreur API Bybit: retCode={ret_code} retMsg=\"{ret_msg}\"")
-                
-                result = data.get("result", {})
-                instruments = result.get("list", [])
-                all_instruments.extend(instruments)
-                
-                # Vérifier s'il y a une page suivante
-                next_page_cursor = result.get("nextPageCursor")
-                if not next_page_cursor:
-                    break
-                cursor = next_page_cursor
+            client = get_http_client(timeout=timeout)
+            response = client.get(url, params=params)
+            
+            # Vérifier le statut HTTP
+            if response.status_code >= 400:
+                raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{response.text[:100]}\"")
+            
+            data = response.json()
+            
+            # Vérifier le retCode
+            if data.get("retCode") != 0:
+                ret_code = data.get("retCode")
+                ret_msg = data.get("retMsg", "")
+                raise RuntimeError(f"Erreur API Bybit: retCode={ret_code} retMsg=\"{ret_msg}\"")
+            
+            result = data.get("result", {})
+            instruments = result.get("list", [])
+            all_instruments.extend(instruments)
+            
+            # Vérifier s'il y a une page suivante
+            next_page_cursor = result.get("nextPageCursor")
+            if not next_page_cursor:
+                break
+            cursor = next_page_cursor
                 
         except httpx.RequestError as e:
             raise RuntimeError(f"Erreur réseau/HTTP Bybit: {e}")

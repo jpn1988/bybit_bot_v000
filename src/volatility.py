@@ -93,7 +93,12 @@ def is_cache_valid(timestamp: float, ttl_seconds: int = 60) -> bool:
     return (time.time() - timestamp) < ttl_seconds
 
 
-async def compute_volatility_batch_async(bybit_client, symbols: List[str], timeout: int = 10, symbol_categories: Dict[str, str] | None = None) -> Dict[str, Optional[float]]:
+async def compute_volatility_batch_async(
+    bybit_client, 
+    symbols: List[str], 
+    timeout: int = 10, 
+    symbol_categories: Dict[str, str] | None = None
+) -> Dict[str, Optional[float]]:
     """
     Calcule la volatilité 5 minutes pour une liste de symboles en parallèle.
     OPTIMISATION: Utilise aiohttp et asyncio.gather() pour paralléliser les appels API.
@@ -158,7 +163,12 @@ async def compute_volatility_batch_async(bybit_client, symbols: List[str], timeo
         return volatility_results
 
 
-async def _compute_single_volatility_async(session: aiohttp.ClientSession, base_url: str, symbol: str, symbol_categories: Dict[str, str] | None = None) -> Optional[float]:
+async def _compute_single_volatility_async(
+    session: aiohttp.ClientSession, 
+    base_url: str, 
+    symbol: str, 
+    symbol_categories: Dict[str, str] | None = None
+) -> Optional[float]:
     """
     Calcule la volatilité pour un seul symbole de manière asynchrone.
     Fonction helper pour la parallélisation.

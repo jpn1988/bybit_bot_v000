@@ -1,9 +1,11 @@
 """Point d'entrée principal du bot Bybit."""
 
 import sys
+import atexit
 from config import get_settings
 from logging_setup import setup_logging
 from bybit_client import BybitClient
+from http_client_manager import close_all_http_clients
 
 
 def main():
@@ -11,16 +13,23 @@ def main():
     # Configurer le logging
     logger = setup_logging()
     
+    # S'assurer que les clients HTTP sont fermés à l'arrêt
+    atexit.register(close_all_http_clients)
+    
     # Étape 1: Lancement du bot
     logger.info("🚀 Lancement du bot (mode privé uniquement)")
     
     # Étape 2: Chargement de la configuration
     settings = get_settings()
-    logger.info(f"📂 Configuration chargée (testnet={settings['testnet']}, timeout={settings['timeout']})")
+    logger.info(
+        f"📂 Configuration chargée (testnet={settings['testnet']}, timeout={settings['timeout']})"
+    )
     
     # Étape 3: Vérification des clés API
     if not settings['api_key'] or not settings['api_secret']:
-        logger.error("⛔ Clés API manquantes : ajoute BYBIT_API_KEY et BYBIT_API_SECRET dans .env")
+        logger.error(
+            "⛔ Clés API manquantes : ajoute BYBIT_API_KEY et BYBIT_API_SECRET dans .env"
+        )
         sys.exit(1)
     
     try:
@@ -45,7 +54,10 @@ def main():
         
         # Afficher les totaux du compte si disponibles
         if acct.get("totalEquity") or acct.get("totalWalletBalance"):
-            logger.info(f"ℹ️ Totaux compte UNIFIED | totalEquity={acct.get('totalEquity')} | totalWalletBalance={acct.get('totalWalletBalance')}")
+            logger.info(
+                f"ℹ️ Totaux compte UNIFIED | totalEquity={acct.get('totalEquity')} | "
+                f"totalWalletBalance={acct.get('totalWalletBalance')}"
+            )
         
         if usdt is None:
             logger.info("ℹ️ Aucun solde USDT détecté sur le compte UNIFIED")
@@ -54,7 +66,10 @@ def main():
             wallet = float(usdt.get("walletBalance", 0) or 0)
             avail = float(usdt.get("availableToWithdraw", 0) or 0)
             
-            logger.info(f"✅ Solde USDT | equity={equity:.4f} | walletBalance={wallet:.4f} | availableToWithdraw={avail:.4f}")
+            logger.info(
+                f"✅ Solde USDT | equity={equity:.4f} | walletBalance={wallet:.4f} | "
+                f"availableToWithdraw={avail:.4f}"
+            )
         
         # Étape 6: Fin du programme
         logger.info("🏁 Fin du programme (API privée)")
