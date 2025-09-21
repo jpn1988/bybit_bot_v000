@@ -19,6 +19,8 @@ import hmac
 import hashlib
 import threading
 import websocket
+from typing import Callable, Optional
+from config import get_settings
 
 
 class PrivateWSClient:
@@ -302,4 +304,162 @@ class PrivateWSClient:
                 except Exception:
                     pass
 
+
+def validate_private_ws_config() -> tuple[bool, str, str, list[str]]:
+    """
+    Valide et récupère la configuration pour WebSocket privée.
+    
+    Returns:
+        tuple: (testnet, api_key, api_secret, channels)
+        
+    Raises:
+        RuntimeError: Si les clés API sont manquantes
+    """
+    settings = get_settings()
+    testnet = settings['testnet']
+    api_key = settings['api_key']
+    api_secret = settings['api_secret']
+    
+    # Vérifier les clés API
+    if not api_key or not api_secret:
+        raise RuntimeError("Clés API manquantes : ajoute BYBIT_API_KEY et BYBIT_API_SECRET dans .env")
+    
+    # Channels par défaut (configurable via env)
+    default_channels = "wallet,order"
+    env_channels = os.getenv("WS_PRIV_CHANNELS", default_channels)
+    channels = [ch.strip() for ch in env_channels.split(",") if ch.strip()]
+    
+    return testnet, api_key, api_secret, channels
+
+
+def create_private_ws_client(logger, **kwargs) -> PrivateWSClient:
+    """
+    Crée une instance de PrivateWSClient avec la configuration par défaut.
+    
+    Args:
+        logger: Instance du logger
+        **kwargs: Paramètres optionnels à surcharger
+        
+    Returns:
+        PrivateWSClient: Instance configurée
+        
+    Raises:
+        RuntimeError: Si les clés API sont manquantes
+    """
+    testnet, api_key, api_secret, channels = validate_private_ws_config()
+    
+    # Paramètres par défaut
+    default_params = {
+        'testnet': testnet,
+        'api_key': api_key,
+        'api_secret': api_secret,
+        'channels': channels,
+        'logger': logger,
+    }
+    
+    # Fusionner avec les paramètres personnalisés
+    default_params.update(kwargs)
+    
+    return PrivateWSClient(**default_params)
+
+
+class PrivateWSManager:
+    """
+    Gestionnaire haut niveau pour WebSocket privée avec callbacks simplifiés.
+    
+    Encapsule PrivateWSClient et fournit une interface simplifiée pour
+    les cas d'usage courants (supervision, monitoring).
+    """
+    
+    def __init__(self, logger, **kwargs):
+        """
+        Initialise le gestionnaire WebSocket privée.
+        
+        Args:
+            logger: Instance du logger
+            **kwargs: Paramètres optionnels pour PrivateWSClient
+        """
+        self.logger = logger
+        self.client = create_private_ws_client(logger, **kwargs)
+        
+        # État de connexion
+        self.status = "DISCONNECTED"
+        
+        # Callbacks externes
+        self.on_status_change: Optional[Callable[[str], None]] = None
+        self.on_topic_received: Optional[Callable[[str, dict], None]] = None
+        
+        # Configurer les callbacks internes
+        self._setup_callbacks()
+    
+    def _setup_callbacks(self):
+        """Configure les callbacks internes du client."""
+        self.client.on_open_cb = self._on_open
+        self.client.on_close_cb = self._on_close
+        self.client.on_error_cb = self._on_error
+        self.client.on_auth_success = self._on_auth_success
+        self.client.on_auth_failure = self._on_auth_failure
+        self.client.on_topic = self._on_topic
+    
+    def _on_open(self):
+        """Callback interne d'ouverture."""
+        self._update_status("CONNECTED")
+    
+    def _on_close(self, code, reason):
+        """Callback interne de fermeture."""
+        self._update_status("DISCONNECTED")
+    
+    def _on_error(self, error):
+        """Callback interne d'erreur."""
+        self._update_status("DISCONNECTED")
+    
+    def _on_auth_success(self):
+        """Callback interne d'authentification réussie."""
+        self._update_status("AUTHENTICATED")
+    
+    def _on_auth_failure(self, ret_code, ret_msg):
+        """Callback interne d'échec d'authentification."""
+        self._update_status("AUTH_FAILED")
+    
+    def _on_topic(self, topic, data):
+        """Callback interne de réception de topic."""
+        if self.on_topic_received:
+            try:
+                self.on_topic_received(topic, data)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erreur callback topic: {e}")
+    
+    def _update_status(self, new_status: str):
+        """Met à jour le statut et notifie les callbacks."""
+        if self.status != new_status:
+            old_status = self.status
+            self.status = new_status
+            
+            if self.on_status_change:
+                try:
+                    self.on_status_change(new_status)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Erreur callback status: {e}")
+    
+    def run(self):
+        """Lance la connexion WebSocket (bloquant)."""
+        self.client.run()
+    
+    def close(self):
+        """Ferme proprement la connexion."""
+        self.client.close()
+        self._update_status("DISCONNECTED")
+    
+    def get_config_info(self) -> dict:
+        """
+        Retourne les informations de configuration pour les logs.
+        
+        Returns:
+            dict: Configuration (testnet, channels, etc.)
+        """
+        return {
+            'testnet': self.client.testnet,
+            'channels': self.client.channels,
+            'api_key_present': bool(self.client.api_key),
+        }
 

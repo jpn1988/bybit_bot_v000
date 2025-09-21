@@ -40,6 +40,7 @@ from volatility import get_volatility_cache_key, is_cache_valid, compute_volatil
 from errors import NoSymbolsError, FundingUnavailableError
 from metrics import record_filter_result, record_ws_connection, record_ws_error
 from metrics_monitor import start_metrics_monitoring
+from ws_public import PublicWSClient
 
 
 class PublicWSConnection:
@@ -1108,7 +1109,7 @@ class PriceTracker:
         self.realtime_data = {}  # Données en temps réel via WebSocket {symbol: {funding_rate, volume24h, bid1, ask1, next_funding_time, ...}}
         self._realtime_lock = threading.Lock()  # Verrou pour protéger realtime_data
         self._first_display = True  # Indicateur pour la première exécution de l'affichage
-        self._ws_conns: list[PublicWSConnection] = []
+        self._ws_conns: list[PublicWSClient] = []
         self._ws_threads: list[threading.Thread] = []
         self._vol_refresh_thread: threading.Thread | None = None
         self.symbol_categories: dict[str, str] = {}
@@ -1705,7 +1706,7 @@ class PriceTracker:
 
     def _start_single_connection(self, category: str, symbols: list):
         """Démarre une connexion WebSocket pour une seule catégorie via une instance isolée."""
-        conn = PublicWSConnection(
+        conn = PublicWSClient(
             category=category, 
             symbols=symbols, 
             testnet=self.testnet, 
@@ -1727,14 +1728,14 @@ class PriceTracker:
         self.display_thread.daemon = True
         self.display_thread.start()
         # Créer connexions isolées
-        linear_conn = PublicWSConnection(
+        linear_conn = PublicWSClient(
             category="linear", 
             symbols=self.linear_symbols, 
             testnet=self.testnet, 
             logger=self.logger, 
             on_ticker_callback=self._handle_ticker
         )
-        inverse_conn = PublicWSConnection(
+        inverse_conn = PublicWSClient(
             category="inverse", 
             symbols=self.inverse_symbols, 
             testnet=self.testnet, 

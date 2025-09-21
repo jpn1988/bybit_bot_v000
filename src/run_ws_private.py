@@ -5,7 +5,7 @@ import os
 import signal
 from config import get_settings
 from logging_setup import setup_logging
-from ws_private import PrivateWSClient
+from ws_private import PrivateWSClient, create_private_ws_client
 
 
 class PrivateWSRunner:
@@ -16,29 +16,15 @@ class PrivateWSRunner:
         # Configuration du signal handler pour Ctrl+C
         signal.signal(signal.SIGINT, self._signal_handler)
 
-        # Configuration
-        settings = get_settings()
-        self.testnet = settings['testnet']
-        self.api_key = settings['api_key']
-        self.api_secret = settings['api_secret']
-
-        # Vérifier les clés API
-        if not self.api_key or not self.api_secret:
-            self.logger.error("⛔ Clés API manquantes : ajoute BYBIT_API_KEY et BYBIT_API_SECRET dans .env")
+        # Utiliser la fonction utilitaire centralisée
+        try:
+            self.client = create_private_ws_client(self.logger)
+            # Récupérer les paramètres pour les logs
+            self.testnet = self.client.testnet
+            self.channels = self.client.channels
+        except RuntimeError as e:
+            self.logger.error(f"⛔ {e}")
             exit(1)
-
-        # Channels par défaut (configurable via env)
-        default_channels = "wallet,order"
-        env_channels = os.getenv("WS_PRIV_CHANNELS", default_channels)
-        self.channels = [ch.strip() for ch in env_channels.split(",") if ch.strip()]
-
-        self.client = PrivateWSClient(
-            testnet=self.testnet,
-            api_key=self.api_key,
-            api_secret=self.api_secret,
-            channels=self.channels,
-            logger=self.logger,
-        )
 
     def _signal_handler(self, signum, frame):
         """Gestionnaire de signal pour Ctrl+C."""

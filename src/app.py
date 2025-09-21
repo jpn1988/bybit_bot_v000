@@ -11,7 +11,8 @@ from config import get_settings
 from logging_setup import setup_logging
 from bybit_client import BybitClient, BybitPublicClient
 from instruments import get_perp_symbols
-from ws_private import PrivateWSClient
+from ws_private import PrivateWSClient, create_private_ws_client, PrivateWSManager
+from ws_public import SimplePublicWSClient
 
 
 class Orchestrator:
@@ -38,7 +39,7 @@ class Orchestrator:
         self.prev_ws_private_status = "DISCONNECTED"
         
         # WebSocket instances
-        self.ws_public = None
+        self.ws_public_client = None
         self.ws_private = None
         self.ws_private_client = None
         
@@ -52,10 +53,7 @@ class Orchestrator:
         # Configuration du signal handler pour Ctrl+C
         signal.signal(signal.SIGINT, self._signal_handler)
         
-        # Channels privés par défaut (configurable via env WS_PRIV_CHANNELS)
-        default_channels = "wallet,order"
-        env_channels = os.getenv("WS_PRIV_CHANNELS", default_channels)
-        self.ws_private_channels = [ch.strip() for ch in env_channels.split(",") if ch.strip()]
+        # La configuration des channels sera gérée par create_private_ws_client()
 
         self.logger.info("🚀 Lancement orchestrateur (REST + WS public + WS privé)")
         self.logger.info(f"📂 Configuration chargée (testnet={self.testnet})")
@@ -92,92 +90,67 @@ class Orchestrator:
             self.logger.error(f"⛔ REST privé KO : {error_msg}")
             self.rest_status = "KO"
     
-    def ws_public_on_open(self, ws):
-        """Callback ouverture WebSocket publique."""
+    def _on_ws_public_open(self):
+        """Callback appelé à l'ouverture de la WebSocket publique."""
         self.logger.info("🌐 WS publique ouverte")
         self.ws_public_status = "CONNECTED"
     
-    def ws_public_on_message(self, ws, message):
-        """Callback message WebSocket publique."""
-        # Ignorer silencieusement les messages (ping/pong auto)
-        pass
-    
-    def ws_public_on_error(self, ws, error):
-        """Callback erreur WebSocket publique."""
+    def _on_ws_public_error(self, error):
+        """Callback appelé en cas d'erreur de la WebSocket publique."""
         self.logger.warning(f"⚠️ WS publique erreur : {error}")
         self.ws_public_status = "DISCONNECTED"
     
-    def ws_public_on_close(self, ws, close_status_code, close_msg):
-        """Callback fermeture WebSocket publique."""
+    def _on_ws_public_close(self, close_status_code, close_msg):
+        """Callback appelé à la fermeture de la WebSocket publique."""
         self.logger.info(f"🔌 WS publique fermée (code={close_status_code}, reason={close_msg})")
         self.ws_public_status = "DISCONNECTED"
     
-    def _bind_private_ws_callbacks(self, client: PrivateWSClient):
-        """Lie les callbacks du client WS privé aux états de l'orchestrateur."""
-        def _on_open():
-            self.logger.info("🌐 WS privée ouverte")
-            self.ws_private_status = "CONNECTED"
-        def _on_close(code, reason):
-            self.logger.info(f"🔌 WS privée fermée (code={code}, reason={reason})")
-            self.ws_private_status = "DISCONNECTED"
-        def _on_error(err):
-            self.logger.warning(f"⚠️ WS privée erreur : {err}")
-            self.ws_private_status = "DISCONNECTED"
-        def _on_auth_ok():
-            self.logger.info("✅ Authentification WS privée réussie")
-
-        client.on_open_cb = _on_open
-        client.on_close_cb = _on_close
-        client.on_error_cb = _on_error
-        client.on_auth_success = _on_auth_ok
+    def _on_ws_public_message(self, message):
+        """Callback appelé pour chaque message de la WebSocket publique."""
+        # Ignorer silencieusement les messages (ping/pong auto)
+        pass
+    
     
     def ws_public_runner(self):
-        """Runner WebSocket publique avec reconnexion."""
-        url = "wss://stream-testnet.bybit.com/v5/public/linear" if self.testnet else "wss://stream.bybit.com/v5/public/linear"
-        delay_index = 0
+        """Runner WebSocket publique utilisant la classe centralisée."""
+        # Créer le client WebSocket publique centralisé
+        self.ws_public_client = SimplePublicWSClient(
+            testnet=self.testnet,
+            logger=self.logger
+        )
         
-        while self.running:
-            try:
-                self.ws_public = websocket.WebSocketApp(
-                    url,
-                    on_open=self.ws_public_on_open,
-                    on_message=self.ws_public_on_message,
-                    on_error=self.ws_public_on_error,
-                    on_close=self.ws_public_on_close
-                )
-                
-                self.ws_public.run_forever(ping_interval=20, ping_timeout=10)
-                
-            except Exception as e:
-                if self.running:
-                    self.logger.error(f"Erreur WS publique: {e}")
-            
-            # Reconnexion avec backoff
-            if self.running:
-                delay = self.reconnect_delays[min(delay_index, len(self.reconnect_delays) - 1)]
-                self.logger.warning(f"🔁 WS publique déconnectée → reconnexion dans {delay}s")
-                
-                for _ in range(delay):
-                    if not self.running:
-                        break
-                    time.sleep(1)
-                
-                if delay_index < len(self.reconnect_delays) - 1:
-                    delay_index += 1
-            else:
-                break
+        # Configurer les callbacks pour suivre l'état
+        self.ws_public_client.set_callbacks(
+            on_open=self._on_ws_public_open,
+            on_message=self._on_ws_public_message,
+            on_close=self._on_ws_public_close,
+            on_error=self._on_ws_public_error
+        )
+        
+        # Lancer la connexion (bloquant avec reconnexion automatique)
+        try:
+            self.ws_public_client.connect(category="linear")
+        except Exception as e:
+            self.logger.error(f"Erreur WS publique: {e}")
+            self.ws_public_status = "DISCONNECTED"
     
     def ws_private_runner(self):
-        """Runner WebSocket privée via PrivateWSClient."""
-        self.ws_private_client = PrivateWSClient(
-            testnet=self.testnet,
-            api_key=self.api_key,
-            api_secret=self.api_secret,
-            channels=self.ws_private_channels,
-            logger=self.logger,
-        )
-        self._bind_private_ws_callbacks(self.ws_private_client)
-        self.ws_private_client.run()
+        """Runner WebSocket privée via PrivateWSManager."""
+        try:
+            self.ws_private_client = PrivateWSManager(self.logger)
+            
+            # Configurer le callback de changement d'état
+            def on_status_change(new_status):
+                if new_status in ["CONNECTED", "AUTHENTICATED"]:
+                    self.ws_private_status = "CONNECTED"
+                else:
+                    self.ws_private_status = "DISCONNECTED"
+            
+            self.ws_private_client.on_status_change = on_status_change
+            self.ws_private_client.run()
+        except RuntimeError as e:
+            self.logger.error(f"⛔ Erreur WebSocket privée : {e}")
+            self.ws_private_status = "DISCONNECTED"
     
     def health_check_loop(self):
         """Boucle de health-check périodique."""
@@ -256,8 +229,8 @@ class Orchestrator:
             self.running = False
             
             # Fermer les WebSockets
-            if self.ws_public:
-                self.ws_public.close()
+            if self.ws_public_client:
+                self.ws_public_client.close()
             if self.ws_private_client:
                 self.ws_private_client.close()
             
