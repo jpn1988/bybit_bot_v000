@@ -26,6 +26,7 @@ import httpx
 import websocket
 import asyncio
 import atexit
+from typing import List, Dict
 from http_utils import get_rate_limiter
 from http_client_manager import get_http_client, close_all_http_clients
 try:
@@ -37,10 +38,13 @@ from bybit_client import BybitClient, BybitPublicClient
 from instruments import get_perp_symbols, category_of_symbol
 from price_store import update, get_snapshot, purge_expired
 from volatility import get_volatility_cache_key, is_cache_valid, compute_volatility_batch_async
+from volatility_tracker import VolatilityTracker
+from watchlist_manager import WatchlistManager
 from errors import NoSymbolsError, FundingUnavailableError
 from metrics import record_filter_result, record_ws_connection, record_ws_error
 from metrics_monitor import start_metrics_monitoring
 from ws_public import PublicWSClient
+from ws_manager import WebSocketManager
 
 
 class PublicWSConnection:
@@ -177,309 +181,17 @@ class PublicWSConnection:
             except Exception:
                 pass
 
-def validate_config(config: dict) -> None:
-    """
-    Valide la cohérence des paramètres de configuration.
-    
-    Args:
-        config (dict): Configuration à valider
-        
-    Raises:
-        ValueError: Si des paramètres sont incohérents ou invalides
-    """
-    errors = []
-    
-    # Validation des bornes de funding
-    funding_min = config.get("funding_min")
-    funding_max = config.get("funding_max")
-    
-    if funding_min is not None and funding_max is not None:
-        if funding_min > funding_max:
-            errors.append(f"funding_min ({funding_min}) ne peut pas être supérieur à funding_max ({funding_max})")
-    
-    # Validation des bornes de volatilité
-    volatility_min = config.get("volatility_min")
-    volatility_max = config.get("volatility_max")
-    
-    if volatility_min is not None and volatility_max is not None:
-        if volatility_min > volatility_max:
-            errors.append(f"volatility_min ({volatility_min}) ne peut pas être supérieur à volatility_max ({volatility_max})")
-    
-    # Validation des valeurs négatives
-    if funding_min is not None and funding_min < 0:
-        errors.append(f"funding_min ne peut pas être négatif ({funding_min})")
-    
-    if funding_max is not None and funding_max < 0:
-        errors.append(f"funding_max ne peut pas être négatif ({funding_max})")
-    
-    if volatility_min is not None and volatility_min < 0:
-        errors.append(f"volatility_min ne peut pas être négatif ({volatility_min})")
-    
-    if volatility_max is not None and volatility_max < 0:
-        errors.append(f"volatility_max ne peut pas être négatif ({volatility_max})")
-    
-    # Validation du spread
-    spread_max = config.get("spread_max")
-    if spread_max is not None:
-        if spread_max < 0:
-            errors.append(f"spread_max ne peut pas être négatif ({spread_max})")
-        if spread_max > 1.0:  # 100% de spread maximum
-            errors.append(f"spread_max trop élevé ({spread_max}), maximum recommandé: 1.0 (100%)")
-    
-    # Validation des volumes
-    volume_min = config.get("volume_min")
-    volume_min_millions = config.get("volume_min_millions")
-    
-    if volume_min is not None and volume_min < 0:
-        errors.append(f"volume_min ne peut pas être négatif ({volume_min})")
-    
-    if volume_min_millions is not None and volume_min_millions < 0:
-        errors.append(f"volume_min_millions ne peut pas être négatif ({volume_min_millions})")
-    
-    # Validation des paramètres temporels de funding
-    ft_min = config.get("funding_time_min_minutes")
-    ft_max = config.get("funding_time_max_minutes")
-    
-    if ft_min is not None:
-        if ft_min < 0:
-            errors.append(f"funding_time_min_minutes ne peut pas être négatif ({ft_min})")
-        if ft_min > 1440:  # 24 heures maximum
-            errors.append(f"funding_time_min_minutes trop élevé ({ft_min}), maximum: 1440 (24h)")
-    
-    if ft_max is not None:
-        if ft_max < 0:
-            errors.append(f"funding_time_max_minutes ne peut pas être négatif ({ft_max})")
-        if ft_max > 1440:  # 24 heures maximum
-            errors.append(f"funding_time_max_minutes trop élevé ({ft_max}), maximum: 1440 (24h)")
-    
-    if ft_min is not None and ft_max is not None:
-        if ft_min > ft_max:
-            errors.append(f"funding_time_min_minutes ({ft_min}) ne peut pas être supérieur à funding_time_max_minutes ({ft_max})")
-    
-    # Validation de la catégorie
-    categorie = config.get("categorie")
-    if categorie not in ["linear", "inverse", "both"]:
-        errors.append(f"categorie invalide ({categorie}), valeurs autorisées: linear, inverse, both")
-    
-    # Validation de la limite
-    limite = config.get("limite")
-    if limite is not None:
-        if limite < 1:
-            errors.append(f"limite doit être positive ({limite})")
-        if limite > 1000:
-            errors.append(f"limite trop élevée ({limite}), maximum recommandé: 1000")
-    
-    # Validation du TTL de volatilité
-    vol_ttl = config.get("volatility_ttl_sec")
-    if vol_ttl is not None:
-        if vol_ttl < 10:
-            errors.append(f"volatility_ttl_sec trop faible ({vol_ttl}), minimum: 10 secondes")
-        if vol_ttl > 3600:
-            errors.append(f"volatility_ttl_sec trop élevé ({vol_ttl}), maximum: 3600 secondes (1h)")
-    
-    # Lever une erreur si des problèmes ont été détectés
-    if errors:
-        error_msg = "Configuration invalide détectée:\n" + "\n".join(f"  - {error}" for error in errors)
-        raise ValueError(error_msg)
+# validate_config moved to WatchlistManager
 
 
-def load_config() -> dict:
-    """
-    Charge la configuration depuis le fichier YAML ou utilise les valeurs par défaut.
-    Priorité : ENV > fichier > valeurs par défaut
-    
-    Returns:
-        dict: Configuration avec categorie, funding_min, funding_max, volume_min_millions, limite
-    """
-    config_path = "src/parameters.yaml"
-    
-    # Valeurs par défaut
-    default_config = {
-        "categorie": "linear",
-        "funding_min": None,
-        "funding_max": None,
-        "volume_min": None,
-        "volume_min_millions": None,
-        "spread_max": None,
-        "volatility_min": None,
-        "volatility_max": None,
-        "limite": 10,
-        "volatility_ttl_sec": 120,
-        # Nouveaux paramètres temporels
-        "funding_time_min_minutes": None,
-        "funding_time_max_minutes": None,
-    }
-    
-    # Charger depuis le fichier si disponible
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            file_config = yaml.safe_load(f)
-        if file_config:
-            default_config.update(file_config)
-    except FileNotFoundError:
-        pass  # Utiliser les valeurs par défaut
-    
-    # Récupérer les variables d'environnement (priorité maximale)
-    settings = get_settings()
-    env_spread_max = settings.get("spread_max")
-    env_volume_min_millions = settings.get("volume_min_millions")
-    env_volatility_min = settings.get("volatility_min")
-    env_volatility_max = settings.get("volatility_max")
-    # Alignement ENV supplémentaires (README)
-    env_funding_min = settings.get("funding_min")
-    env_funding_max = settings.get("funding_max")
-    env_category = settings.get("category")
-    env_limit = settings.get("limit")
-    env_vol_ttl = settings.get("volatility_ttl_sec")
-    # Nouveaux ENV temporels
-    env_ft_min = settings.get("funding_time_min_minutes")
-    env_ft_max = settings.get("funding_time_max_minutes")
-    
-    # Appliquer les variables d'environnement si présentes
-    if env_spread_max is not None:
-        default_config["spread_max"] = env_spread_max
-    if env_volume_min_millions is not None:
-        default_config["volume_min_millions"] = env_volume_min_millions
-    if env_volatility_min is not None:
-        default_config["volatility_min"] = env_volatility_min
-    if env_volatility_max is not None:
-        default_config["volatility_max"] = env_volatility_max
-    if env_funding_min is not None:
-        default_config["funding_min"] = env_funding_min
-    if env_funding_max is not None:
-        default_config["funding_max"] = env_funding_max
-    if env_category is not None:
-        default_config["categorie"] = env_category
-    if env_limit is not None:
-        default_config["limite"] = env_limit
-    if env_vol_ttl is not None:
-        default_config["volatility_ttl_sec"] = env_vol_ttl
-    # Appliquer les ENV temporels
-    if env_ft_min is not None:
-        default_config["funding_time_min_minutes"] = env_ft_min
-    if env_ft_max is not None:
-        default_config["funding_time_max_minutes"] = env_ft_max
-    
-    # Valider la configuration finale
-    validate_config(default_config)
-    
-    return default_config
+# load_config moved to WatchlistManager
 
 
-def fetch_funding_map(base_url: str, category: str, timeout: int) -> dict[str, float]:
-    """
-    Récupère les taux de funding pour une catégorie donnée.
-    OPTIMISÉ: Utilise la limite maximum de l'API Bybit (1000) et une gestion d'erreur robuste.
-    
-    Args:
-        base_url (str): URL de base de l'API Bybit
-        category (str): Catégorie (linear ou inverse)
-        timeout (int): Timeout pour les requêtes HTTP
-        
-    Returns:
-        dict[str, float]: Dictionnaire {symbol: funding_rate}
-        
-    Raises:
-        RuntimeError: En cas d'erreur HTTP ou API
-    """
-    funding_map = {}
-    cursor = ""
-    page_index = 0
-    
-    rate_limiter = get_rate_limiter()
-    while True:
-        # Construire l'URL avec pagination
-        url = f"{base_url}/v5/market/tickers"
-        params = {
-            "category": category,
-            "limit": 1000  # OPTIMISATION: Limite maximum supportée par l'API Bybit
-        }
-        if cursor:
-            params["cursor"] = cursor
-            
-        try:
-            page_index += 1
-            # Respecter le rate limit avant chaque appel
-            rate_limiter.acquire()
-            client = get_http_client(timeout=timeout)
-            response = client.get(url, params=params)
-            
-            # Vérifier le statut HTTP
-            if response.status_code >= 400:
-                raise RuntimeError(
-                    (
-                        f"Erreur HTTP Bybit GET {url} | category={category} limit={params.get('limit')} "
-                        f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
-                        f"collected={len(funding_map)} | status={response.status_code} "
-                        f"detail=\"{response.text[:200]}\""
-                    )
-                )
-            
-            data = response.json()
-            
-            # Vérifier le retCode
-            if data.get("retCode") != 0:
-                ret_code = data.get("retCode")
-                ret_msg = data.get("retMsg", "")
-                raise RuntimeError(
-                    (
-                        f"Erreur API Bybit GET {url} | category={category} limit={params.get('limit')} "
-                        f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
-                        f"collected={len(funding_map)} | retCode={ret_code} retMsg=\"{ret_msg}\""
-                    )
-                )
-            
-            result = data.get("result", {})
-            tickers = result.get("list", [])
-            
-            # Extraire les funding rates, volumes et temps de funding
-            for ticker in tickers:
-                symbol = ticker.get("symbol", "")
-                funding_rate = ticker.get("fundingRate")
-                volume_24h = ticker.get("volume24h")
-                next_funding_time = ticker.get("nextFundingTime")
-                
-                if symbol and funding_rate is not None:
-                    try:
-                        funding_map[symbol] = {
-                            "funding": float(funding_rate),
-                            "volume": float(volume_24h) if volume_24h is not None else 0.0,
-                            "next_funding_time": next_funding_time
-                        }
-                    except (ValueError, TypeError):
-                        # Ignorer si les données ne sont pas convertibles en float
-                        pass
-            
-            # Vérifier s'il y a une page suivante
-            next_page_cursor = result.get("nextPageCursor")
-            if not next_page_cursor:
-                break
-            cursor = next_page_cursor
-                
-        except httpx.RequestError as e:
-            raise RuntimeError(
-                (
-                    f"Erreur réseau Bybit GET {url} | category={category} limit={params.get('limit')} "
-                    f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
-                    f"collected={len(funding_map)} | error={e}"
-                )
-            )
-        except Exception as e:
-            if "Erreur" in str(e):
-                raise
-            else:
-                raise RuntimeError(
-                    (
-                        f"Erreur inconnue Bybit GET {url} | category={category} limit={params.get('limit')} "
-                        f"cursor={params.get('cursor', '-') } timeout={timeout}s page={page_index} "
-                        f"collected={len(funding_map)} | error={e}"
-                    )
-                )
-    
-    return funding_map
+# fetch_funding_map moved to WatchlistManager
 
 
-def calculate_funding_time_remaining(next_funding_time: str | int | float | None) -> str:
+# calculate_funding_time_remaining moved to WatchlistManager
+def calculate_funding_time_remaining_DEPRECATED(next_funding_time: str | int | float | None) -> str:
     """Retourne "Xh Ym Zs" à partir d'un timestamp Bybit (ms) ou ISO. Pas de parsing manuel."""
     if not next_funding_time:
         return "-"
@@ -886,119 +598,6 @@ def filter_by_spread(symbols_data: list[tuple[str, float, float, str]], spread_d
     return filtered_symbols
 
 
-async def filter_by_volatility_async(
-    symbols_data: list[tuple[str, float, float, str, float]], 
-    bybit_client, 
-    volatility_min: float, 
-    volatility_max: float, 
-    logger, 
-    volatility_cache: dict, 
-    ttl_seconds: int | None = None, 
-    symbol_categories: dict[str, str] | None = None
-) -> list[tuple[str, float, float, str, float]]:
-    """
-    Calcule la volatilité 5 minutes pour tous les symboles et applique les filtres si définis.
-    OPTIMISÉ: Utilise compute_volatility_batch_async() pour paralléliser les appels API.
-    
-    Args:
-        symbols_data (list[tuple[str, float, float, str, float]]): Liste des (symbol, funding, volume, funding_time_remaining, spread_pct)
-        bybit_client: Instance du client Bybit
-        volatility_min (float): Volatilité minimum autorisée (0.002 = 0.2%) ou None
-        volatility_max (float): Volatilité maximum autorisée (0.007 = 0.7%) ou None
-        logger: Logger pour les messages
-        volatility_cache (dict): Cache de volatilité {symbol: (timestamp, volatility)}
-        
-    Returns:
-        list[tuple[str, float, float, str, float]]: Liste avec volatilité calculée et filtrée si nécessaire
-    """
-    
-    filtered_symbols = []
-    rejected_count = 0
-    
-    # Séparer les symboles en cache et ceux à calculer
-    symbols_to_calculate = []
-    cached_volatilities = {}
-    
-    cache_ttl = ttl_seconds or 120
-    for symbol, funding, volume, funding_time_remaining, spread_pct in symbols_data:
-        cache_key = get_volatility_cache_key(symbol)
-        cached_data = volatility_cache.get(cache_key)
-        
-        if cached_data and is_cache_valid(cached_data[0], ttl_seconds=cache_ttl):
-            # Utiliser la valeur en cache
-            cached_volatilities[symbol] = cached_data[1]
-        else:
-            # Ajouter à la liste des symboles à calculer
-            symbols_to_calculate.append(symbol)
-    
-    # OPTIMISATION: Calculer la volatilité pour tous les symboles en parallèle
-    if symbols_to_calculate:
-        logger.info(f"🔎 Calcul volatilité async (parallèle) pour {len(symbols_to_calculate)} symboles…")
-        batch_volatilities = await compute_volatility_batch_async(bybit_client, symbols_to_calculate, timeout=10, symbol_categories=symbol_categories)
-        
-        # Mettre à jour le cache avec les nouveaux résultats
-        for symbol, vol_pct in batch_volatilities.items():
-            if vol_pct is not None:
-                cache_key = get_volatility_cache_key(symbol)
-                volatility_cache[cache_key] = (time.time(), vol_pct)
-            cached_volatilities[symbol] = vol_pct
-    
-    # Appliquer les filtres avec toutes les volatilités (cache + calculées)
-    for symbol, funding, volume, funding_time_remaining, spread_pct in symbols_data:
-        vol_pct = cached_volatilities.get(symbol)
-        
-        # Appliquer le filtre de volatilité seulement si des seuils sont définis
-        if volatility_min is not None or volatility_max is not None:
-            if vol_pct is not None:
-                # Vérifier les seuils de volatilité
-                rejected_reason = None
-                if volatility_min is not None and vol_pct < volatility_min:
-                    rejected_reason = f"< seuil min {volatility_min:.2%}"
-                elif volatility_max is not None and vol_pct > volatility_max:
-                    rejected_reason = f"> seuil max {volatility_max:.2%}"
-                
-                if rejected_reason:
-                    rejected_count += 1
-                    continue
-            else:
-                # Symbole sans volatilité calculée - le rejeter si des filtres sont actifs
-                rejected_count += 1
-                continue
-        
-        # Ajouter le symbole avec sa volatilité
-        filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct, vol_pct))
-    
-    # Log des résultats avec format cohérent
-    kept_count = len(filtered_symbols)
-    threshold_info = []
-    if volatility_min is not None:
-        threshold_info.append(f"min={volatility_min:.2%}")
-    if volatility_max is not None:
-        threshold_info.append(f"max={volatility_max:.2%}")
-    threshold_str = " | ".join(threshold_info) if threshold_info else "aucun seuil"
-    logger.info(f"✅ Filtre volatilité : gardés={kept_count} | rejetés={rejected_count} (seuils {threshold_str})")
-    
-    return filtered_symbols
-
-
-def filter_by_volatility(
-    symbols_data: list[tuple[str, float, float, str, float]], 
-    bybit_client, 
-    volatility_min: float, 
-    volatility_max: float, 
-    logger, 
-    volatility_cache: dict, 
-    ttl_seconds: int | None = None, 
-    symbol_categories: dict[str, str] | None = None
-) -> list[tuple[str, float, float, str, float]]:
-    """
-    Version synchrone de filter_by_volatility pour compatibilité.
-    Utilise asyncio.run() pour exécuter la version async.
-    """
-    return asyncio.run(filter_by_volatility_async(
-        symbols_data, bybit_client, volatility_min, volatility_max, 
-        logger, volatility_cache, ttl_seconds, symbol_categories
-    ))
 
 
 def filter_by_funding(
@@ -1099,24 +698,30 @@ class PriceTracker:
         
         # S'assurer que les clients HTTP sont fermés à l'arrêt
         atexit.register(close_all_http_clients)
-        self.ws = None
         self.display_thread = None
         self.symbols = []
         self.funding_data = {}
         self.original_funding_data = {}  # Données de funding originales avec next_funding_time
-        self.volatility_cache = {}  # Cache pour la volatilité {symbol: (timestamp, volatility)}
         # self.start_time supprimé: on s'appuie uniquement sur nextFundingTime côté Bybit
         self.realtime_data = {}  # Données en temps réel via WebSocket {symbol: {funding_rate, volume24h, bid1, ask1, next_funding_time, ...}}
         self._realtime_lock = threading.Lock()  # Verrou pour protéger realtime_data
         self._first_display = True  # Indicateur pour la première exécution de l'affichage
-        self._ws_conns: list[PublicWSClient] = []
-        self._ws_threads: list[threading.Thread] = []
-        self._vol_refresh_thread: threading.Thread | None = None
         self.symbol_categories: dict[str, str] = {}
         
         # Configuration
         settings = get_settings()
         self.testnet = settings['testnet']
+        
+        # Gestionnaire WebSocket dédié
+        self.ws_manager = WebSocketManager(testnet=self.testnet, logger=self.logger)
+        self.ws_manager.set_ticker_callback(self._update_realtime_data_from_ticker)
+        
+        # Gestionnaire de volatilité dédié
+        self.volatility_tracker = VolatilityTracker(testnet=self.testnet, logger=self.logger)
+        self.volatility_tracker.set_active_symbols_callback(self._get_active_symbols)
+        
+        # Gestionnaire de watchlist dédié
+        self.watchlist_manager = WatchlistManager(testnet=self.testnet, logger=self.logger)
         
         # Configuration du signal handler pour Ctrl+C
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -1131,23 +736,31 @@ class PriceTracker:
         """Gestionnaire de signal pour Ctrl+C."""
         self.logger.info("🧹 Arrêt demandé, fermeture de la WebSocket…")
         self.running = False
-        # Fermer toutes les connexions WS isolées
+        # Arrêter le gestionnaire WebSocket
         try:
-            for conn in getattr(self, "_ws_conns", []) or []:
-                conn.close()
+            self.ws_manager.stop()
+        except Exception:
+            pass
+        # Arrêter le tracker de volatilité
+        try:
+            self.volatility_tracker.stop_refresh_task()
         except Exception:
             pass
         return
     
-    def _update_realtime_data(self, symbol: str, ticker_data: dict):
+    def _update_realtime_data_from_ticker(self, ticker_data: dict):
         """
-        Met à jour les données en temps réel pour un symbole donné.
+        Met à jour les données en temps réel à partir des données ticker WebSocket.
+        Callback appelé par WebSocketManager.
         
         Args:
-            symbol (str): Symbole à mettre à jour
             ticker_data (dict): Données du ticker reçues via WebSocket
         """
         try:
+            symbol = ticker_data.get("symbol", "")
+            if not symbol:
+                return
+                
             # Construire un diff et fusionner avec l'état précédent pour ne pas écraser des valeurs valides par None
             now_ts = time.time()
             incoming = {
@@ -1181,10 +794,10 @@ class PriceTracker:
                 realtime_info = self.realtime_data.get(symbol, {})
             ws_ts = realtime_info.get('next_funding_time')
             if ws_ts:
-                return calculate_funding_time_remaining(ws_ts)
+                return self.watchlist_manager.calculate_funding_time_remaining(ws_ts)
             rest_ts = self.original_funding_data.get(symbol)
             if rest_ts:
-                return calculate_funding_time_remaining(rest_ts)
+                return self.watchlist_manager.calculate_funding_time_remaining(rest_ts)
             return "-"
         except Exception:
             return "-"
@@ -1275,13 +888,8 @@ class PriceTracker:
                     except Exception:
                         pass
                 
-                # Volatilité: lecture cache uniquement (pas d'appel réseau dans l'affichage)
-                volatility_pct = None
-                cache_key = get_volatility_cache_key(symbol)
-                cached_data = self.volatility_cache.get(cache_key)
-                # N'afficher que si le cache est encore valide (pas de données périmées)
-                if cached_data and is_cache_valid(cached_data[0], ttl_seconds=getattr(self, "volatility_ttl_sec", 120)):
-                    volatility_pct = cached_data[1]
+                # Volatilité: lecture via le tracker dédié
+                volatility_pct = self.volatility_tracker.get_cached_volatility(symbol)
             else:
                 # Pas de données en temps réel disponibles - utiliser les valeurs initiales REST
                 funding = original_funding
@@ -1291,12 +899,9 @@ class PriceTracker:
                 spread_pct = None
                 volatility_pct = None
                 
-                # Volatilité: lecture cache uniquement (pas d'appel réseau dans l'affichage)
+                # Volatilité: lecture via le tracker dédié
                 if volatility_pct is None:
-                    cache_key = get_volatility_cache_key(symbol)
-                    cached_data = self.volatility_cache.get(cache_key)
-                    if cached_data and is_cache_valid(cached_data[0], ttl_seconds=getattr(self, "volatility_ttl_sec", 120)):
-                        volatility_pct = cached_data[1]
+                    volatility_pct = self.volatility_tracker.get_cached_volatility(symbol)
                 # Essayer de récupérer le spread initial calculé lors du filtrage
                 if spread_pct is None:
                     try:
@@ -1359,9 +964,9 @@ class PriceTracker:
     
     def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""
-        # Charger et valider la configuration
+        # Charger et valider la configuration via le watchlist manager
         try:
-            config = load_config()
+            config = self.watchlist_manager.load_and_validate_config()
         except ValueError as e:
             self.logger.error(f"❌ Erreur de configuration : {e}")
             self.logger.error("💡 Corrigez les paramètres dans src/parameters.yaml ou les variables d'environnement")
@@ -1391,23 +996,73 @@ class PriceTracker:
         except Exception:
             self.symbol_categories = {}
         
-        # Extraire les paramètres de configuration
+        # Configurer les gestionnaires avec les catégories
+        self.volatility_tracker.set_symbol_categories(self.symbol_categories)
+        self.watchlist_manager.symbol_categories = self.symbol_categories
+        
+        # Configurer le tracker de volatilité
+        volatility_ttl_sec = int(config.get("volatility_ttl_sec", 120) or 120)
+        self.volatility_tracker.ttl_seconds = volatility_ttl_sec
+        self.price_ttl_sec = 120
+        
+        # Afficher les filtres (délégué au watchlist manager)
+        self._log_filter_config(config, volatility_ttl_sec)
+        
+        # Construire la watchlist via le gestionnaire dédié
+        try:
+            self.linear_symbols, self.inverse_symbols, self.funding_data = self.watchlist_manager.build_watchlist(
+                base_url, perp_data, self.volatility_tracker
+            )
+            # Récupérer les données originales de funding
+            self.original_funding_data = self.watchlist_manager.get_original_funding_data()
+        except Exception as e:
+            if "Aucun symbole" in str(e) or "Aucun funding" in str(e):
+                # Convertir en exceptions spécifiques
+                if "Aucun symbole" in str(e):
+                    raise NoSymbolsError(str(e))
+                else:
+                    from errors import FundingUnavailableError
+                    raise FundingUnavailableError(str(e))
+            else:
+                raise
+        
+        self.logger.info(f"📊 Symboles linear: {len(self.linear_symbols)}, inverse: {len(self.inverse_symbols)}")
+        
+        # Démarrer le tracker de volatilité (arrière-plan) AVANT les WS bloquantes
+        self.volatility_tracker.start_refresh_task()
+        
+        # Démarrer l'affichage
+        self.display_thread = threading.Thread(target=self._display_loop)
+        self.display_thread.daemon = True
+        self.display_thread.start()
+
+        # Démarrer les connexions WebSocket via le gestionnaire dédié
+        if self.linear_symbols or self.inverse_symbols:
+            self.ws_manager.start_connections(self.linear_symbols, self.inverse_symbols)
+        else:
+            self.logger.warning("⚠️ Aucun symbole valide trouvé")
+            raise NoSymbolsError("Aucun symbole valide trouvé")
+    
+    
+    def _get_active_symbols(self) -> List[str]:
+        """Retourne la liste des symboles actuellement actifs."""
+        return list(self.funding_data.keys())
+    
+    def _log_filter_config(self, config: Dict, volatility_ttl_sec: int):
+        """Affiche la configuration des filtres."""
+        # Extraire les paramètres pour l'affichage
         categorie = config.get("categorie", "both")
         funding_min = config.get("funding_min")
         funding_max = config.get("funding_max")
-        volume_min = config.get("volume_min")
         volume_min_millions = config.get("volume_min_millions")
         spread_max = config.get("spread_max")
         volatility_min = config.get("volatility_min")
         volatility_max = config.get("volatility_max")
         limite = config.get("limite")
-        self.volatility_ttl_sec = int(config.get("volatility_ttl_sec", 120) or 120)
-        self.price_ttl_sec = 120
-        # Nouveaux paramètres temporels
         funding_time_min_minutes = config.get("funding_time_min_minutes")
         funding_time_max_minutes = config.get("funding_time_max_minutes")
         
-        # Afficher les filtres
+        # Formater pour l'affichage
         min_display = f"{funding_min:.6f}" if funding_min is not None else "none"
         max_display = f"{funding_max:.6f}" if funding_max is not None else "none"
         volume_display = f"{volume_min_millions:.1f}" if volume_min_millions is not None else "none"
@@ -1423,454 +1078,8 @@ class PriceTracker:
             f"funding_max={max_display} | volume_min_millions={volume_display} | "
             f"spread_max={spread_display} | volatility_min={volatility_min_display} | "
             f"volatility_max={volatility_max_display} | ft_min(min)={ft_min_display} | "
-            f"ft_max(min)={ft_max_display} | limite={limite_display} | vol_ttl={self.volatility_ttl_sec}s"
+            f"ft_max(min)={ft_max_display} | limite={limite_display} | vol_ttl={volatility_ttl_sec}s"
         )
-        
-        # Récupérer les funding rates selon la catégorie
-        # OPTIMISATION: fetch_funding_map() utilise maintenant la limite maximum (1000) de l'API
-        funding_map = {}
-        if categorie == "linear":
-            self.logger.info("📡 Récupération des funding rates pour linear (optimisé)…")
-            funding_map = fetch_funding_map(base_url, "linear", 10)
-        elif categorie == "inverse":
-            self.logger.info("📡 Récupération des funding rates pour inverse (optimisé)…")
-            funding_map = fetch_funding_map(base_url, "inverse", 10)
-        else:  # "both"
-            self.logger.info("📡 Récupération des funding rates pour linear+inverse (optimisé: parallèle)…")
-            # Paralléliser les requêtes linear et inverse
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                # Lancer les deux requêtes en parallèle
-                linear_future = executor.submit(fetch_funding_map, base_url, "linear", 10)
-                inverse_future = executor.submit(fetch_funding_map, base_url, "inverse", 10)
-                
-                # Attendre les résultats
-                linear_funding = linear_future.result()
-                inverse_funding = inverse_future.result()
-            
-            funding_map = {**linear_funding, **inverse_funding}  # Merger (priorité au dernier)
-        
-        if not funding_map:
-            self.logger.warning("⚠️ Aucun funding disponible pour la catégorie sélectionnée")
-            raise FundingUnavailableError("Aucun funding disponible pour la catégorie sélectionnée")
-        
-        # Stocker les next_funding_time originaux pour fallback (REST)
-        try:
-            self.original_funding_data = {}
-            for _sym, _data in funding_map.items():
-                try:
-                    nft = _data.get("next_funding_time")
-                    if nft:
-                        self.original_funding_data[_sym] = nft
-                except Exception:
-                    continue
-        except Exception:
-            # En cas d'erreur, on garde simplement la map vide
-            self.original_funding_data = {}
-        
-        # Compter les symboles avant filtrage
-        all_symbols = list(set(perp_data["linear"] + perp_data["inverse"]))
-        n0 = len([s for s in all_symbols if s in funding_map])
-        
-        # Filtrer par funding, volume et temps avant funding
-        filtered_symbols = filter_by_funding(
-            perp_data,
-            funding_map,
-            funding_min,
-            funding_max,
-            volume_min,
-            volume_min_millions,
-            limite,
-            funding_time_min_minutes=funding_time_min_minutes,
-            funding_time_max_minutes=funding_time_max_minutes,
-        )
-        n1 = len(filtered_symbols)
-        
-        # Appliquer le filtre de spread si nécessaire
-        final_symbols = filtered_symbols
-        n2 = n1
-        
-        if spread_max is not None and filtered_symbols:
-            # Récupérer les données de spread pour les symboles restants
-            symbols_to_check = [symbol for symbol, _, _, _ in filtered_symbols]
-            self.logger.info(f"🔎 Évaluation du spread (REST tickers) pour {len(symbols_to_check)} symboles…")
-            
-            try:
-                spread_data = {}
-                
-                # Séparer les symboles par catégorie pour les requêtes spread
-                # Utiliser les catégories officielles (fallback heuristique si absent)
-                linear_symbols_for_spread = [s for s in symbols_to_check if category_of_symbol(s, self.symbol_categories) == "linear"]
-                inverse_symbols_for_spread = [s for s in symbols_to_check if category_of_symbol(s, self.symbol_categories) == "inverse"]
-                
-                # OPTIMISATION: fetch_spread_data() utilise maintenant des batches de 200 et de la parallélisation
-                # Paralléliser les requêtes de spreads pour linear et inverse
-                if linear_symbols_for_spread or inverse_symbols_for_spread:
-                    self.logger.info(f"🔎 Récupération spreads (optimisé: batch=200, parallèle) - linear: {len(linear_symbols_for_spread)}, inverse: {len(inverse_symbols_for_spread)}…")
-                    
-                    from concurrent.futures import ThreadPoolExecutor
-                    with ThreadPoolExecutor(max_workers=2) as executor:
-                        futures = {}
-                        
-                        # Lancer les requêtes en parallèle si nécessaire
-                        if linear_symbols_for_spread:
-                            futures['linear'] = executor.submit(fetch_spread_data, base_url, linear_symbols_for_spread, 10, "linear")
-                        
-                        if inverse_symbols_for_spread:
-                            futures['inverse'] = executor.submit(fetch_spread_data, base_url, inverse_symbols_for_spread, 10, "inverse")
-                        
-                        # Récupérer les résultats
-                        if 'linear' in futures:
-                            linear_spread_data = futures['linear'].result()
-                            spread_data.update(linear_spread_data)
-                        
-                        if 'inverse' in futures:
-                            inverse_spread_data = futures['inverse'].result()
-                            spread_data.update(inverse_spread_data)
-                
-                final_symbols = filter_by_spread(filtered_symbols, spread_data, spread_max)
-                n2 = len(final_symbols)
-                
-                # Log des résultats du filtre spread
-                rejected = n1 - n2
-                spread_pct_display = spread_max * 100
-                self.logger.info(f"✅ Filtre spread : gardés={n2} | rejetés={rejected} (seuil {spread_pct_display:.2f}%)")
-                
-            except Exception as e:
-                self.logger.warning(f"⚠️ Erreur lors de la récupération des spreads : {e}")
-                # Continuer sans le filtre de spread
-                final_symbols = [(symbol, funding, volume, funding_time_remaining, 0.0) for symbol, funding, volume, funding_time_remaining in filtered_symbols]
-        
-        # Calculer la volatilité pour tous les symboles (même sans filtre)
-        n_before_volatility = len(final_symbols) if final_symbols else 0
-        if final_symbols:
-            try:
-                self.logger.info("🔎 Évaluation de la volatilité 5m pour tous les symboles…")
-                final_symbols = filter_by_volatility(
-                    final_symbols,
-                    client,
-                    volatility_min,
-                    volatility_max,
-                    self.logger,
-                    self.volatility_cache,
-                    ttl_seconds=self.volatility_ttl_sec,
-                    symbol_categories=self.symbol_categories,
-                )
-                n_after_volatility = len(final_symbols)
-            except Exception as e:
-                self.logger.warning(f"⚠️ Erreur lors du calcul de la volatilité : {e}")
-                n_after_volatility = n_before_volatility
-                # Continuer sans le filtre de volatilité
-        else:
-            n_after_volatility = 0
-        
-        # Appliquer la limite finale
-        if limite is not None and len(final_symbols) > limite:
-            final_symbols = final_symbols[:limite]
-        n3 = len(final_symbols)
-        
-        # Enregistrer les métriques des filtres
-        record_filter_result("funding_volume_time", n1, n0 - n1)
-        if spread_max is not None:
-            record_filter_result("spread", n2, n1 - n2)
-        record_filter_result("volatility", n_after_volatility, n_before_volatility - n_after_volatility)
-        record_filter_result("final_limit", n3, n_after_volatility - n3)
-        
-        # Log des comptes
-        self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume/temps = {n1} | après spread = {n2} | après volatilité = {n_after_volatility} | après tri+limit = {n3}")
-        
-        if not final_symbols:
-            self.logger.warning("⚠️ Aucun symbole ne correspond aux critères de filtrage")
-            raise NoSymbolsError("Aucun symbole ne correspond aux critères de filtrage")
-        
-        # Log des symboles retenus
-        if final_symbols:
-            # Extraire les symboles selon le format du tuple
-            if len(final_symbols[0]) == 6:
-                symbols_list = [symbol for symbol, _, _, _, _, _ in final_symbols]
-            elif len(final_symbols[0]) == 5:
-                symbols_list = [symbol for symbol, _, _, _, _ in final_symbols]
-            elif len(final_symbols[0]) == 4:
-                symbols_list = [symbol for symbol, _, _, _ in final_symbols]
-            else:
-                symbols_list = [symbol for symbol, _, _ in final_symbols]
-            self.logger.info(f"🧭 Symboles retenus (Top {n3}) : {symbols_list}")
-            
-            # Séparer les symboles par catégorie
-            if len(final_symbols[0]) == 6:
-                linear_symbols = [
-                    symbol for symbol, _, _, _, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
-                ]
-                inverse_symbols = [
-                    symbol for symbol, _, _, _, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
-                ]
-            elif len(final_symbols[0]) == 5:
-                linear_symbols = [
-                    symbol for symbol, _, _, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
-                ]
-                inverse_symbols = [
-                    symbol for symbol, _, _, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
-                ]
-            elif len(final_symbols[0]) == 4:
-                linear_symbols = [
-                    symbol for symbol, _, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
-                ]
-                inverse_symbols = [
-                    symbol for symbol, _, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
-                ]
-            else:
-                linear_symbols = [
-                    symbol for symbol, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "linear"
-                ]
-                inverse_symbols = [
-                    symbol for symbol, _, _ in final_symbols 
-                    if category_of_symbol(symbol, self.symbol_categories) == "inverse"
-                ]
-            
-            self.linear_symbols = linear_symbols
-            self.inverse_symbols = inverse_symbols
-            
-            # Construire funding_data avec les bonnes données
-            if len(final_symbols[0]) == 6:
-                # Format: (symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct)
-                self.funding_data = {
-                    symbol: (funding, volume, funding_time_remaining, spread_pct, volatility_pct) 
-                    for symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct in final_symbols
-                }
-            elif len(final_symbols[0]) == 5:
-                # Format: (symbol, funding, volume, funding_time_remaining, spread_pct)
-                self.funding_data = {
-                    symbol: (funding, volume, funding_time_remaining, spread_pct, None) 
-                    for symbol, funding, volume, funding_time_remaining, spread_pct in final_symbols
-                }
-            elif len(final_symbols[0]) == 4:
-                # Format: (symbol, funding, volume, funding_time_remaining)
-                self.funding_data = {
-                    symbol: (funding, volume, funding_time_remaining, 0.0, None) 
-                    for symbol, funding, volume, funding_time_remaining in final_symbols
-                }
-            else:
-                # Format: (symbol, funding, volume)
-                self.funding_data = {
-                    symbol: (funding, volume, "-", 0.0, None) 
-                    for symbol, funding, volume in final_symbols
-                }
-            
-            # Les données en temps réel seront initialisées uniquement via WebSocket
-            # Pas d'initialisation avec des données statiques pour garantir la fraîcheur
-        
-        self.logger.info(f"📊 Symboles linear: {len(self.linear_symbols)}, inverse: {len(self.inverse_symbols)}")
-        
-        # Démarrer la tâche de rafraîchissement de la volatilité (arrière-plan) AVANT les WS bloquantes
-        self._start_volatility_refresh_task()
-
-        # Démarrer les connexions WebSocket selon les symboles disponibles
-        if self.linear_symbols and self.inverse_symbols:
-            # Les deux catégories : créer deux connexions
-            self.logger.info("🔄 Démarrage des connexions WebSocket pour linear et inverse")
-            self._start_dual_connections()
-        elif self.linear_symbols:
-            # Seulement linear
-            self.logger.info("🔄 Démarrage de la connexion WebSocket linear")
-            self._start_single_connection("linear", self.linear_symbols)
-        elif self.inverse_symbols:
-            # Seulement inverse
-            self.logger.info("🔄 Démarrage de la connexion WebSocket inverse")
-            self._start_single_connection("inverse", self.inverse_symbols)
-        else:
-            self.logger.warning("⚠️ Aucun symbole valide trouvé")
-            raise NoSymbolsError("Aucun symbole valide trouvé")
-    
-    def _handle_ticker(self, ticker_data: dict):
-        """Callback thread-safe appelé par les connexions WS isolées pour chaque tick."""
-        try:
-            symbol = ticker_data.get("symbol", "")
-            mark_price = ticker_data.get("markPrice")
-            last_price = ticker_data.get("lastPrice")
-            if symbol and mark_price is not None and last_price is not None:
-                mark_val = float(mark_price)
-                last_val = float(last_price)
-                update(symbol, mark_val, last_val, time.time())
-            # Mettre à jour realtime_data (autres champs aussi utiles)
-            if symbol:
-                self._update_realtime_data(symbol, ticker_data)
-        except Exception as e:
-            self.logger.warning(f"⚠️ Erreur handle_ticker: {e}")
-
-    def _start_single_connection(self, category: str, symbols: list):
-        """Démarre une connexion WebSocket pour une seule catégorie via une instance isolée."""
-        conn = PublicWSClient(
-            category=category, 
-            symbols=symbols, 
-            testnet=self.testnet, 
-            logger=self.logger, 
-            on_ticker_callback=self._handle_ticker
-        )
-        self._ws_conns = [conn]
-        # Démarrer l'affichage
-        self.display_thread = threading.Thread(target=self._display_loop)
-        self.display_thread.daemon = True
-        self.display_thread.start()
-        # Lancer la connexion (bloquant)
-        conn.run()
-    
-    def _start_dual_connections(self):
-        """Démarre deux connexions WebSocket isolées (linear et inverse)."""
-        # Démarrer l'affichage
-        self.display_thread = threading.Thread(target=self._display_loop)
-        self.display_thread.daemon = True
-        self.display_thread.start()
-        # Créer connexions isolées
-        linear_conn = PublicWSClient(
-            category="linear", 
-            symbols=self.linear_symbols, 
-            testnet=self.testnet, 
-            logger=self.logger, 
-            on_ticker_callback=self._handle_ticker
-        )
-        inverse_conn = PublicWSClient(
-            category="inverse", 
-            symbols=self.inverse_symbols, 
-            testnet=self.testnet, 
-            logger=self.logger, 
-            on_ticker_callback=self._handle_ticker
-        )
-        self._ws_conns = [linear_conn, inverse_conn]
-        # Lancer en parallèle
-        linear_thread = threading.Thread(target=linear_conn.run)
-        inverse_thread = threading.Thread(target=inverse_conn.run)
-        linear_thread.daemon = True
-        inverse_thread.daemon = True
-        self._ws_threads = [linear_thread, inverse_thread]
-        linear_thread.start()
-        inverse_thread.start()
-        # Bloquer le thread principal sur les deux
-        linear_thread.join()
-        inverse_thread.join()
-        
-    def _start_volatility_refresh_task(self):
-        """Démarre une tâche en arrière-plan pour rafraîchir le cache de volatilité."""
-        if self._vol_refresh_thread and self._vol_refresh_thread.is_alive():
-            try:
-                self.logger.info("ℹ️ Thread volatilité déjà actif")
-            except Exception:
-                pass
-            return
-        self._vol_refresh_thread = threading.Thread(target=self._volatility_refresh_loop)
-        self._vol_refresh_thread.daemon = True
-        self._vol_refresh_thread.start()
-        try:
-            self.logger.info("🧵 Thread volatilité démarré")
-        except Exception:
-            pass
-
-    def _volatility_refresh_loop(self):
-        """Boucle de rafraîchissement périodique (2 min) du cache de volatilité."""
-        # Utiliser un client PUBLIC (pas besoin de clés) pour la volatilité
-        try:
-            client = BybitPublicClient(
-                testnet=self.testnet,
-                timeout=10,
-            )
-        except Exception as e:
-            self.logger.warning(f"⚠️ Impossible d'initialiser le client public pour la volatilité: {e}")
-            return
-        # Rafraîchir avant l'expiration du TTL pour rester frais; si erreur, ne pas mettre à jour
-        try:
-            ttl_sec = int(getattr(self, "volatility_ttl_sec", 120) or 120)
-        except Exception:
-            ttl_sec = 120
-        # Rafraîchir plus fréquemment que TTL pour réduire le risque de trou; plafonner à 60s
-        refresh_interval = max(30, min(60, ttl_sec - 10))
-        try:
-            self.logger.info(f"🩺 Volatilité: thread actif | ttl={ttl_sec}s | interval={refresh_interval}s")
-        except Exception:
-            pass
-        while self.running:
-            try:
-                symbols_to_refresh = list(self.funding_data.keys())
-                if not symbols_to_refresh:
-                    # Rien à faire, patienter un court instant
-                    time.sleep(5)
-                    continue
-                # Log de cycle
-                try:
-                    self.logger.info(f"🔄 Refresh volatilité: {len(symbols_to_refresh)} symboles")
-                except Exception:
-                    pass
-                if symbols_to_refresh:
-                    # Utiliser la fonction async batch existante
-                    results = asyncio.run(
-                        compute_volatility_batch_async(
-                            client,
-                            symbols_to_refresh,
-                            timeout=10,
-                            symbol_categories=self.symbol_categories,
-                        )
-                    )
-                    now_ts = time.time()
-                    ok_count = 0
-                    fail_count = 0
-                    for sym, vol_pct in results.items():
-                        if vol_pct is not None:
-                            cache_key = get_volatility_cache_key(sym)
-                            self.volatility_cache[cache_key] = (now_ts, vol_pct)
-                            ok_count += 1
-                        else:
-                            # Ne pas écraser une valeur fraîche par None
-                            fail_count += 1
-                    try:
-                        self.logger.info(f"✅ Refresh volatilité terminé: ok={ok_count} | fail={fail_count}")
-                    except Exception:
-                        pass
-                    # Retry simple pour les symboles en échec afin de limiter les fenêtres "-"
-                    failed = [s for s, v in results.items() if v is None]
-                    if failed:
-                        try:
-                            self.logger.info(f"🔁 Retry volatilité pour {len(failed)} symboles…")
-                            time.sleep(5)
-                            retry_results = asyncio.run(
-                                compute_volatility_batch_async(
-                                    client,
-                                    failed,
-                                    timeout=10,
-                                    symbol_categories=self.symbol_categories,
-                                )
-                            )
-                            now_ts = time.time()
-                            retry_ok = 0
-                            for sym, vol_pct in retry_results.items():
-                                if vol_pct is not None:
-                                    cache_key = get_volatility_cache_key(sym)
-                                    self.volatility_cache[cache_key] = (now_ts, vol_pct)
-                                    retry_ok += 1
-                            self.logger.info(f"🔁 Retry volatilité terminé: récupérés={retry_ok}/{len(failed)}")
-                        except Exception as re:
-                            self.logger.warning(f"⚠️ Erreur retry volatilité: {re}")
-                # Nettoyer le cache des symboles non suivis
-                try:
-                    active = set(self.funding_data.keys())
-                    stale_keys = [k for k in list(self.volatility_cache.keys()) if k.split("volatility_5m_")[-1] not in active]
-                    for k in stale_keys:
-                        self.volatility_cache.pop(k, None)
-                except Exception:
-                    pass
-            except Exception as e:
-                self.logger.warning(f"⚠️ Erreur refresh volatilité: {e}")
-                # Backoff simple en cas d'erreur globale du cycle
-                time.sleep(5)
-            # Attendre 2 minutes
-            for _ in range(refresh_interval):
-                if not self.running:
-                    break
-                time.sleep(1)
     
     # Runners legacy supprimés (isolation par PublicWSConnection en place)
 
