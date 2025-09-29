@@ -25,9 +25,15 @@ def get_settings():
         "PUBLIC_HTTP_MAX_CALLS_PER_SEC", "PUBLIC_HTTP_WINDOW_SECONDS",
     }
     
+    # Variables d'environnement à ignorer complètement (faux positifs)
+    ignored_vars = {
+        "FPS_BROWSER_APP_PROFILE_STRING",  # Variable système Windows
+        "FPS_BROWSER_APP_PROFILE_STRING_OLD",  # Autres variantes possibles
+    }
+    
     # Détecter les variables d'environnement inconnues
     all_env_vars = set(os.environ.keys())
-    unknown_vars = all_env_vars - valid_env_vars
+    unknown_vars = all_env_vars - valid_env_vars - ignored_vars
     
     # Filtrer les variables système et les variables non liées au bot
     bot_related_unknown = []
@@ -40,7 +46,8 @@ def get_settings():
             "PATHEXT", "PROCESSOR", "NUMBER_OF_PROCESSORS", "OS", "DRIVE",
             "VIRTUAL_ENV", "CONDA", "PIP", "NODE", "NPM", "GIT", "SSH",
             "DOCKER", "KUBERNETES", "AWS", "AZURE", "GOOGLE", "JAVA",
-            "MAVEN", "GRADLE", "NODEJS", "NPM", "YARN", "BOWER"
+            "MAVEN", "GRADLE", "NODEJS", "NPM", "YARN", "BOWER", "FPS",
+            "BROWSER", "APP", "PROFILE", "STRING"
         ]):
             # Vérifier si la variable semble liée au bot (contient des mots-clés)
             if any(keyword in var.upper() for keyword in [

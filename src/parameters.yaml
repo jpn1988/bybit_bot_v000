@@ -3,26 +3,29 @@
 # - categorie : "linear" (USDT), "inverse" (USD) ou "both"
 # - funding_min / funding_max : bornes sur le taux de funding (valeurs décimales)
 #   Exemples : 0.0001 = 0.01%   |   -0.0002 = -0.02%
-# - volume_min : volume minimum en USDT (ex: 1000000 = 1M USDT) [ANCIEN FORMAT]
-# - volume_min_millions : volume minimum en millions (ex: 5.0 = 5M USDT) [NOUVEAU FORMAT]
+# - volume_min_millions : volume minimum en millions (ex: 5.0 = 5M USDT)
 # - spread_max : spread maximum autorisé (ex: 0.003 = 0.30%)
 # - volatility_min : volatilité minimum autorisée (ex: 0.002 = 0.20%) [NOUVEAU]
 # - volatility_max : volatilité maximum autorisée (ex: 0.007 = 0.70%) [NOUVEAU]
 # - limite : nombre max de paires à afficher (après tri par |funding| décroissant)
 # 
-# PRIORITÉ : Variables ENV > volume_min_millions (fichier) > volume_min (fichier)
+# PRIORITÉ : Variables ENV > volume_min_millions (fichier)
 # ============================================
 
 categorie: "linear"      # "linear" | "inverse" | "both"
 funding_min: 0.0001     # ex: 0.0001 pour >= 0.01%  | null = pas de min
 funding_max: null        # ex: 0.0005 pour <= 0.05%  | null = pas de max
-volume_min: null     # ex: 1000000 pour >= 1M USDT | null = pas de min [ANCIEN]
-volume_min_millions: 50   # ex: 5.0 pour >= 5M USDT | null = pas de min [NOUVEAU]
+volume_min_millions: 50   # ex: 5.0 pour >= 5M USDT | null = pas de min
 # Normalisation: spread exprimé en ratio (0.003 = 0.30%)
 spread_max: 0.03        # ex: 0.003 pour <= 0.30% | null = pas de filtre
 volatility_min: null     # ex: 0.002 pour >= 0.20% | null = pas de min [NOUVEAU]
 volatility_max: 0.07    # ex: 0.007 pour <= 0.70% | null = pas de max [NOUVEAU]
-volatility_ttl_sec: 120  # TTL du cache volatilité (secondes)
+volatility_ttl_sec: 120  # TTL du cache volatilité (secondes)(recalcul de la volatiliter toute les 120 seconde)
 limite: null               # ex: 10  | null = pas de limite
 funding_time_min_minutes:    # Optionnel: minimum 30 minutes avant funding
-funding_time_max_minutes: 1400  # Optionnel: maximum 120 minutes avant funding
+funding_time_max_minutes: 200  # Optionnel: maximum 120 minutes avant funding
+
+# ============================================
+# Configuration de l'affichage
+# ============================================
+display_interval_seconds: 10  # Intervalle d'affichage de la watchlist (secondes)

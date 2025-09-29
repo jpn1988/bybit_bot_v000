@@ -77,16 +77,17 @@ class WatchlistManager:
             "categorie": "linear",
             "funding_min": None,
             "funding_max": None,
-            "volume_min": None,
             "volume_min_millions": None,
             "spread_max": None,
             "volatility_min": None,
             "volatility_max": None,
             "limite": 10,
             "volatility_ttl_sec": 120,
-            # Nouveaux paramètres temporels
-            "funding_time_min_minutes": None,
-            "funding_time_max_minutes": None,
+        # Nouveaux paramètres temporels
+        "funding_time_min_minutes": None,
+        "funding_time_max_minutes": None,
+        # Configuration d'affichage
+        "display_interval_seconds": 10,
         }
         
         # Charger depuis le fichier si disponible
@@ -112,6 +113,7 @@ class WatchlistManager:
             "volatility_ttl_sec": "volatility_ttl_sec",
             "funding_time_min_minutes": "funding_time_min_minutes",
             "funding_time_max_minutes": "funding_time_max_minutes",
+            "display_interval_seconds": "display_interval_seconds",
         }
         
         # Appliquer les variables d'environnement si présentes
@@ -168,11 +170,10 @@ class WatchlistManager:
             if spread_max > 1.0:  # 100% de spread maximum
                 errors.append(f"spread_max trop élevé ({spread_max}), maximum recommandé: 1.0 (100%)")
         
-        # Validation des volumes
-        for param in ["volume_min", "volume_min_millions"]:
-            value = config.get(param)
-            if value is not None and value < 0:
-                errors.append(f"{param} ne peut pas être négatif ({value})")
+        # Validation du volume
+        volume_min_millions = config.get("volume_min_millions")
+        if volume_min_millions is not None and volume_min_millions < 0:
+            errors.append(f"volume_min_millions ne peut pas être négatif ({volume_min_millions})")
         
         # Validation des paramètres temporels de funding
         ft_min = config.get("funding_time_min_minutes")
@@ -209,6 +210,14 @@ class WatchlistManager:
                 errors.append(f"volatility_ttl_sec trop faible ({vol_ttl}), minimum: 10 secondes")
             if vol_ttl > 3600:
                 errors.append(f"volatility_ttl_sec trop élevé ({vol_ttl}), maximum: 3600 secondes (1h)")
+        
+        # Validation de l'intervalle d'affichage
+        display_interval = config.get("display_interval_seconds")
+        if display_interval is not None:
+            if display_interval < 1:
+                errors.append(f"display_interval_seconds trop faible ({display_interval}), minimum: 1 seconde")
+            if display_interval > 300:
+                errors.append(f"display_interval_seconds trop élevé ({display_interval}), maximum: 300 secondes (5min)")
         
         # Lever une erreur si des problèmes ont été détectés
         if errors:
@@ -555,7 +564,6 @@ class WatchlistManager:
         funding_map: Dict, 
         funding_min: Optional[float], 
         funding_max: Optional[float], 
-        volume_min: Optional[float], 
         volume_min_millions: Optional[float], 
         limite: Optional[int], 
         funding_time_min_minutes: Optional[int] = None, 
@@ -569,8 +577,7 @@ class WatchlistManager:
             funding_map: Dictionnaire des funding rates, volumes et temps de funding
             funding_min: Funding minimum en valeur absolue
             funding_max: Funding maximum en valeur absolue
-            volume_min: Volume minimum (ancien format)
-            volume_min_millions: Volume minimum en millions (nouveau format)
+            volume_min_millions: Volume minimum en millions
             limite: Limite du nombre d'éléments
             funding_time_min_minutes: Temps minimum en minutes avant prochain funding
             funding_time_max_minutes: Temps maximum en minutes avant prochain funding
@@ -581,12 +588,10 @@ class WatchlistManager:
         # Récupérer tous les symboles perpétuels
         all_symbols = list(set(perp_data["linear"] + perp_data["inverse"]))
         
-        # Déterminer le volume minimum à utiliser (priorité : volume_min_millions > volume_min)
+        # Déterminer le volume minimum à utiliser
         effective_volume_min = None
         if volume_min_millions is not None:
             effective_volume_min = volume_min_millions * 1_000_000  # Convertir en valeur brute
-        elif volume_min is not None:
-            effective_volume_min = volume_min
         
         # Filtrer par funding, volume et fenêtre temporelle
         filtered_symbols = []
@@ -688,7 +693,6 @@ class WatchlistManager:
         categorie = config.get("categorie", "both")
         funding_min = config.get("funding_min")
         funding_max = config.get("funding_max")
-        volume_min = config.get("volume_min")
         volume_min_millions = config.get("volume_min_millions")
         spread_max = config.get("spread_max")
         volatility_min = config.get("volatility_min")
@@ -743,7 +747,6 @@ class WatchlistManager:
             funding_map,
             funding_min,
             funding_max,
-            volume_min,
             volume_min_millions,
             limite,
             funding_time_min_minutes=funding_time_min_minutes,
@@ -839,7 +842,8 @@ class WatchlistManager:
         
         if not final_symbols:
             self.logger.warning("⚠️ Aucun symbole ne correspond aux critères de filtrage")
-            raise RuntimeError("Aucun symbole ne correspond aux critères de filtrage")
+            # Retourner des listes vides au lieu de lever une exception
+            return [], [], {}
         
         # Séparer les symboles par catégorie
         if len(final_symbols[0]) == 6:
@@ -942,3 +946,151 @@ class WatchlistManager:
             Dictionnaire des next_funding_time originaux
         """
         return self.original_funding_data.copy()
+    
+    def find_candidate_symbols(self, base_url: str, perp_data: Dict) -> List[str]:
+        """
+        Trouve les symboles qui sont proches de passer les filtres (candidats).
+        Utilise la même logique que le filtrage principal mais avec des seuils plus permissifs.
+        
+        Args:
+            base_url: URL de base de l'API Bybit
+            perp_data: Données des perpétuels
+            
+        Returns:
+            Liste des symboles candidats
+        """
+        candidates = []
+        config = self.config
+        
+        # Extraire les paramètres de configuration
+        categorie = config.get("categorie", "both")
+        funding_min = config.get("funding_min")
+        funding_max = config.get("funding_max")
+        volume_min_millions = config.get("volume_min_millions")
+        spread_max = config.get("spread_max")
+        volatility_min = config.get("volatility_min")
+        volatility_max = config.get("volatility_max")
+        funding_time_min_minutes = config.get("funding_time_min_minutes")
+        funding_time_max_minutes = config.get("funding_time_max_minutes")
+        
+        # Si aucun filtre n'est configuré, pas de candidats à surveiller
+        if not any([funding_min, funding_max, volume_min_millions, spread_max, volatility_min, volatility_max]):
+            return candidates
+        
+        # Pour éviter l'incohérence, on ne détecte des candidats que si on a des filtres de funding
+        # ET que le filtre de temps de funding n'est pas trop restrictif
+        if not funding_min and not funding_max:
+            return candidates
+        
+        # Si le filtre de temps de funding est trop restrictif (< 10 minutes), 
+        # on ne détecte pas de candidats pour éviter l'incohérence
+        if funding_time_max_minutes is not None and funding_time_max_minutes < 10:
+            self.logger.info(f"ℹ️ Filtre de temps de funding trop restrictif ({funding_time_max_minutes}min) - pas de candidats détectés")
+            return candidates
+        
+        # Récupérer les funding rates selon la catégorie
+        funding_map = {}
+        try:
+            if categorie == "linear":
+                funding_map = self.fetch_funding_map(base_url, "linear", 10)
+            elif categorie == "inverse":
+                funding_map = self.fetch_funding_map(base_url, "inverse", 10)
+            else:  # "both"
+                # Paralléliser les requêtes linear et inverse
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    linear_future = executor.submit(self.fetch_funding_map, base_url, "linear", 10)
+                    inverse_future = executor.submit(self.fetch_funding_map, base_url, "inverse", 10)
+                    
+                    linear_funding = linear_future.result()
+                    inverse_funding = inverse_future.result()
+                
+                funding_map = {**linear_funding, **inverse_funding}
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur récupération candidats: {e}")
+            return candidates
+        
+        # Convertir volume_min_millions en valeur brute
+        effective_volume_min = None
+        if volume_min_millions is not None:
+            effective_volume_min = volume_min_millions * 1_000_000
+        
+        # Analyser chaque symbole pour détecter les candidats
+        for symbol, data in funding_map.items():
+            funding = data["funding"]
+            volume = data["volume"]
+            funding_abs = abs(funding)
+            
+            # Vérifier si c'est un candidat potentiel avec des seuils plus permissifs
+            is_candidate = False
+            
+            # Candidat pour funding_min (80% du seuil minimum)
+            if funding_min is not None and funding_abs >= (funding_min * 0.8) and funding_abs < funding_min:
+                if effective_volume_min is None or volume >= (effective_volume_min * 0.9):
+                    is_candidate = True
+            
+            # Candidat pour funding_max (100% du seuil maximum)
+            elif funding_max is not None and funding_abs > funding_max and funding_abs <= (funding_max * 1.2):
+                if effective_volume_min is None or volume >= (effective_volume_min * 0.9):
+                    is_candidate = True
+            
+            # Candidat pour volume (90% du seuil minimum)
+            elif effective_volume_min is not None and volume >= (effective_volume_min * 0.9) and volume < effective_volume_min:
+                if funding_min is None or funding_abs >= (funding_min * 0.8):
+                    is_candidate = True
+            
+            if is_candidate:
+                candidates.append(symbol)
+        
+        self.logger.info(f"🎯 {len(candidates)} candidats détectés pour surveillance: {candidates[:10]}{'...' if len(candidates) > 10 else ''}")
+        return candidates
+    
+    def check_if_symbol_now_passes_filters(self, symbol: str, ticker_data: dict) -> bool:
+        """
+        Vérifie si un symbole candidat passe maintenant les filtres.
+        
+        Args:
+            symbol: Symbole à vérifier
+            ticker_data: Données du ticker reçues via WebSocket
+            
+        Returns:
+            True si le symbole passe maintenant les filtres
+        """
+        config = self.config
+        funding_min = config.get("funding_min")
+        funding_max = config.get("funding_max")
+        volume_min_millions = config.get("volume_min_millions")
+        
+        # Récupérer les données du ticker
+        funding_rate = ticker_data.get("fundingRate")
+        volume24h = ticker_data.get("volume24h")
+        
+        if funding_rate is None:
+            return False
+        
+        try:
+            funding = float(funding_rate)
+            funding_abs = abs(funding)
+        except (ValueError, TypeError):
+            return False
+        
+        # Convertir volume en millions
+        effective_volume_min = None
+        if volume_min_millions is not None:
+            effective_volume_min = volume_min_millions * 1_000_000
+        
+        # Vérifier les filtres
+        if funding_min is not None and funding_abs < funding_min:
+            return False
+        
+        if funding_max is not None and funding_abs > funding_max:
+            return False
+        
+        if volume24h is not None and effective_volume_min is not None:
+            try:
+                volume = float(volume24h)
+                if volume < effective_volume_min:
+                    return False
+            except (ValueError, TypeError):
+                return False
+        
+        return True

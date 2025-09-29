@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 
-cd /d "C:\Users\johan\Desktop\bybit_bot_v0"
+cd /d "C:\Users\johan\Desktop\bybit_bot_v000"
 if errorlevel 1 (
   echo [ERREUR] Impossible d'acceder au dossier du projet.
   pause
