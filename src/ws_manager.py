@@ -77,13 +77,13 @@ class WebSocketManager:
         
         # Déterminer le type de connexions nécessaires
         if self.linear_symbols and self.inverse_symbols:
-            self.logger.info("🔄 Démarrage des connexions WebSocket pour linear et inverse")
+            # Démarrage des connexions WebSocket (silencieux)
             self._start_dual_connections()
         elif self.linear_symbols:
-            self.logger.info("🔄 Démarrage de la connexion WebSocket linear")
+            # Démarrage de la connexion WebSocket linear (silencieux)
             self._start_single_connection("linear", self.linear_symbols)
         elif self.inverse_symbols:
-            self.logger.info("🔄 Démarrage de la connexion WebSocket inverse")
+            # Démarrage de la connexion WebSocket inverse (silencieux)
             self._start_single_connection("inverse", self.inverse_symbols)
         else:
             self.logger.warning("⚠️ Aucun symbole fourni pour les connexions WebSocket")
@@ -174,7 +174,7 @@ class WebSocketManager:
         """
         Arrête toutes les connexions WebSocket.
         """
-        self.logger.info("🧹 Arrêt des connexions WebSocket...")
+        # Arrêt des connexions WebSocket (silencieux)
         self.running = False
         
         # Fermer toutes les connexions

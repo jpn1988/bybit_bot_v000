@@ -89,7 +89,7 @@ class VolatilityTracker:
         self._refresh_thread.daemon = True
         self._refresh_thread.start()
         
-        self.logger.info("🧵 Thread volatilité démarré")
+        # Thread volatilité démarré (silencieux)
     
     def stop_refresh_task(self):
         """Arrête la tâche de rafraîchissement."""
@@ -100,7 +100,7 @@ class VolatilityTracker:
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur arrêt thread volatilité: {e}")
         
-        self.logger.info("🧹 Thread volatilité arrêté")
+        # Thread volatilité arrêté (silencieux)
     
     def get_cached_volatility(self, symbol: str) -> Optional[float]:
         """
@@ -222,7 +222,7 @@ class VolatilityTracker:
         
         # Calculer la volatilité pour les symboles manquants
         if symbols_to_calculate:
-            self.logger.info(f"🔎 Calcul volatilité async (parallèle) pour {len(symbols_to_calculate)} symboles…")
+            # Calcul volatilité async (silencieux)
             batch_volatilities = await self.compute_volatility_batch(symbols_to_calculate)
             
             # Mettre à jour le cache avec les nouveaux résultats
@@ -264,7 +264,7 @@ class VolatilityTracker:
         if volatility_max is not None:
             threshold_info.append(f"max={volatility_max:.2%}")
         threshold_str = " | ".join(threshold_info) if threshold_info else "aucun seuil"
-        self.logger.info(f"✅ Filtre volatilité : gardés={kept_count} | rejetés={rejected_count} (seuils {threshold_str})")
+        # Filtre volatilité (silencieux)
         
         return filtered_symbols
     
@@ -294,7 +294,7 @@ class VolatilityTracker:
         # Calculer l'intervalle de rafraîchissement
         refresh_interval = max(30, min(60, self.ttl_seconds - 10))
         
-        self.logger.info(f"🩺 Volatilité: thread actif | ttl={self.ttl_seconds}s | interval={refresh_interval}s")
+        # Volatilité: thread actif (silencieux)
         
         while self._running:
             try:
@@ -312,7 +312,7 @@ class VolatilityTracker:
                     continue
                 
                 # Log de cycle
-                self.logger.info(f"🔄 Refresh volatilité: {len(symbols_to_refresh)} symboles")
+                # Refresh volatilité (silencieux)
                 
                 # Calculer la volatilité en batch
                 results = asyncio.run(self.compute_volatility_batch(symbols_to_refresh))

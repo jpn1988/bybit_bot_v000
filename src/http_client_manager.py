@@ -39,7 +39,7 @@ class HTTPClientManager:
         atexit.register(self.close_all)
         
         HTTPClientManager._initialized = True
-        self.logger.info("🔗 Gestionnaire de clients HTTP initialisé")
+        # Gestionnaire de clients HTTP initialisé (silencieux)
     
     def get_sync_client(self, timeout: int = 10) -> httpx.Client:
         """
@@ -159,7 +159,7 @@ class HTTPClientManager:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Erreur fermeture clients async: {e}")
             
-            self.logger.info("🧹 Tous les clients HTTP fermés")
+            # Tous les clients HTTP fermés (silencieux)
             
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur lors de la fermeture des clients HTTP: {e}")

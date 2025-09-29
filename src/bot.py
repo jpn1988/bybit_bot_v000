@@ -20,7 +20,7 @@ import signal
 import threading
 import atexit
 from typing import List, Dict
-from logging_setup import setup_logging
+from logging_setup import setup_logging, log_startup_summary, log_shutdown_summary
 from config import get_settings
 from bybit_client import BybitPublicClient
 from instruments import get_perp_symbols, category_of_symbol
@@ -79,62 +79,66 @@ class PriceTracker:
         # Configuration du signal handler pour Ctrl+C
         signal.signal(signal.SIGINT, self._signal_handler)
         
-        self.logger.info("🚀 Orchestrateur du bot (filters + WebSocket prix)")
-        self.logger.info("📂 Configuration chargée")
+        # Initialiser le temps de démarrage pour l'uptime
+        self.start_time = time.time()
+        
+        # Les logs de démarrage seront affichés via log_startup_summary dans start()
         
         # Démarrer le monitoring des métriques
         start_metrics_monitoring(interval_minutes=5)
     
     def _signal_handler(self, signum, frame):
         """Gestionnaire de signal pour Ctrl+C."""
-        self.logger.info("🧹 Arrêt demandé, fermeture des WebSockets…")
         self.running = False
         
-        # Arrêter le gestionnaire WebSocket principal
+        # Arrêter le gestionnaire WebSocket principal (silencieux)
         try:
             self.ws_manager.stop()
         except Exception:
             pass
         
-        # Arrêter la surveillance des candidats
+        # Arrêter la surveillance des candidats (silencieux)
         try:
             if self.candidate_ws_client:
                 self.candidate_ws_client.close()
         except Exception:
             pass
         
-        # Arrêter le tracker de volatilité
+        # Arrêter le tracker de volatilité (silencieux)
         try:
             self.volatility_tracker.stop_refresh_task()
         except Exception:
             pass
         
-        # Arrêter la surveillance continue - FORCER l'arrêt
+        # Arrêter la surveillance continue (silencieux)
         try:
             if self.continuous_monitoring_thread and self.continuous_monitoring_thread.is_alive():
-                self.logger.info("🧹 Arrêt du thread de surveillance continue...")
-                # Ne pas attendre, forcer l'arrêt
                 self.continuous_monitoring_thread.join(timeout=1)
         except Exception:
             pass
         
-        # Arrêter le thread d'affichage
+        # Arrêter le thread d'affichage (silencieux)
         try:
             if self.display_thread and self.display_thread.is_alive():
-                self.logger.info("🧹 Arrêt du thread d'affichage...")
                 self.display_thread.join(timeout=1)
         except Exception:
             pass
         
-        # Arrêter le thread des candidats WebSocket
+        # Arrêter le thread des candidats WebSocket (silencieux)
         try:
             if self.candidate_ws_thread and self.candidate_ws_thread.is_alive():
-                self.logger.info("🧹 Arrêt du thread WebSocket candidats...")
                 self.candidate_ws_thread.join(timeout=1)
         except Exception:
             pass
         
-        self.logger.info("🧹 Arrêt des connexions WebSocket...")
+        # Calculer l'uptime
+        uptime_seconds = time.time() - self.start_time
+        
+        # Récupérer les derniers candidats surveillés
+        last_candidates = getattr(self, 'candidate_symbols', [])
+        
+        # Afficher le résumé d'arrêt professionnel
+        log_shutdown_summary(self.logger, last_candidates, uptime_seconds)
         return
     
     def _update_realtime_data_from_ticker(self, ticker_data: dict):
@@ -199,19 +203,17 @@ class PriceTracker:
             pass
         snapshot = get_snapshot()
         
-        # Si aucune opportunité n'est trouvée, afficher un message de surveillance
+        # Si aucune opportunité n'est trouvée, mode surveillance continue (silencieux)
         if not self.funding_data:
             if self._first_display:
-                self.logger.info("🔍 Mode surveillance continue - Aucune opportunité trouvée actuellement")
-                self.logger.info("⏳ Le bot continue à scanner le marché toutes les 5 minutes...")
+                # Mode surveillance continue (silencieux)
                 self._first_display = False
-            # Ne plus afficher le message périodique pour éviter la redondance avec _continuous_monitoring_loop
             return
         
         if not snapshot:
             if self._first_display:
-                self.logger.info("⏳ En attente de la première donnée WS…")
-                self._first_display = False  # Ne plus afficher ce message
+                # En attente de la première donnée WS (silencieux)
+                self._first_display = False
             return
         
         # Calculer les largeurs de colonnes
@@ -363,7 +365,7 @@ class PriceTracker:
                     break
                 time.sleep(0.1)
         
-        self.logger.info("🛑 Boucle d'affichage arrêtée")
+        # Boucle d'affichage arrêtée (silencieux)
     
     def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""
@@ -375,12 +377,9 @@ class PriceTracker:
             self.logger.error("💡 Corrigez les paramètres dans src/parameters.yaml ou les variables d'environnement")
             return  # Arrêt propre sans sys.exit
         
-        # Vérifier si le fichier de config existe
+        # Vérifier si le fichier de config existe (silencieux)
         config_path = "src/parameters.yaml"
-        if not os.path.exists(config_path):
-            self.logger.info("ℹ️ Aucun fichier de paramètres trouvé (src/parameters.yaml) → utilisation des valeurs par défaut.")
-        else:
-            self.logger.info("ℹ️ Configuration chargée depuis src/parameters.yaml")
+        config_exists = os.path.exists(config_path)
         
         # Créer un client PUBLIC pour récupérer l'URL publique (aucune clé requise)
         client = BybitPublicClient(
@@ -392,7 +391,6 @@ class PriceTracker:
         
         # Récupérer l'univers perp
         perp_data = get_perp_symbols(base_url, timeout=10)
-        self.logger.info(f"🗺️ Univers perp récupéré : linear={len(perp_data['linear'])} | inverse={len(perp_data['inverse'])} | total={perp_data['total']}")
         # Stocker le mapping officiel des catégories
         try:
             self.symbol_categories = perp_data.get("categories", {}) or {}
@@ -412,8 +410,7 @@ class PriceTracker:
         display_interval = int(config.get("display_interval_seconds", 10) or 10)
         self.display_interval_seconds = display_interval
         
-        # Afficher les filtres (délégué au watchlist manager)
-        self._log_filter_config(config, volatility_ttl_sec, display_interval)
+        # Les filtres seront affichés dans le résumé structuré
         
         # Construire la watchlist via le gestionnaire dédié
         try:
@@ -424,9 +421,7 @@ class PriceTracker:
             self.original_funding_data = self.watchlist_manager.get_original_funding_data()
         except Exception as e:
             if "Aucun symbole" in str(e) or "Aucun funding" in str(e):
-                # Ne pas lever d'exception, continuer en mode surveillance
-                self.logger.warning("⚠️ Aucune opportunité trouvée actuellement")
-                self.logger.info("🔄 Mode surveillance continue activé - le bot continue à scanner le marché...")
+                # Ne pas lever d'exception, continuer en mode surveillance (silencieux)
                 # Initialiser les listes vides pour le mode surveillance
                 self.linear_symbols = []
                 self.inverse_symbols = []
@@ -435,7 +430,8 @@ class PriceTracker:
             else:
                 raise
         
-        self.logger.info(f"📊 Symboles linear: {len(self.linear_symbols)}, inverse: {len(self.inverse_symbols)}")
+        # Afficher le résumé de démarrage structuré
+        self._display_startup_summary(config, perp_data)
         
         # Démarrer le tracker de volatilité (arrière-plan) AVANT les WS bloquantes
         self.volatility_tracker.start_refresh_task()
@@ -445,13 +441,9 @@ class PriceTracker:
         self.display_thread.daemon = True
         self.display_thread.start()
 
-        # Démarrer les connexions WebSocket via le gestionnaire dédié
+        # Démarrer les connexions WebSocket via le gestionnaire dédié (silencieux)
         if self.linear_symbols or self.inverse_symbols:
             self.ws_manager.start_connections(self.linear_symbols, self.inverse_symbols)
-        else:
-            self.logger.warning("⚠️ Aucune opportunité trouvée actuellement")
-            self.logger.info("🔄 Mode surveillance continue activé - le bot continue à scanner le marché...")
-            # Ne pas arrêter le bot, continuer en mode surveillance
         
         # Configurer la surveillance des candidats (en arrière-plan)
         self._setup_candidate_monitoring(base_url, perp_data)
@@ -465,7 +457,7 @@ class PriceTracker:
     
     def _start_continuous_monitoring(self, base_url: str, perp_data: Dict):
         """Démarre le mode surveillance continue pour scanner le marché en permanence."""
-        self.logger.info("🔄 Démarrage du mode surveillance continue...")
+        # Démarrage silencieux
         
         # Thread de re-scan périodique
         self.continuous_monitoring_thread = threading.Thread(
@@ -480,7 +472,7 @@ class PriceTracker:
         scan_interval = 60  # 1 minute entre chaque scan complet (pour les tests)
         last_scan_time = 0
         
-        self.logger.info("🔄 Boucle de surveillance continue démarrée")
+        # Boucle de surveillance continue démarrée (silencieux)
         
         while self.running:
             try:
@@ -497,7 +489,7 @@ class PriceTracker:
                     if not self.running:
                         break
                         
-                    self.logger.info("🔍 Re-scan du marché en cours...")
+                    # Re-scan du marché en cours (silencieux)
                     
                     try:
                         # Vérifier encore avant de créer le client
@@ -523,8 +515,8 @@ class PriceTracker:
                             
                         if linear_symbols or inverse_symbols:
                             # 🎯 NOUVELLES OPPORTUNITÉS TROUVÉES !
-                            self.logger.info(f"🎯 NOUVELLES OPPORTUNITÉS DÉTECTÉES !")
-                            self.logger.info(f"📊 Symboles linear: {len(linear_symbols)}, inverse: {len(inverse_symbols)}")
+                            # Nouvelles opportunités détectées (silencieux)
+                            # Symboles linear/inverse (silencieux)
                             
                             # Fusionner avec les opportunités existantes au lieu de les remplacer
                             existing_linear = set(self.linear_symbols) if hasattr(self, 'linear_symbols') else set()
@@ -540,7 +532,7 @@ class PriceTracker:
                                 if not self.running:
                                     break
                                     
-                                self.logger.info(f"🆕 Nouveaux symboles détectés: linear={len(new_linear)}, inverse={len(new_inverse)}")
+                                # Nouveaux symboles détectés (silencieux)
                                 
                                 # Mettre à jour les listes
                                 self.linear_symbols = list(existing_linear | set(linear_symbols))
@@ -560,20 +552,20 @@ class PriceTracker:
                                 # Démarrer les connexions WebSocket pour les nouvelles opportunités
                                 self.ws_manager.start_connections(self.linear_symbols, self.inverse_symbols)
                                 
-                                self.logger.info(f"📊 Watchlist mise à jour: {len(self.funding_data)} symboles total")
+                                # Watchlist mise à jour (silencieux)
                             else:
-                                self.logger.info("ℹ️ Aucun nouveau symbole détecté")
+                                # Aucun nouveau symbole détecté (silencieux)
+                                pass
                             
-                            # Continuer la surveillance pour détecter d'autres opportunités
-                            self.logger.info("✅ Surveillance continue...")
+                            # Surveillance continue (silencieux)
                         else:
                             # Vérifier si les opportunités existantes sont toujours valides
                             if self.funding_data:
                                 # Les opportunités existantes restent affichées - pas besoin de log
                                 pass
                             else:
-                                # Message moins fréquent pour éviter le spam
-                                self.logger.info("⏳ Aucune nouvelle opportunité trouvée, prochain scan dans 1 minute...")
+                                # Aucune nouvelle opportunité trouvée (silencieux)
+                                pass
                             
                     except Exception as e:
                         self.logger.warning(f"⚠️ Erreur lors du re-scan: {e}")
@@ -593,7 +585,7 @@ class PriceTracker:
                     break
                 time.sleep(10)  # Attendre 10 secondes en cas d'erreur
         
-        self.logger.info("🛑 Boucle de surveillance continue arrêtée")
+        # Boucle de surveillance continue arrêtée (silencieux)
     
     def _setup_candidate_monitoring(self, base_url: str, perp_data: Dict):
         """Configure la surveillance des symboles candidats."""
@@ -602,7 +594,7 @@ class PriceTracker:
             self.candidate_symbols = self.watchlist_manager.find_candidate_symbols(base_url, perp_data)
             
             if not self.candidate_symbols:
-                self.logger.info("ℹ️ Aucun candidat détecté pour surveillance")
+                # Aucun candidat détecté pour surveillance (silencieux)
                 return
             
             # Séparer les candidats par catégorie
@@ -616,9 +608,8 @@ class PriceTracker:
                 elif category == "inverse":
                     inverse_candidates.append(symbol)
             
-            # Démarrer la surveillance WebSocket des candidats
+            # Démarrer la surveillance WebSocket des candidats (silencieux)
             if linear_candidates or inverse_candidates:
-                self.logger.info(f"🎯 Démarrage surveillance candidats: linear={len(linear_candidates)}, inverse={len(inverse_candidates)}")
                 self._start_candidate_websocket_monitoring(linear_candidates, inverse_candidates)
                 
         except Exception as e:
@@ -681,8 +672,8 @@ class PriceTracker:
                 funding_rate = ticker_data.get("fundingRate")
                 volume24h = ticker_data.get("volume24h")
                 
-                self.logger.info(f"🎯 NOUVELLE OPPORTUNITÉ: {symbol}")
-                self.logger.info(f"   📊 Funding: {float(funding_rate)*100:.4f}% | Volume: {float(volume24h)/1_000_000:.1f}M")
+                # Nouvelle opportunité détectée (silencieux)
+                # Funding et volume (silencieux)
                 
                 # Ajouter à la watchlist principale
                 self._add_symbol_to_main_watchlist(symbol, ticker_data)
@@ -738,8 +729,8 @@ class PriceTracker:
                 if next_funding_time:
                     self.original_funding_data[symbol] = next_funding_time
                 
-                self.logger.info(f"✅ {symbol} ajouté à la watchlist principale")
-                self.logger.info(f"📊 Watchlist mise à jour: {len(self.funding_data)} symboles")
+                # Symbole ajouté à la watchlist principale (silencieux)
+                # Watchlist mise à jour (silencieux)
                 
         except Exception as e:
             self.logger.error(f"❌ Erreur ajout symbole {symbol}: {e}")
@@ -777,6 +768,45 @@ class PriceTracker:
             f"ft_max(min)={ft_max_display} | limite={limite_display} | vol_ttl={volatility_ttl_sec}s | "
             f"display_interval={display_interval}s"
         )
+    
+    def _display_startup_summary(self, config: Dict, perp_data: Dict):
+        """Affiche le résumé de démarrage structuré."""
+        # Informations du bot
+        bot_info = {
+            'name': 'BYBIT BOT',
+            'version': '0.9.0',
+            'environment': 'Testnet' if self.testnet else 'Mainnet',
+            'mode': 'Funding Sniping'
+        }
+        
+        # Statistiques de filtrage
+        total_symbols = perp_data.get('total', 0)
+        linear_count = len(self.linear_symbols)
+        inverse_count = len(self.inverse_symbols)
+        final_count = linear_count + inverse_count
+        
+        filter_results = {
+            'stats': {
+                'total_symbols': total_symbols,
+                'after_funding_volume': final_count,  # Approximation
+                'after_spread': final_count,
+                'after_volatility': final_count,
+                'final_count': final_count
+            }
+        }
+        
+        # Statut WebSocket
+        ws_status = {
+            'connected': bool(self.linear_symbols or self.inverse_symbols),
+            'symbols_count': final_count,
+            'category': config.get('categorie', 'linear')
+        }
+        
+        # Ajouter l'intervalle de métriques à la config
+        config['metrics_interval'] = 5
+        
+        # Afficher le résumé structuré
+        log_startup_summary(self.logger, bot_info, config, filter_results, ws_status)
 
 
 def main():

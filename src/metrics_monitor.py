@@ -33,7 +33,7 @@ class MetricsMonitor:
         self._stop_event.clear()
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
-        self.logger.info(f"📊 Monitoring des métriques démarré (intervalle: {self.interval_seconds//60} minutes)")
+        # Monitoring des métriques démarré (silencieux)
     
     def stop(self):
         """Arrête le monitoring des métriques."""
@@ -46,7 +46,7 @@ class MetricsMonitor:
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_thread.join(timeout=5)
         
-        self.logger.info("📊 Monitoring des métriques arrêté")
+        # Monitoring des métriques arrêté (silencieux)
     
     def _monitor_loop(self):
         """Boucle principale de monitoring."""
@@ -68,21 +68,9 @@ class MetricsMonitor:
             # Formatage des métriques pour les logs
             uptime_hours = metrics["uptime_seconds"] / 3600
             
-            self.logger.info("📊 MÉTRIQUES BOT:")
-            self.logger.info(f"   ⏱️  Uptime: {uptime_hours:.1f}h")
-            self.logger.info(f"   🔌 API: {metrics['api_calls_total']} appels | {metrics['api_error_rate_percent']}% erreurs | {metrics['api_avg_latency_ms']}ms latence")
-            self.logger.info(f"   🎯 Filtres: {metrics['pairs_kept_total']} gardées | {metrics['pairs_rejected_total']} rejetées | {metrics['filter_success_rate_percent']}% succès")
-            self.logger.info(f"   🌐 WebSocket: {metrics['ws_connections']} connexions | {metrics['ws_reconnects']} reconnexions | {metrics['ws_errors']} erreurs")
+            # Métriques bot (silencieux)
             
-            # Détails par filtre si disponibles
-            if metrics["filter_stats"]:
-                self.logger.info("   📈 Détails par filtre:")
-                for filter_name, stats in metrics["filter_stats"].items():
-                    kept = stats["kept"]
-                    rejected = stats["rejected"]
-                    total = kept + rejected
-                    success_rate = (kept / total * 100) if total > 0 else 0
-                    self.logger.info(f"      {filter_name}: {kept} gardées | {rejected} rejetées | {success_rate:.1f}% succès")
+            # Détails par filtre (silencieux)
             
         except Exception as e:
             self.logger.error(f"❌ Erreur lors du formatage des métriques: {e}")

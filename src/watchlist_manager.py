@@ -704,13 +704,13 @@ class WatchlistManager:
         # Récupérer les funding rates selon la catégorie
         funding_map = {}
         if categorie == "linear":
-            self.logger.info("📡 Récupération des funding rates pour linear (optimisé)…")
+            # Récupération des funding rates pour linear (silencieux)
             funding_map = self.fetch_funding_map(base_url, "linear", 10)
         elif categorie == "inverse":
-            self.logger.info("📡 Récupération des funding rates pour inverse (optimisé)…")
+            # Récupération des funding rates pour inverse (silencieux)
             funding_map = self.fetch_funding_map(base_url, "inverse", 10)
         else:  # "both"
-            self.logger.info("📡 Récupération des funding rates pour linear+inverse (optimisé: parallèle)…")
+            # Récupération des funding rates pour linear+inverse (silencieux)
             # Paralléliser les requêtes linear et inverse
             with ThreadPoolExecutor(max_workers=2) as executor:
                 # Lancer les deux requêtes en parallèle
@@ -761,7 +761,7 @@ class WatchlistManager:
         if spread_max is not None and filtered_symbols:
             # Récupérer les données de spread pour les symboles restants
             symbols_to_check = [symbol for symbol, _, _, _ in filtered_symbols]
-            self.logger.info(f"🔎 Évaluation du spread (REST tickers) pour {len(symbols_to_check)} symboles…")
+            # Évaluation du spread (silencieux)
             
             try:
                 spread_data = {}
@@ -772,7 +772,7 @@ class WatchlistManager:
                 
                 # Paralléliser les requêtes de spreads pour linear et inverse
                 if linear_symbols_for_spread or inverse_symbols_for_spread:
-                    self.logger.info(f"🔎 Récupération spreads (optimisé: batch=200, parallèle) - linear: {len(linear_symbols_for_spread)}, inverse: {len(inverse_symbols_for_spread)}…")
+                    # Récupération spreads (silencieux)
                     
                     with ThreadPoolExecutor(max_workers=2) as executor:
                         futures = {}
@@ -799,7 +799,7 @@ class WatchlistManager:
                 # Log des résultats du filtre spread
                 rejected = n1 - n2
                 spread_pct_display = spread_max * 100
-                self.logger.info(f"✅ Filtre spread : gardés={n2} | rejetés={rejected} (seuil {spread_pct_display:.2f}%)")
+                # Filtre spread (silencieux)
                 
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur lors de la récupération des spreads : {e}")
@@ -811,7 +811,7 @@ class WatchlistManager:
         n_before_volatility = len(final_symbols) if final_symbols else 0
         if final_symbols:
             try:
-                self.logger.info("🔎 Évaluation de la volatilité 5m pour tous les symboles…")
+                # Évaluation de la volatilité 5m (silencieux)
                 final_symbols = volatility_tracker.filter_by_volatility(
                     final_symbols,
                     volatility_min,
@@ -838,7 +838,7 @@ class WatchlistManager:
         record_filter_result("final_limit", n3, n_after_volatility - n3)
         
         # Log des comptes
-        self.logger.info(f"🧮 Comptes | avant filtres = {n0} | après funding/volume/temps = {n1} | après spread = {n2} | après volatilité = {n_after_volatility} | après tri+limit = {n3}")
+        # Comptes de filtrage (silencieux)
         
         if not final_symbols:
             self.logger.warning("⚠️ Aucun symbole ne correspond aux critères de filtrage")
@@ -914,9 +914,8 @@ class WatchlistManager:
         self.selected_symbols = list(funding_data.keys())
         self.funding_data = funding_data
         
-        # Log des symboles retenus
-        self.logger.info(f"🧭 Symboles retenus (Top {n3}) : {self.selected_symbols}")
-        self.logger.info(f"📊 Symboles linear: {len(linear_symbols)}, inverse: {len(inverse_symbols)}")
+        # Log des symboles retenus (supprimé pour éviter la pollution des logs)
+        # Symboles linear/inverse (silencieux)
         
         return linear_symbols, inverse_symbols, funding_data
     
@@ -1041,7 +1040,7 @@ class WatchlistManager:
             if is_candidate:
                 candidates.append(symbol)
         
-        self.logger.info(f"🎯 {len(candidates)} candidats détectés pour surveillance: {candidates[:10]}{'...' if len(candidates) > 10 else ''}")
+        # Candidats détectés pour surveillance (silencieux)
         return candidates
     
     def check_if_symbol_now_passes_filters(self, symbol: str, ticker_data: dict) -> bool:

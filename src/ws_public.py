@@ -66,7 +66,7 @@ class PublicWSClient:
 
     def _on_open(self, ws):
         """Callback interne appelé à l'ouverture de la connexion."""
-        self.logger.info(f"🌐 WS ouverte ({self.category})")
+        # WS ouverte (silencieux)
         
         # Enregistrer la connexion WebSocket
         record_ws_connection(connected=True)
@@ -83,7 +83,7 @@ class PublicWSClient:
             try:
                 ws.send(json.dumps(subscribe_message))
                 self.logger.info(
-                    f"🧭 Souscription tickers → {len(self.symbols)} symboles ({self.category})"
+                    f"# Souscription tickers → {len(self.symbols)} symboles ({self.category}) (silencieux)"
                 )
             except (json.JSONEncodeError, ConnectionError, OSError) as e:
                 self.logger.error(
@@ -155,10 +155,7 @@ class PublicWSClient:
         
         while self.running:
             try:
-                try:
-                    self.logger.info(f"🔐 Connexion à la WebSocket publique ({self.category})…")
-                except Exception:
-                    pass
+                # Connexion à la WebSocket publique (silencieux)
                 
                 url = self._build_url()
                 self.ws = websocket.WebSocketApp(
