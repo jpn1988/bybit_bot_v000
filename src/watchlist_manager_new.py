@@ -145,15 +145,3 @@ class WatchlistManager:
             Dictionnaire des next_funding_time originaux
         """
         return self.original_funding_data.copy()
-    
-    def calculate_funding_time_remaining(self, next_funding_time) -> str:
-        """
-        Retourne "Xh Ym Zs" à partir d'un timestamp Bybit (ms) ou ISO.
-        
-        Args:
-            next_funding_time: Timestamp du prochain funding
-            
-        Returns:
-            str: Temps restant formaté ou "-" si invalide
-        """
-        return self._builder.symbol_filter.calculate_funding_time_remaining(next_funding_time)

@@ -33,7 +33,7 @@ class MetricsMonitor:
         self._stop_event.clear()
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
-        # Monitoring des métriques démarré (silencieux)
+        # Monitoring des métriques démarré
     
     def stop(self):
         """Arrête le monitoring des métriques."""
@@ -46,7 +46,7 @@ class MetricsMonitor:
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_thread.join(timeout=5)
         
-        # Monitoring des métriques arrêté (silencieux)
+        # Monitoring des métriques arrêté
     
     def _monitor_loop(self):
         """Boucle principale de monitoring."""
@@ -68,9 +68,9 @@ class MetricsMonitor:
             # Formatage des métriques pour les logs
             uptime_hours = metrics["uptime_seconds"] / 3600
             
-            # Métriques bot (silencieux)
+            # Métriques bot
             
-            # Détails par filtre (silencieux)
+            # Détails par filtre
             
         except Exception as e:
             self.logger.error(f"❌ Erreur lors du formatage des métriques: {e}")
@@ -94,13 +94,3 @@ def start_metrics_monitoring(interval_minutes: int = 5):
     metrics_monitor.start()
 
 
-def stop_metrics_monitoring():
-    """Arrête le monitoring des métriques."""
-    global metrics_monitor
-    metrics_monitor.stop()
-
-
-def log_metrics_now():
-    """Force l'affichage des métriques maintenant."""
-    global metrics_monitor
-    metrics_monitor.log_metrics_now()

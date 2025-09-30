@@ -39,7 +39,7 @@ class HTTPClientManager:
         atexit.register(self.close_all)
         
         HTTPClientManager._initialized = True
-        # Gestionnaire de clients HTTP initialisé (silencieux)
+        # Gestionnaire de clients HTTP initialisé
     
     def get_sync_client(self, timeout: int = 10) -> httpx.Client:
         """
@@ -159,7 +159,7 @@ class HTTPClientManager:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Erreur fermeture clients async: {e}")
             
-            # Tous les clients HTTP fermés (silencieux)
+            # Tous les clients HTTP fermés
             
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur lors de la fermeture des clients HTTP: {e}")
@@ -195,30 +195,6 @@ def get_http_client(timeout: int = 10) -> httpx.Client:
     return _http_manager.get_sync_client(timeout)
 
 
-async def get_async_http_client(timeout: int = 10) -> httpx.AsyncClient:
-    """
-    Fonction de convenance pour obtenir le client HTTP asynchrone persistant.
-    
-    Args:
-        timeout (int): Timeout en secondes
-        
-    Returns:
-        httpx.AsyncClient: Client HTTP asynchrone réutilisable
-    """
-    return await _http_manager.get_async_client(timeout)
-
-
-async def get_aiohttp_session(timeout: int = 10) -> aiohttp.ClientSession:
-    """
-    Fonction de convenance pour obtenir la session aiohttp persistante.
-    
-    Args:
-        timeout (int): Timeout en secondes
-        
-    Returns:
-        aiohttp.ClientSession: Session aiohttp réutilisable
-    """
-    return await _http_manager.get_aiohttp_session(timeout)
 
 
 def close_all_http_clients():

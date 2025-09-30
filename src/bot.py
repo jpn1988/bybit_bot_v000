@@ -25,7 +25,6 @@ from config import get_settings
 from bybit_client import BybitPublicClient
 from instruments import get_perp_symbols, category_of_symbol
 from price_store import get_snapshot, purge_expired
-from volatility import get_volatility_cache_key, is_cache_valid
 from volatility_tracker import VolatilityTracker
 from watchlist_manager import WatchlistManager
 from ws_manager import WebSocketManager
@@ -48,7 +47,9 @@ class PriceTracker:
         self.funding_data = {}
         self.original_funding_data = {}  # Données de funding originales avec next_funding_time
         # self.start_time supprimé: on s'appuie uniquement sur nextFundingTime côté Bybit
-        self.realtime_data = {}  # Données en temps réel via WebSocket {symbol: {funding_rate, volume24h, bid1, ask1, next_funding_time, ...}}
+        # Données en temps réel via WebSocket
+        # Format: {symbol: {funding_rate, volume24h, bid1, ask1, next_funding_time, ...}}
+        self.realtime_data = {}
         self._realtime_lock = threading.Lock()  # Verrou pour protéger realtime_data
         self._first_display = True  # Indicateur pour la première exécution de l'affichage
         self.symbol_categories: dict[str, str] = {}
@@ -91,40 +92,40 @@ class PriceTracker:
         """Gestionnaire de signal pour Ctrl+C."""
         self.running = False
         
-        # Arrêter le gestionnaire WebSocket principal (silencieux)
+        # Arrêter le gestionnaire WebSocket principal
         try:
             self.ws_manager.stop()
         except Exception:
             pass
         
-        # Arrêter la surveillance des candidats (silencieux)
+        # Arrêter la surveillance des candidats
         try:
             if self.candidate_ws_client:
                 self.candidate_ws_client.close()
         except Exception:
             pass
         
-        # Arrêter le tracker de volatilité (silencieux)
+        # Arrêter le tracker de volatilité
         try:
             self.volatility_tracker.stop_refresh_task()
         except Exception:
             pass
         
-        # Arrêter la surveillance continue (silencieux)
+        # Arrêter la surveillance continue
         try:
             if self.continuous_monitoring_thread and self.continuous_monitoring_thread.is_alive():
                 self.continuous_monitoring_thread.join(timeout=1)
         except Exception:
             pass
         
-        # Arrêter le thread d'affichage (silencieux)
+        # Arrêter le thread d'affichage
         try:
             if self.display_thread and self.display_thread.is_alive():
                 self.display_thread.join(timeout=1)
         except Exception:
             pass
         
-        # Arrêter le thread des candidats WebSocket (silencieux)
+        # Arrêter le thread des candidats WebSocket
         try:
             if self.candidate_ws_thread and self.candidate_ws_thread.is_alive():
                 self.candidate_ws_thread.join(timeout=1)
@@ -154,7 +155,8 @@ class PriceTracker:
             if not symbol:
                 return
                 
-            # Construire un diff et fusionner avec l'état précédent pour ne pas écraser des valeurs valides par None
+            # Construire un diff et fusionner avec l'état précédent 
+            # pour ne pas écraser des valeurs valides par None
             now_ts = time.time()
             incoming = {
                 'funding_rate': ticker_data.get('fundingRate'),
@@ -166,7 +168,10 @@ class PriceTracker:
                 'last_price': ticker_data.get('lastPrice'),
             }
             # Vérifier si des données importantes sont présentes
-            important_keys = ['funding_rate', 'volume24h', 'bid1_price', 'ask1_price', 'next_funding_time']
+            important_keys = [
+                'funding_rate', 'volume24h', 'bid1_price', 
+                'ask1_price', 'next_funding_time'
+            ]
             if any(incoming[key] is not None for key in important_keys):
                 with self._realtime_lock:
                     current = self.realtime_data.get(symbol, {})
@@ -195,7 +200,10 @@ class PriceTracker:
             return "-"
     
     def _print_price_table(self):
-        """Affiche le tableau des prix aligné avec funding, volume en millions, spread et volatilité."""
+        """
+        Affiche le tableau des prix aligné avec funding, volume en millions, 
+        spread et volatilité.
+        """
         # Purger les données de prix trop anciennes et récupérer un snapshot
         try:
             purge_expired(ttl_seconds=getattr(self, "price_ttl_sec", 120))
@@ -203,16 +211,16 @@ class PriceTracker:
             pass
         snapshot = get_snapshot()
         
-        # Si aucune opportunité n'est trouvée, mode surveillance continue (silencieux)
+        # Si aucune opportunité n'est trouvée, mode surveillance continue
         if not self.funding_data:
             if self._first_display:
-                # Mode surveillance continue (silencieux)
+                # Mode surveillance continue
                 self._first_display = False
             return
         
         if not snapshot:
             if self._first_display:
-                # En attente de la première donnée WS (silencieux)
+                # En attente de la première donnée WebSocket
                 self._first_display = False
             return
         
@@ -230,11 +238,13 @@ class PriceTracker:
         header = (
             f"{'Symbole':<{symbol_w}} | {'Funding %':>{funding_w}} | "
             f"{'Volume (M)':>{volume_w}} | {'Spread %':>{spread_w}} | "
-            f"{'Volatilité %':>{volatility_w}} | {'Funding T':>{funding_time_w}}"
+            f"{'Volatilité %':>{volatility_w}} | "
+            f"{'Funding T':>{funding_time_w}}"
         )
         sep = (
             f"{'-'*symbol_w}-+-{'-'*funding_w}-+-{'-'*volume_w}-+-"
-            f"{'-'*spread_w}-+-{'-'*volatility_w}-+-{'-'*funding_time_w}"
+            f"{'-'*spread_w}-+-{'-'*volatility_w}-+-"
+            f"{'-'*funding_time_w}"
         )
         
         print("\n" + header)
@@ -279,7 +289,8 @@ class PriceTracker:
                                 spread_pct = (ask_price - bid_price) / mid_price
                     except (ValueError, TypeError):
                         pass  # Garder spread_pct = None en cas d'erreur
-                # Fallback: utiliser la valeur REST calculée au filtrage si le temps réel est indisponible
+                # Fallback: utiliser la valeur REST calculée au filtrage 
+                # si le temps réel est indisponible
                 if spread_pct is None:
                     try:
                         # data[3] contient spread_pct (ou 0.0 si absent lors du filtrage)
@@ -290,7 +301,8 @@ class PriceTracker:
                 # Volatilité: lecture via le tracker dédié
                 volatility_pct = self.volatility_tracker.get_cached_volatility(symbol)
             else:
-                # Pas de données en temps réel disponibles - utiliser les valeurs initiales REST
+                # Pas de données en temps réel disponibles 
+                # - utiliser les valeurs initiales REST
                 funding = original_funding
                 volume = original_volume
                 funding_time_remaining = original_funding_time
@@ -342,7 +354,8 @@ class PriceTracker:
             line = (
                 f"{symbol:<{symbol_w}} | {funding_str:>{funding_w}} | "
                 f"{volume_str:>{volume_w}} | {spread_str:>{spread_w}} | "
-                f"{volatility_str:>{volatility_w}} | {current_funding_time:>{funding_time_w}}"
+                f"{volatility_str:>{volatility_w}} | "
+                f"{current_funding_time:>{funding_time_w}}"
             )
             print(line)
         
@@ -365,7 +378,7 @@ class PriceTracker:
                     break
                 time.sleep(0.1)
         
-        # Boucle d'affichage arrêtée (silencieux)
+        # Boucle d'affichage arrêtée
     
     def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""
@@ -377,7 +390,7 @@ class PriceTracker:
             self.logger.error("💡 Corrigez les paramètres dans src/parameters.yaml ou les variables d'environnement")
             return  # Arrêt propre sans sys.exit
         
-        # Vérifier si le fichier de config existe (silencieux)
+        # Vérifier si le fichier de config existe
         config_path = "src/parameters.yaml"
         config_exists = os.path.exists(config_path)
         
@@ -421,7 +434,7 @@ class PriceTracker:
             self.original_funding_data = self.watchlist_manager.get_original_funding_data()
         except Exception as e:
             if "Aucun symbole" in str(e) or "Aucun funding" in str(e):
-                # Ne pas lever d'exception, continuer en mode surveillance (silencieux)
+                # Ne pas lever d'exception, continuer en mode surveillance
                 # Initialiser les listes vides pour le mode surveillance
                 self.linear_symbols = []
                 self.inverse_symbols = []
@@ -441,7 +454,7 @@ class PriceTracker:
         self.display_thread.daemon = True
         self.display_thread.start()
 
-        # Démarrer les connexions WebSocket via le gestionnaire dédié (silencieux)
+        # Démarrer les connexions WebSocket via le gestionnaire dédié
         if self.linear_symbols or self.inverse_symbols:
             self.ws_manager.start_connections(self.linear_symbols, self.inverse_symbols)
         
@@ -457,7 +470,7 @@ class PriceTracker:
     
     def _start_continuous_monitoring(self, base_url: str, perp_data: Dict):
         """Démarre le mode surveillance continue pour scanner le marché en permanence."""
-        # Démarrage silencieux
+        # Démarrage de la surveillance continue
         
         # Thread de re-scan périodique
         self.continuous_monitoring_thread = threading.Thread(
@@ -472,7 +485,7 @@ class PriceTracker:
         scan_interval = 60  # 1 minute entre chaque scan complet (pour les tests)
         last_scan_time = 0
         
-        # Boucle de surveillance continue démarrée (silencieux)
+        # Boucle de surveillance continue démarrée
         
         while self.running:
             try:
@@ -489,7 +502,7 @@ class PriceTracker:
                     if not self.running:
                         break
                         
-                    # Re-scan du marché en cours (silencieux)
+                    # Re-scan du marché en cours
                     
                     try:
                         # Vérifier encore avant de créer le client
@@ -515,8 +528,8 @@ class PriceTracker:
                             
                         if linear_symbols or inverse_symbols:
                             # 🎯 NOUVELLES OPPORTUNITÉS TROUVÉES !
-                            # Nouvelles opportunités détectées (silencieux)
-                            # Symboles linear/inverse (silencieux)
+                            # Nouvelles opportunités détectées
+                            # Symboles linear/inverse
                             
                             # Fusionner avec les opportunités existantes au lieu de les remplacer
                             existing_linear = set(self.linear_symbols) if hasattr(self, 'linear_symbols') else set()
@@ -532,7 +545,7 @@ class PriceTracker:
                                 if not self.running:
                                     break
                                     
-                                # Nouveaux symboles détectés (silencieux)
+                                # Nouveaux symboles détectés
                                 
                                 # Mettre à jour les listes
                                 self.linear_symbols = list(existing_linear | set(linear_symbols))
@@ -552,19 +565,19 @@ class PriceTracker:
                                 # Démarrer les connexions WebSocket pour les nouvelles opportunités
                                 self.ws_manager.start_connections(self.linear_symbols, self.inverse_symbols)
                                 
-                                # Watchlist mise à jour (silencieux)
+                                # Watchlist mise à jour
                             else:
-                                # Aucun nouveau symbole détecté (silencieux)
+                                # Aucun nouveau symbole détecté
                                 pass
                             
-                            # Surveillance continue (silencieux)
+                            # Surveillance continue
                         else:
                             # Vérifier si les opportunités existantes sont toujours valides
                             if self.funding_data:
                                 # Les opportunités existantes restent affichées - pas besoin de log
                                 pass
                             else:
-                                # Aucune nouvelle opportunité trouvée (silencieux)
+                                # Aucune nouvelle opportunité trouvée
                                 pass
                             
                     except Exception as e:
@@ -585,7 +598,7 @@ class PriceTracker:
                     break
                 time.sleep(10)  # Attendre 10 secondes en cas d'erreur
         
-        # Boucle de surveillance continue arrêtée (silencieux)
+        # Boucle de surveillance continue arrêtée
     
     def _setup_candidate_monitoring(self, base_url: str, perp_data: Dict):
         """Configure la surveillance des symboles candidats."""
@@ -594,7 +607,7 @@ class PriceTracker:
             self.candidate_symbols = self.watchlist_manager.find_candidate_symbols(base_url, perp_data)
             
             if not self.candidate_symbols:
-                # Aucun candidat détecté pour surveillance (silencieux)
+                # Aucun candidat détecté pour surveillance
                 return
             
             # Séparer les candidats par catégorie
@@ -608,7 +621,7 @@ class PriceTracker:
                 elif category == "inverse":
                     inverse_candidates.append(symbol)
             
-            # Démarrer la surveillance WebSocket des candidats (silencieux)
+            # Démarrer la surveillance WebSocket des candidats
             if linear_candidates or inverse_candidates:
                 self._start_candidate_websocket_monitoring(linear_candidates, inverse_candidates)
                 
@@ -672,8 +685,8 @@ class PriceTracker:
                 funding_rate = ticker_data.get("fundingRate")
                 volume24h = ticker_data.get("volume24h")
                 
-                # Nouvelle opportunité détectée (silencieux)
-                # Funding et volume (silencieux)
+                # Nouvelle opportunité détectée
+                # Funding et volume
                 
                 # Ajouter à la watchlist principale
                 self._add_symbol_to_main_watchlist(symbol, ticker_data)
@@ -729,45 +742,11 @@ class PriceTracker:
                 if next_funding_time:
                     self.original_funding_data[symbol] = next_funding_time
                 
-                # Symbole ajouté à la watchlist principale (silencieux)
-                # Watchlist mise à jour (silencieux)
+                # Symbole ajouté à la watchlist principale
+                # Watchlist mise à jour
                 
         except Exception as e:
             self.logger.error(f"❌ Erreur ajout symbole {symbol}: {e}")
-    
-    def _log_filter_config(self, config: Dict, volatility_ttl_sec: int, display_interval: int):
-        """Affiche la configuration des filtres."""
-        # Extraire les paramètres pour l'affichage
-        categorie = config.get("categorie", "both")
-        funding_min = config.get("funding_min")
-        funding_max = config.get("funding_max")
-        volume_min_millions = config.get("volume_min_millions")
-        spread_max = config.get("spread_max")
-        volatility_min = config.get("volatility_min")
-        volatility_max = config.get("volatility_max")
-        limite = config.get("limite")
-        funding_time_min_minutes = config.get("funding_time_min_minutes")
-        funding_time_max_minutes = config.get("funding_time_max_minutes")
-        
-        # Formater pour l'affichage
-        min_display = f"{funding_min:.6f}" if funding_min is not None else "none"
-        max_display = f"{funding_max:.6f}" if funding_max is not None else "none"
-        volume_display = f"{volume_min_millions:.1f}" if volume_min_millions is not None else "none"
-        spread_display = f"{spread_max:.4f}" if spread_max is not None else "none"
-        volatility_min_display = f"{volatility_min:.3f}" if volatility_min is not None else "none"
-        volatility_max_display = f"{volatility_max:.3f}" if volatility_max is not None else "none"
-        limite_display = str(limite) if limite is not None else "none"
-        ft_min_display = str(funding_time_min_minutes) if funding_time_min_minutes is not None else "none"
-        ft_max_display = str(funding_time_max_minutes) if funding_time_max_minutes is not None else "none"
-        
-        self.logger.info(
-            f"🎛️ Filtres | catégorie={categorie} | funding_min={min_display} | "
-            f"funding_max={max_display} | volume_min_millions={volume_display} | "
-            f"spread_max={spread_display} | volatility_min={volatility_min_display} | "
-            f"volatility_max={volatility_max_display} | ft_min(min)={ft_min_display} | "
-            f"ft_max(min)={ft_max_display} | limite={limite_display} | vol_ttl={volatility_ttl_sec}s | "
-            f"display_interval={display_interval}s"
-        )
     
     def _display_startup_summary(self, config: Dict, perp_data: Dict):
         """Affiche le résumé de démarrage structuré."""

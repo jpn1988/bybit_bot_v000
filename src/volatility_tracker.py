@@ -28,17 +28,19 @@ class VolatilityTracker:
     - Filtrage des symboles par volatilité
     """
     
-    def __init__(self, testnet: bool = True, ttl_seconds: int = 120, logger=None):
+    def __init__(self, testnet: bool = True, ttl_seconds: int = 120, max_cache_size: int = 1000, logger=None):
         """
         Initialise le gestionnaire de volatilité.
         
         Args:
             testnet (bool): Utiliser le testnet (True) ou le marché réel (False)
             ttl_seconds (int): Durée de vie du cache en secondes
+            max_cache_size (int): Taille maximale du cache
             logger: Logger pour les messages (optionnel)
         """
         self.testnet = testnet
         self.ttl_seconds = ttl_seconds
+        self.max_cache_size = max_cache_size
         self.logger = logger or setup_logging()
         
         # Cache de volatilité {cache_key: (timestamp, volatility_pct)}
@@ -89,7 +91,7 @@ class VolatilityTracker:
         self._refresh_thread.daemon = True
         self._refresh_thread.start()
         
-        # Thread volatilité démarré (silencieux)
+        # Thread volatilité démarré
     
     def stop_refresh_task(self):
         """Arrête la tâche de rafraîchissement."""
@@ -100,7 +102,7 @@ class VolatilityTracker:
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur arrêt thread volatilité: {e}")
         
-        # Thread volatilité arrêté (silencieux)
+        # Thread volatilité arrêté
     
     def get_cached_volatility(self, symbol: str) -> Optional[float]:
         """
@@ -130,6 +132,10 @@ class VolatilityTracker:
         """
         cache_key = get_volatility_cache_key(symbol)
         self.volatility_cache[cache_key] = (time.time(), volatility_pct)
+        
+        # Nettoyer le cache si nécessaire
+        if len(self.volatility_cache) > self.max_cache_size:
+            self._cleanup_cache()
     
     def clear_stale_cache(self, active_symbols: List[str]):
         """
@@ -153,6 +159,26 @@ class VolatilityTracker:
                 
             if stale_keys:
                 self.logger.debug(f"🧹 Cache volatilité nettoyé: {len(stale_keys)} entrées supprimées")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur nettoyage cache volatilité: {e}")
+    
+    def _cleanup_cache(self):
+        """Nettoie le cache en supprimant les entrées les plus anciennes."""
+        try:
+            if len(self.volatility_cache) <= self.max_cache_size:
+                return
+            
+            # Trier par timestamp et garder les plus récents
+            sorted_items = sorted(self.volatility_cache.items(), key=lambda x: x[1][0], reverse=True)
+            items_to_keep = sorted_items[:self.max_cache_size]
+            
+            # Reconstruire le cache
+            self.volatility_cache = dict(items_to_keep)
+            
+            removed_count = len(sorted_items) - len(items_to_keep)
+            if removed_count > 0:
+                self.logger.debug(f"🧹 Cache volatilité nettoyé: {removed_count} entrées supprimées")
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur nettoyage cache volatilité: {e}")
@@ -222,7 +248,7 @@ class VolatilityTracker:
         
         # Calculer la volatilité pour les symboles manquants
         if symbols_to_calculate:
-            # Calcul volatilité async (silencieux)
+            # Calcul volatilité async
             batch_volatilities = await self.compute_volatility_batch(symbols_to_calculate)
             
             # Mettre à jour le cache avec les nouveaux résultats
@@ -264,7 +290,7 @@ class VolatilityTracker:
         if volatility_max is not None:
             threshold_info.append(f"max={volatility_max:.2%}")
         threshold_str = " | ".join(threshold_info) if threshold_info else "aucun seuil"
-        # Filtre volatilité (silencieux)
+        # Filtre volatilité appliqué
         
         return filtered_symbols
     
@@ -285,16 +311,34 @@ class VolatilityTracker:
         Returns:
             Liste filtrée avec volatilité
         """
-        return asyncio.run(self.filter_by_volatility_async(
-            symbols_data, volatility_min, volatility_max
-        ))
+        try:
+            # Essayer d'utiliser l'event loop existant
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Si la boucle tourne, créer une tâche
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.filter_by_volatility_async(
+                        symbols_data, volatility_min, volatility_max
+                    ))
+                    return future.result()
+            else:
+                # Si la boucle ne tourne pas, l'utiliser directement
+                return loop.run_until_complete(self.filter_by_volatility_async(
+                    symbols_data, volatility_min, volatility_max
+                ))
+        except RuntimeError:
+            # Pas d'event loop, en créer un nouveau
+            return asyncio.run(self.filter_by_volatility_async(
+                symbols_data, volatility_min, volatility_max
+            ))
     
     def _refresh_loop(self):
         """Boucle de rafraîchissement périodique du cache de volatilité."""
         # Calculer l'intervalle de rafraîchissement
         refresh_interval = max(30, min(60, self.ttl_seconds - 10))
         
-        # Volatilité: thread actif (silencieux)
+        # Volatilité: thread actif
         
         while self._running:
             try:
@@ -312,10 +356,21 @@ class VolatilityTracker:
                     continue
                 
                 # Log de cycle
-                # Refresh volatilité (silencieux)
+                # Refresh volatilité
                 
                 # Calculer la volatilité en batch
-                results = asyncio.run(self.compute_volatility_batch(symbols_to_refresh))
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Si la boucle tourne, créer une tâche dans un thread séparé
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(asyncio.run, self.compute_volatility_batch(symbols_to_refresh))
+                            results = future.result()
+                    else:
+                        results = loop.run_until_complete(self.compute_volatility_batch(symbols_to_refresh))
+                except RuntimeError:
+                    results = asyncio.run(self.compute_volatility_batch(symbols_to_refresh))
                 
                 # Mettre à jour le cache
                 now_ts = time.time()
@@ -338,7 +393,18 @@ class VolatilityTracker:
                     self.logger.info(f"🔁 Retry volatilité pour {len(failed)} symboles…")
                     time.sleep(5)
                     
-                    retry_results = asyncio.run(self.compute_volatility_batch(failed))
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Si la boucle tourne, créer une tâche dans un thread séparé
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(asyncio.run, self.compute_volatility_batch(failed))
+                                retry_results = future.result()
+                        else:
+                            retry_results = loop.run_until_complete(self.compute_volatility_batch(failed))
+                    except RuntimeError:
+                        retry_results = asyncio.run(self.compute_volatility_batch(failed))
                     retry_ok = 0
                     
                     for sym, vol_pct in retry_results.items():

@@ -13,7 +13,7 @@
 # ============================================
 
 categorie: "linear"      # "linear" | "inverse" | "both"
-funding_min: 0.0001     # ex: 0.0001 pour >= 0.01%  | null = pas de min
+funding_min: 0.0002     # ex: 0.0001 pour >= 0.01%  | null = pas de min
 funding_max: null        # ex: 0.0005 pour <= 0.05%  | null = pas de max
 volume_min_millions: null   # ex: 5.0 pour >= 5M USDT | null = pas de min
 # Normalisation: spread exprimé en ratio (0.003 = 0.30%)

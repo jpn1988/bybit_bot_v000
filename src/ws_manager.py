@@ -77,13 +77,13 @@ class WebSocketManager:
         
         # Déterminer le type de connexions nécessaires
         if self.linear_symbols and self.inverse_symbols:
-            # Démarrage des connexions WebSocket (silencieux)
+            # Démarrage des connexions WebSocket
             self._start_dual_connections()
         elif self.linear_symbols:
-            # Démarrage de la connexion WebSocket linear (silencieux)
+            # Démarrage de la connexion WebSocket linear
             self._start_single_connection("linear", self.linear_symbols)
         elif self.inverse_symbols:
-            # Démarrage de la connexion WebSocket inverse (silencieux)
+            # Démarrage de la connexion WebSocket inverse
             self._start_single_connection("inverse", self.inverse_symbols)
         else:
             self.logger.warning("⚠️ Aucun symbole fourni pour les connexions WebSocket")
@@ -166,15 +166,18 @@ class WebSocketManager:
         linear_thread.start()
         inverse_thread.start()
         
-        # Bloquer le thread principal sur les deux connexions
-        linear_thread.join()
-        inverse_thread.join()
+        # Attendre la fin des connexions avec timeout
+        try:
+            linear_thread.join(timeout=1)
+            inverse_thread.join(timeout=1)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur attente threads WebSocket: {e}")
     
     def stop(self):
         """
         Arrête toutes les connexions WebSocket.
         """
-        # Arrêt des connexions WebSocket (silencieux)
+        # Arrêt des connexions WebSocket
         self.running = False
         
         # Fermer toutes les connexions

@@ -109,19 +109,26 @@ class BybitClient:
                 
                 # HTTP errors (4xx/5xx)
                 if response.status_code >= 500:
-                    raise httpx.HTTPStatusError("Server error", request=None, response=response)
+                    raise httpx.HTTPStatusError(
+                        "Server error", request=None, response=response
+                    )
                 if response.status_code == 429:
                     # Respecter Retry-After si présent
                     retry_after = response.headers.get("Retry-After")
-                    delay = (float(retry_after) if retry_after 
-                            else backoff_base * (2 ** (attempts - 1)))
+                    delay = (
+                        float(retry_after) if retry_after 
+                        else backoff_base * (2 ** (attempts - 1))
+                    )
                     delay += random.uniform(0, 0.25)
                     time.sleep(delay)
                     continue
                 if response.status_code >= 400:
                     # Erreurs client non récupérables
                     detail = response.text[:100]
-                    raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{detail}\"")
+                    raise RuntimeError(
+                        f"Erreur HTTP Bybit: status={response.status_code} "
+                        f"detail=\"{detail}\""
+                    )
                 
                 data = response.json()
                 
@@ -131,26 +138,38 @@ class BybitClient:
                     ret_msg = data.get("retMsg", "")
                     if ret_code in [10005, 10006]:
                         raise RuntimeError(
-                            "Authentification échouée : clé/secret invalides ou signature incorrecte"
+                            "Authentification échouée : clé/secret invalides "
+                            "ou signature incorrecte"
                         )
                     elif ret_code == 10018:
-                        raise RuntimeError("Accès refusé : IP non autorisée (whitelist requise dans Bybit)")
+                        raise RuntimeError(
+                            "Accès refusé : IP non autorisée "
+                            "(whitelist requise dans Bybit)"
+                        )
                     elif ret_code == 10017:
                         raise RuntimeError(
-                            "Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)"
+                            "Horodatage invalide : horloge locale désynchronisée "
+                            "(corrige l'heure système)"
                         )
                     elif ret_code == 10016:
                         # Rate limit: backoff + jitter puis retry
                         retry_after = response.headers.get("Retry-After")
-                        delay = (float(retry_after) if retry_after 
-                                else backoff_base * (2 ** (attempts - 1)))
+                        delay = (
+                            float(retry_after) if retry_after 
+                            else backoff_base * (2 ** (attempts - 1))
+                        )
                         delay += random.uniform(0, 0.25)
                         time.sleep(delay)
                         if attempts < max_attempts:
                             continue
-                        raise RuntimeError("Limite de requêtes atteinte : ralentis ou réessaie plus tard")
+                        raise RuntimeError(
+                            "Limite de requêtes atteinte : ralentis ou réessaie plus tard"
+                        )
                     else:
-                        raise RuntimeError(f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\"")
+                        raise RuntimeError(
+                            f"Erreur API Bybit : retCode={ret_code} "
+                            f"retMsg=\"{ret_msg}\""
+                        )
                 
                 # Enregistrer les métriques de succès
                 latency = time.time() - start_time
@@ -186,7 +205,9 @@ class BybitClient:
         record_api_call(latency, success=False)
         
         # Échec après retries
-        raise RuntimeError(f"Erreur réseau/HTTP Bybit : {last_error}")
+        raise RuntimeError(
+            f"Erreur réseau/HTTP Bybit : {last_error}"
+        )
     
     def public_base_url(self) -> str:
         """
@@ -227,24 +248,3 @@ class BybitPublicClient:
         return "https://api.bybit.com"
 
 
-def get_bybit_client() -> BybitClient:
-    """
-    Crée et retourne une instance de BybitClient configurée avec les paramètres du fichier .env.
-    
-    Returns:
-        BybitClient: Instance configurée du client Bybit
-        
-    Raises:
-        RuntimeError: Si les clés API sont manquantes
-    """
-    settings = get_settings()
-    
-    if not settings['api_key'] or not settings['api_secret']:
-        raise RuntimeError("Clés API manquantes : ajoute BYBIT_API_KEY et BYBIT_API_SECRET dans .env")
-    
-    return BybitClient(
-        testnet=settings['testnet'],
-        timeout=settings['timeout'],
-        api_key=settings['api_key'],
-        api_secret=settings['api_secret']
-    )
