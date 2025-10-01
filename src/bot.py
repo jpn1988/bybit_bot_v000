@@ -19,7 +19,7 @@ import time
 import signal
 import threading
 import atexit
-from typing import List, Dict
+from typing import List, Dict, Optional
 from logging_setup import setup_logging, log_startup_summary, log_shutdown_summary
 from config import get_settings
 from bybit_client import BybitPublicClient
@@ -90,6 +90,7 @@ class PriceTracker:
     
     def _signal_handler(self, signum, frame):
         """Gestionnaire de signal pour Ctrl+C."""
+        self.logger.info("🛑 Signal d'arrêt reçu (Ctrl+C)...")
         self.running = False
         
         # Arrêter le gestionnaire WebSocket principal
@@ -111,14 +112,7 @@ class PriceTracker:
         except Exception:
             pass
         
-        # Arrêter la surveillance continue
-        try:
-            if self.continuous_monitoring_thread and self.continuous_monitoring_thread.is_alive():
-                self.continuous_monitoring_thread.join(timeout=1)
-        except Exception:
-            pass
-        
-        # Arrêter le thread d'affichage
+        # Arrêter le thread d'affichage rapidement
         try:
             if self.display_thread and self.display_thread.is_alive():
                 self.display_thread.join(timeout=1)
@@ -129,6 +123,15 @@ class PriceTracker:
         try:
             if self.candidate_ws_thread and self.candidate_ws_thread.is_alive():
                 self.candidate_ws_thread.join(timeout=1)
+        except Exception:
+            pass
+        
+        # Arrêter la surveillance continue (peut être en train de scanner)
+        # Note: Ce thread est daemon, il se terminera automatiquement
+        # On ne l'attend pas pour éviter de bloquer si build_watchlist() est en cours
+        try:
+            if self.continuous_monitoring_thread and self.continuous_monitoring_thread.is_alive():
+                self.logger.debug("⏸️ Thread de surveillance en arrêt (daemon)...")
         except Exception:
             pass
         
@@ -204,162 +207,191 @@ class PriceTracker:
         Affiche le tableau des prix aligné avec funding, volume en millions, 
         spread et volatilité.
         """
-        # Purger les données de prix trop anciennes et récupérer un snapshot
-        try:
-            purge_expired(ttl_seconds=getattr(self, "price_ttl_sec", 120))
-        except Exception:
-            pass
-        snapshot = get_snapshot()
+        snapshot = self._prepare_snapshot()
         
-        # Si aucune opportunité n'est trouvée, mode surveillance continue
-        if not self.funding_data:
+        # Si aucune opportunité n'est trouvée ou pas de snapshot, retourner
+        if not self.funding_data or not snapshot:
             if self._first_display:
-                # Mode surveillance continue
-                self._first_display = False
-            return
-        
-        if not snapshot:
-            if self._first_display:
-                # En attente de la première donnée WebSocket
                 self._first_display = False
             return
         
         # Calculer les largeurs de colonnes
-        all_symbols = list(self.funding_data.keys())
-        max_symbol_len = max(len("Symbole"), max(len(s) for s in all_symbols)) if all_symbols else len("Symbole")
-        symbol_w = max(8, max_symbol_len)
-        funding_w = 12  # Largeur pour le funding
-        volume_w = 10  # Largeur pour le volume en millions
-        spread_w = 10  # Largeur pour le spread
-        volatility_w = 12  # Largeur pour la volatilité
-        funding_time_w = 15  # Largeur pour le temps de funding (avec secondes)
+        col_widths = self._calculate_column_widths()
         
-        # En-tête
-        header = (
-            f"{'Symbole':<{symbol_w}} | {'Funding %':>{funding_w}} | "
-            f"{'Volume (M)':>{volume_w}} | {'Spread %':>{spread_w}} | "
-            f"{'Volatilité %':>{volatility_w}} | "
-            f"{'Funding T':>{funding_time_w}}"
-        )
-        sep = (
-            f"{'-'*symbol_w}-+-{'-'*funding_w}-+-{'-'*volume_w}-+-"
-            f"{'-'*spread_w}-+-{'-'*volatility_w}-+-"
-            f"{'-'*funding_time_w}"
-        )
+        # Afficher l'en-tête
+        self._print_table_header(col_widths)
         
-        print("\n" + header)
-        print(sep)
-        
-        # Données
-        for symbol, data in self.funding_data.items():
-            # Récupérer les données en temps réel si disponibles
-            realtime_info = self.realtime_data.get(symbol, {})
-            # Récupérer les valeurs initiales (REST) comme fallbacks
-            # data format: (funding, volume, funding_time_remaining, spread_pct, volatility_pct)
-            try:
-                original_funding = data[0]
-                original_volume = data[1]
-                original_funding_time = data[2]
-            except Exception:
-                original_funding = None
-                original_volume = None
-                original_funding_time = "-"
-            
-            # Utiliser les données en temps réel si disponibles, sinon fallback vers REST initial
-            if realtime_info:
-                # Données en temps réel disponibles - gérer les valeurs None
-                funding_rate = realtime_info.get('funding_rate')
-                funding = float(funding_rate) if funding_rate is not None else original_funding
-                
-                volume24h = realtime_info.get('volume24h')
-                volume = float(volume24h) if volume24h is not None else original_volume
-                
-                # On ne remplace pas la valeur initiale si la donnée WS est absente
-                funding_time_remaining = original_funding_time
-                
-                # Calculer le spread en temps réel si on a bid/ask
-                spread_pct = None
-                if realtime_info.get('bid1_price') and realtime_info.get('ask1_price'):
-                    try:
-                        bid_price = float(realtime_info['bid1_price'])
-                        ask_price = float(realtime_info['ask1_price'])
-                        if bid_price > 0 and ask_price > 0:
-                            mid_price = (ask_price + bid_price) / 2
-                            if mid_price > 0:
-                                spread_pct = (ask_price - bid_price) / mid_price
-                    except (ValueError, TypeError):
-                        pass  # Garder spread_pct = None en cas d'erreur
-                # Fallback: utiliser la valeur REST calculée au filtrage 
-                # si le temps réel est indisponible
-                if spread_pct is None:
-                    try:
-                        # data[3] contient spread_pct (ou 0.0 si absent lors du filtrage)
-                        spread_pct = data[3]
-                    except Exception:
-                        pass
-                
-                # Volatilité: lecture via le tracker dédié
-                volatility_pct = self.volatility_tracker.get_cached_volatility(symbol)
-            else:
-                # Pas de données en temps réel disponibles 
-                # - utiliser les valeurs initiales REST
-                funding = original_funding
-                volume = original_volume
-                funding_time_remaining = original_funding_time
-                # Fallback: utiliser la valeur REST calculée au filtrage
-                spread_pct = None
-                volatility_pct = None
-                
-                # Volatilité: lecture via le tracker dédié
-                if volatility_pct is None:
-                    volatility_pct = self.volatility_tracker.get_cached_volatility(symbol)
-                # Essayer de récupérer le spread initial calculé lors du filtrage
-                if spread_pct is None:
-                    try:
-                        spread_pct = data[3]
-                    except Exception:
-                        pass
-            
-            # Recalculer le temps de funding (priorité WS, fallback REST)
-            current_funding_time = self._recalculate_funding_time(symbol)
-            if current_funding_time is None:
-                current_funding_time = "-"
-            
-            # Gérer l'affichage des valeurs null
-            if funding is not None:
-                funding_pct = funding * 100.0
-                funding_str = f"{funding_pct:+{funding_w-1}.4f}%"
-            else:
-                funding_str = "null"
-            
-            if volume is not None and volume > 0:
-                volume_millions = volume / 1_000_000
-                volume_str = f"{volume_millions:,.1f}"
-            else:
-                volume_str = "null"
-            
-            if spread_pct is not None:
-                spread_pct_display = spread_pct * 100.0
-                spread_str = f"{spread_pct_display:+.3f}%"
-            else:
-                spread_str = "null"
-            
-            # Formatage de la volatilité
-            if volatility_pct is not None:
-                volatility_pct_display = volatility_pct * 100.0
-                volatility_str = f"{volatility_pct_display:+.3f}%"
-            else:
-                volatility_str = "-"
-            
-            line = (
-                f"{symbol:<{symbol_w}} | {funding_str:>{funding_w}} | "
-                f"{volume_str:>{volume_w}} | {spread_str:>{spread_w}} | "
-                f"{volatility_str:>{volatility_w}} | "
-                f"{current_funding_time:>{funding_time_w}}"
-            )
+        # Afficher les données
+        for symbol in self.funding_data.keys():
+            row_data = self._prepare_row_data(symbol)
+            line = self._format_table_row(symbol, row_data, col_widths)
             print(line)
         
         print()  # Ligne vide après le tableau
+    
+    def _prepare_snapshot(self) -> Optional[dict]:
+        """Prépare et nettoie le snapshot de données."""
+        try:
+            purge_expired(ttl_seconds=getattr(self, "price_ttl_sec", 120))
+        except Exception:
+            pass
+        return get_snapshot()
+    
+    def _calculate_column_widths(self) -> Dict[str, int]:
+        """Calcule les largeurs des colonnes du tableau."""
+        all_symbols = list(self.funding_data.keys())
+        max_symbol_len = max(len("Symbole"), max(len(s) for s in all_symbols)) if all_symbols else len("Symbole")
+        
+        return {
+            "symbol": max(8, max_symbol_len),
+            "funding": 12,
+            "volume": 10,
+            "spread": 10,
+            "volatility": 12,
+            "funding_time": 15
+        }
+    
+    def _print_table_header(self, col_widths: Dict[str, int]):
+        """Affiche l'en-tête du tableau."""
+        w = col_widths
+        header = (
+            f"{'Symbole':<{w['symbol']}} | {'Funding %':>{w['funding']}} | "
+            f"{'Volume (M)':>{w['volume']}} | {'Spread %':>{w['spread']}} | "
+            f"{'Volatilité %':>{w['volatility']}} | "
+            f"{'Funding T':>{w['funding_time']}}"
+        )
+        sep = (
+            f"{'-'*w['symbol']}-+-{'-'*w['funding']}-+-{'-'*w['volume']}-+-"
+            f"{'-'*w['spread']}-+-{'-'*w['volatility']}-+-"
+            f"{'-'*w['funding_time']}"
+        )
+        print("\n" + header)
+        print(sep)
+    
+    def _prepare_row_data(self, symbol: str) -> Dict[str, any]:
+        """
+        Prépare les données d'une ligne avec fallback entre temps réel et REST.
+        
+        Returns:
+            Dict avec les clés: funding, volume, spread_pct, volatility_pct, funding_time
+        """
+        data = self.funding_data[symbol]
+        realtime_info = self.realtime_data.get(symbol, {})
+        
+        # Valeurs initiales (REST) comme fallbacks
+        try:
+            original_funding = data[0]
+            original_volume = data[1]
+            original_funding_time = data[2]
+            original_spread = data[3]
+        except Exception:
+            original_funding = None
+            original_volume = None
+            original_funding_time = "-"
+            original_spread = None
+        
+        # Récupérer les données avec priorité temps réel
+        funding = self._get_funding_value(realtime_info, original_funding)
+        volume = self._get_volume_value(realtime_info, original_volume)
+        spread_pct = self._get_spread_value(realtime_info, original_spread)
+        volatility_pct = self.volatility_tracker.get_cached_volatility(symbol)
+        funding_time = self._recalculate_funding_time(symbol) or "-"
+        
+        return {
+            "funding": funding,
+            "volume": volume,
+            "spread_pct": spread_pct,
+            "volatility_pct": volatility_pct,
+            "funding_time": funding_time
+        }
+    
+    def _get_funding_value(self, realtime_info: dict, original: Optional[float]) -> Optional[float]:
+        """Récupère la valeur de funding avec fallback."""
+        if not realtime_info:
+            return original
+        
+        funding_rate = realtime_info.get('funding_rate')
+        if funding_rate is not None:
+            return float(funding_rate)
+        return original
+    
+    def _get_volume_value(self, realtime_info: dict, original: Optional[float]) -> Optional[float]:
+        """Récupère la valeur de volume avec fallback."""
+        if not realtime_info:
+            return original
+        
+        volume24h = realtime_info.get('volume24h')
+        if volume24h is not None:
+            return float(volume24h)
+        return original
+    
+    def _get_spread_value(self, realtime_info: dict, original: Optional[float]) -> Optional[float]:
+        """Récupère la valeur de spread avec fallback."""
+        if not realtime_info:
+            return original
+        
+        # Calculer le spread en temps réel si on a bid/ask
+        bid1_price = realtime_info.get('bid1_price')
+        ask1_price = realtime_info.get('ask1_price')
+        
+        if bid1_price and ask1_price:
+            try:
+                bid = float(bid1_price)
+                ask = float(ask1_price)
+                if bid > 0 and ask > 0:
+                    mid = (ask + bid) / 2
+                    if mid > 0:
+                        return (ask - bid) / mid
+            except (ValueError, TypeError):
+                pass
+        
+        return original
+    
+    def _format_table_row(self, symbol: str, row_data: Dict[str, any], col_widths: Dict[str, int]) -> str:
+        """Formate une ligne du tableau."""
+        w = col_widths
+        
+        # Formater chaque colonne
+        funding_str = self._format_funding(row_data["funding"], w["funding"])
+        volume_str = self._format_volume(row_data["volume"])
+        spread_str = self._format_spread(row_data["spread_pct"])
+        volatility_str = self._format_volatility(row_data["volatility_pct"])
+        funding_time_str = row_data["funding_time"]
+        
+        return (
+            f"{symbol:<{w['symbol']}} | {funding_str:>{w['funding']}} | "
+            f"{volume_str:>{w['volume']}} | {spread_str:>{w['spread']}} | "
+            f"{volatility_str:>{w['volatility']}} | "
+            f"{funding_time_str:>{w['funding_time']}}"
+        )
+    
+    def _format_funding(self, funding: Optional[float], width: int) -> str:
+        """Formate la valeur de funding."""
+        if funding is not None:
+            funding_pct = funding * 100.0
+            return f"{funding_pct:+{width-1}.4f}%"
+        return "null"
+    
+    def _format_volume(self, volume: Optional[float]) -> str:
+        """Formate la valeur de volume en millions."""
+        if volume is not None and volume > 0:
+            volume_millions = volume / 1_000_000
+            return f"{volume_millions:,.1f}"
+        return "null"
+    
+    def _format_spread(self, spread_pct: Optional[float]) -> str:
+        """Formate la valeur de spread."""
+        if spread_pct is not None:
+            spread_pct_display = spread_pct * 100.0
+            return f"{spread_pct_display:+.3f}%"
+        return "null"
+    
+    def _format_volatility(self, volatility_pct: Optional[float]) -> str:
+        """Formate la valeur de volatilité."""
+        if volatility_pct is not None:
+            volatility_pct_display = volatility_pct * 100.0
+            return f"{volatility_pct_display:+.3f}%"
+        return "-"
     
     def _display_loop(self):
         """Boucle d'affichage avec intervalle configurable."""
@@ -482,123 +514,175 @@ class PriceTracker:
     
     def _continuous_monitoring_loop(self, base_url: str, perp_data: Dict):
         """Boucle de surveillance continue qui re-scanne le marché périodiquement."""
-        scan_interval = 60  # 1 minute entre chaque scan complet (pour les tests)
+        scan_interval = 60  # 1 minute entre chaque scan complet
         last_scan_time = 0
-        
-        # Boucle de surveillance continue démarrée
         
         while self.running:
             try:
-                # Vérifier immédiatement si on doit s'arrêter
+                # Vérification immédiate pour arrêt rapide
                 if not self.running:
                     self.logger.info("🛑 Arrêt de la surveillance continue demandé")
                     break
-                    
+                
                 current_time = time.time()
                 
-                # Vérifier si c'est le moment de faire un nouveau scan
-                if current_time - last_scan_time >= scan_interval:
-                    # Vérifier à nouveau avant de commencer le scan
-                    if not self.running:
-                        break
-                        
-                    # Re-scan du marché en cours
-                    
-                    try:
-                        # Vérifier encore avant de créer le client
-                        if not self.running:
-                            break
-                            
-                        # Reconstruire la watchlist
-                        # Créer un nouveau client pour éviter les problèmes de futures
-                        client = BybitPublicClient(testnet=self.testnet, timeout=10)
-                        base_url = client.public_base_url()
-                        
-                        # Vérifier avant de construire la watchlist
-                        if not self.running:
-                            break
-                            
-                        linear_symbols, inverse_symbols, funding_data = self.watchlist_manager.build_watchlist(
-                            base_url, perp_data, self.volatility_tracker
-                        )
-                        
-                        # Vérifier avant de traiter les résultats
-                        if not self.running:
-                            break
-                            
-                        if linear_symbols or inverse_symbols:
-                            # 🎯 NOUVELLES OPPORTUNITÉS TROUVÉES !
-                            # Nouvelles opportunités détectées
-                            # Symboles linear/inverse
-                            
-                            # Fusionner avec les opportunités existantes au lieu de les remplacer
-                            existing_linear = set(self.linear_symbols) if hasattr(self, 'linear_symbols') else set()
-                            existing_inverse = set(self.inverse_symbols) if hasattr(self, 'inverse_symbols') else set()
-                            existing_funding = self.funding_data.copy() if hasattr(self, 'funding_data') else {}
-                            
-                            # Ajouter les nouveaux symboles
-                            new_linear = set(linear_symbols) - existing_linear
-                            new_inverse = set(inverse_symbols) - existing_inverse
-                            
-                            if new_linear or new_inverse:
-                                # Vérifier avant de mettre à jour
-                                if not self.running:
-                                    break
-                                    
-                                # Nouveaux symboles détectés
-                                
-                                # Mettre à jour les listes
-                                self.linear_symbols = list(existing_linear | set(linear_symbols))
-                                self.inverse_symbols = list(existing_inverse | set(inverse_symbols))
-                                
-                                # Fusionner les données de funding
-                                self.funding_data.update(funding_data)
-                                
-                                # Mettre à jour les données originales
-                                new_original_data = self.watchlist_manager.get_original_funding_data()
-                                self.original_funding_data.update(new_original_data)
-                                
-                                # Vérifier avant de démarrer les WebSockets
-                                if not self.running:
-                                    break
-                                    
-                                # Démarrer les connexions WebSocket pour les nouvelles opportunités
-                                self.ws_manager.start_connections(self.linear_symbols, self.inverse_symbols)
-                                
-                                # Watchlist mise à jour
-                            else:
-                                # Aucun nouveau symbole détecté
-                                pass
-                            
-                            # Surveillance continue
-                        else:
-                            # Vérifier si les opportunités existantes sont toujours valides
-                            if self.funding_data:
-                                # Les opportunités existantes restent affichées - pas besoin de log
-                                pass
-                            else:
-                                # Aucune nouvelle opportunité trouvée
-                                pass
-                            
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Erreur lors du re-scan: {e}")
-                    
+                # Effectuer un scan si l'intervalle est écoulé
+                if self._should_perform_scan(current_time, last_scan_time, scan_interval):
+                    self._perform_market_scan(base_url, perp_data)
                     last_scan_time = current_time
-                
-                # Attendre 10 secondes avant de vérifier à nouveau, mais vérifier self.running plus souvent
-                for _ in range(10):
+                    
+                    # Vérifier après le scan pour arrêt rapide
                     if not self.running:
                         break
-                    time.sleep(1)
-                    
+                
+                # Attendre avec vérification d'interruption
+                self._wait_with_interrupt_check(10)
+                
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur dans la boucle de surveillance continue: {e}")
-                # Vérifier si on doit s'arrêter même en cas d'erreur
                 if not self.running:
                     break
-                time.sleep(10)  # Attendre 10 secondes en cas d'erreur
+                time.sleep(10)
         
         # Boucle de surveillance continue arrêtée
+    
+    def _should_perform_scan(self, current_time: float, last_scan_time: float, interval: int) -> bool:
+        """Vérifie s'il est temps d'effectuer un nouveau scan."""
+        return self.running and (current_time - last_scan_time >= interval)
+    
+    def _perform_market_scan(self, base_url: str, perp_data: Dict):
+        """Effectue un scan complet du marché pour détecter de nouvelles opportunités."""
+        if not self.running:
+            return
+        
+        try:
+            # Construire la watchlist via le gestionnaire
+            new_opportunities = self._scan_for_new_opportunities(base_url, perp_data)
+            
+            # Vérification après le scan qui peut être long
+            if not self.running:
+                return
+            
+            if new_opportunities and self.running:
+                self._integrate_new_opportunities(new_opportunities)
+                
+        except Exception as e:
+            # Ne pas logger si on est en train de s'arrêter
+            if self.running:
+                self.logger.warning(f"⚠️ Erreur lors du re-scan: {e}")
+    
+    def _scan_for_new_opportunities(self, base_url: str, perp_data: Dict) -> Optional[Dict]:
+        """
+        Scanne le marché pour trouver de nouvelles opportunités.
+        
+        Returns:
+            Dict contenant linear_symbols, inverse_symbols et funding_data ou None
+        """
+        if not self.running:
+            return None
+        
+        try:
+            # Créer un nouveau client pour éviter les problèmes de futures
+            client = BybitPublicClient(testnet=self.testnet, timeout=10)
+            fresh_base_url = client.public_base_url()
+            
+            if not self.running:
+                return None
+            
+            # Reconstruire la watchlist (peut prendre du temps)
+            linear_symbols, inverse_symbols, funding_data = self.watchlist_manager.build_watchlist(
+                fresh_base_url, perp_data, self.volatility_tracker
+            )
+            
+            # Vérification immédiate après l'opération longue
+            if not self.running:
+                return None
+            
+            if linear_symbols or inverse_symbols:
+                return {
+                    "linear": linear_symbols,
+                    "inverse": inverse_symbols,
+                    "funding_data": funding_data
+                }
+            
+        except Exception as e:
+            # Ne pas logger si on est en train de s'arrêter
+            if self.running:
+                self.logger.warning(f"⚠️ Erreur scan opportunités: {e}")
+        
+        return None
+    
+    def _integrate_new_opportunities(self, opportunities: Dict):
+        """
+        Intègre les nouvelles opportunités détectées dans la watchlist existante.
+        
+        Args:
+            opportunities: Dict avec linear, inverse et funding_data
+        """
+        if not self.running:
+            return
+        
+        linear_symbols = opportunities.get("linear", [])
+        inverse_symbols = opportunities.get("inverse", [])
+        funding_data = opportunities.get("funding_data", {})
+        
+        # Récupérer les symboles existants
+        existing_linear = set(getattr(self, 'linear_symbols', []))
+        existing_inverse = set(getattr(self, 'inverse_symbols', []))
+        
+        # Identifier les nouveaux symboles
+        new_linear = set(linear_symbols) - existing_linear
+        new_inverse = set(inverse_symbols) - existing_inverse
+        
+        if new_linear or new_inverse:
+            if not self.running:
+                return
+            
+            # Mettre à jour les listes de symboles
+            self._update_symbol_lists(linear_symbols, inverse_symbols, existing_linear, existing_inverse)
+            
+            if not self.running:
+                return
+            
+            # Mettre à jour les données de funding
+            self._update_funding_data(funding_data)
+            
+            if not self.running:
+                return
+            
+            # Démarrer les connexions WebSocket pour les nouvelles opportunités
+            try:
+                self.ws_manager.start_connections(self.linear_symbols, self.inverse_symbols)
+            except Exception:
+                # Ignorer les erreurs lors de l'arrêt
+                pass
+    
+    def _update_symbol_lists(self, linear_symbols: List[str], inverse_symbols: List[str], 
+                            existing_linear: set, existing_inverse: set):
+        """Met à jour les listes de symboles avec les nouvelles opportunités."""
+        self.linear_symbols = list(existing_linear | set(linear_symbols))
+        self.inverse_symbols = list(existing_inverse | set(inverse_symbols))
+    
+    def _update_funding_data(self, new_funding_data: Dict):
+        """Met à jour les données de funding avec les nouvelles opportunités."""
+        # Fusionner les données de funding
+        self.funding_data.update(new_funding_data)
+        
+        # Mettre à jour les données originales
+        new_original_data = self.watchlist_manager.get_original_funding_data()
+        self.original_funding_data.update(new_original_data)
+    
+    def _wait_with_interrupt_check(self, seconds: int):
+        """
+        Attend pendant le nombre de secondes spécifié avec vérification d'interruption.
+        
+        Args:
+            seconds: Nombre de secondes à attendre
+        """
+        for _ in range(seconds):
+            if not self.running:
+                break
+            time.sleep(1)
     
     def _setup_candidate_monitoring(self, base_url: str, perp_data: Dict):
         """Configure la surveillance des symboles candidats."""
