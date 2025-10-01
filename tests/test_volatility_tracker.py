@@ -136,6 +136,7 @@ class TestVolatilityTracker:
         vt = VolatilityTracker()
         assert vt.is_running() is False
     
+    @pytest.mark.asyncio
     @mock.patch('src.volatility_tracker.BybitPublicClient')
     @mock.patch('src.volatility_tracker.compute_volatility_batch_async')
     async def test_compute_volatility_batch(self, mock_compute, mock_client):
