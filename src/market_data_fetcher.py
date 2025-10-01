@@ -156,6 +156,27 @@ class MarketDataFetcher:
         Returns:
             Dict[str, float]: map {symbol: spread_pct}
         """
+        # Récupération paginée des spreads
+        found = self._fetch_spreads_paginated(base_url, symbols, timeout, category)
+        
+        # Fallback unitaire pour les symboles manquants
+        self._fetch_missing_spreads(base_url, symbols, found, timeout, category)
+        
+        return found
+    
+    def _fetch_spreads_paginated(self, base_url: str, symbols: List[str], timeout: int, category: str) -> Dict[str, float]:
+        """
+        Récupère les spreads via pagination de l'API.
+        
+        Args:
+            base_url: URL de base de l'API Bybit
+            symbols: Liste des symboles cibles
+            timeout: Timeout HTTP
+            category: Catégorie des instruments
+            
+        Returns:
+            Dictionnaire {symbol: spread_pct}
+        """
         wanted = set(symbols)
         found: Dict[str, float] = {}
         url = f"{base_url}/v5/market/tickers"
@@ -166,76 +187,181 @@ class MarketDataFetcher:
         
         while True:
             page_index += 1
-            if cursor:
-                params["cursor"] = cursor
-            else:
-                params.pop("cursor", None)
-                
+            
+            # Préparer les paramètres de la requête
+            self._prepare_pagination_params(params, cursor)
+            
             try:
-                rate_limiter.acquire()
-                client = get_http_client(timeout=timeout)
-                resp = client.get(url, params=params)
-                
-                if resp.status_code >= 400:
-                    raise RuntimeError(
-                        f"Erreur HTTP Bybit GET {url} | category={category} page={page_index} "
-                        f"limit={params.get('limit')} cursor={params.get('cursor','-')} status={resp.status_code} "
-                        f"detail=\"{resp.text[:200]}\""
-                    )
-                
-                data = resp.json()
-                if data.get("retCode") != 0:
-                    raise RuntimeError(
-                        f"Erreur API Bybit GET {url} | category={category} page={page_index} "
-                        f"retCode={data.get('retCode')} retMsg=\"{data.get('retMsg','')}\""
-                    )
-                
-                result = data.get("result", {})
+                # Effectuer la requête paginée
+                result = self._make_paginated_request(url, params, timeout, page_index, category, rate_limiter)
                 tickers = result.get("list", [])
                 
-                for t in tickers:
-                    sym = t.get("symbol")
-                    if sym in wanted:
-                        bid1 = t.get("bid1Price")
-                        ask1 = t.get("ask1Price")
-                        try:
-                            if bid1 is not None and ask1 is not None:
-                                b = float(bid1)
-                                a = float(ask1)
-                                if b > 0 and a > 0:
-                                    mid = (a + b) / 2
-                                    if mid > 0:
-                                        found[sym] = (a - b) / mid
-                        except (ValueError, TypeError):
-                            # Erreur de conversion numérique - ignorer silencieusement
-                            pass
+                # Traiter les tickers de cette page
+                self._process_tickers_for_spreads(tickers, wanted, found)
                 
-                # Fin pagination
-                next_cursor = result.get("nextPageCursor")
-                # Arrêt anticipé si on a tout trouvé
-                if len(found) >= len(wanted):
+                # Vérifier si on doit continuer la pagination
+                if not self._should_continue_pagination(found, wanted, tickers):
                     break
-                if not next_cursor:
+                    
+                # Préparer la page suivante
+                cursor = result.get("nextPageCursor")
+                if not cursor:
                     break
-                cursor = next_cursor
-                
-            except (httpx.RequestError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
-                self.logger.error(
-                    f"Erreur réseau spread paginé page={page_index} category={category}: {type(e).__name__}: {e}"
-                )
-                break
-            except (ValueError, TypeError, KeyError) as e:
-                self.logger.warning(
-                    f"Erreur données spread paginé page={page_index} category={category}: {type(e).__name__}: {e}"
-                )
-                break
+                    
             except Exception as e:
-                self.logger.error(
-                    f"Erreur inattendue spread paginé page={page_index} category={category}: {type(e).__name__}: {e}"
-                )
+                self._handle_pagination_error(e, page_index, category)
                 break
         
-        # Fallback unitaire pour les symboles manquants
+        return found
+    
+    def _prepare_pagination_params(self, params: dict, cursor: str):
+        """
+        Prépare les paramètres de pagination.
+        
+        Args:
+            params: Dictionnaire des paramètres à modifier
+            cursor: Curseur de pagination
+        """
+        if cursor:
+            params["cursor"] = cursor
+        else:
+            params.pop("cursor", None)
+    
+    def _make_paginated_request(self, url: str, params: dict, timeout: int, page_index: int, category: str, rate_limiter) -> dict:
+        """
+        Effectue une requête paginée et retourne le résultat complet.
+        
+        Args:
+            url: URL de l'API
+            params: Paramètres de la requête
+            timeout: Timeout HTTP
+            page_index: Index de la page
+            category: Catégorie des instruments
+            rate_limiter: Limiteur de taux
+            
+        Returns:
+            Dictionnaire result de l'API
+            
+        Raises:
+            RuntimeError: En cas d'erreur HTTP ou API
+        """
+        rate_limiter.acquire()
+        client = get_http_client(timeout=timeout)
+        resp = client.get(url, params=params)
+        
+        # Vérifier le statut HTTP
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"Erreur HTTP Bybit GET {url} | category={category} page={page_index} "
+                f"limit={params.get('limit')} cursor={params.get('cursor','-')} status={resp.status_code} "
+                f"detail=\"{resp.text[:200]}\""
+            )
+        
+        data = resp.json()
+        if data.get("retCode") != 0:
+            raise RuntimeError(
+                f"Erreur API Bybit GET {url} | category={category} page={page_index} "
+                f"retCode={data.get('retCode')} retMsg=\"{data.get('retMsg','')}\""
+            )
+        
+        return data.get("result", {})
+    
+    def _process_tickers_for_spreads(self, tickers: list, wanted: set, found: Dict[str, float]):
+        """
+        Traite les tickers pour extraire les spreads.
+        
+        Args:
+            tickers: Liste des tickers de l'API
+            wanted: Set des symboles recherchés
+            found: Dictionnaire des résultats (modifié en place)
+        """
+        for t in tickers:
+            sym = t.get("symbol")
+            if sym in wanted:
+                spread_pct = self._calculate_spread_from_ticker(t)
+                if spread_pct is not None:
+                    found[sym] = spread_pct
+    
+    def _calculate_spread_from_ticker(self, ticker: dict) -> Optional[float]:
+        """
+        Calcule le spread en pourcentage à partir d'un ticker.
+        
+        Args:
+            ticker: Dictionnaire du ticker
+            
+        Returns:
+            Spread en pourcentage ou None si impossible à calculer
+        """
+        bid1 = ticker.get("bid1Price")
+        ask1 = ticker.get("ask1Price")
+        
+        try:
+            if bid1 is not None and ask1 is not None:
+                b = float(bid1)
+                a = float(ask1)
+                if b > 0 and a > 0:
+                    mid = (a + b) / 2
+                    if mid > 0:
+                        return (a - b) / mid
+        except (ValueError, TypeError):
+            # Erreur de conversion numérique - ignorer silencieusement
+            pass
+        
+        return None
+    
+    def _should_continue_pagination(self, found: Dict[str, float], wanted: set, tickers: list) -> bool:
+        """
+        Détermine si la pagination doit continuer.
+        
+        Args:
+            found: Symboles trouvés
+            wanted: Symboles recherchés
+            tickers: Tickers de la page actuelle
+            
+        Returns:
+            True si la pagination doit continuer
+        """
+        # Arrêt anticipé si on a tout trouvé
+        if len(found) >= len(wanted):
+            return False
+        
+        # Continuer si on a des tickers
+        return len(tickers) > 0
+    
+    
+    def _handle_pagination_error(self, error: Exception, page_index: int, category: str):
+        """
+        Gère les erreurs de pagination.
+        
+        Args:
+            error: Exception levée
+            page_index: Index de la page
+            category: Catégorie des instruments
+        """
+        if isinstance(error, (httpx.RequestError, httpx.TimeoutException, httpx.HTTPStatusError)):
+            self.logger.error(
+                f"Erreur réseau spread paginé page={page_index} category={category}: {type(error).__name__}: {error}"
+            )
+        elif isinstance(error, (ValueError, TypeError, KeyError)):
+            self.logger.warning(
+                f"Erreur données spread paginé page={page_index} category={category}: {type(error).__name__}: {error}"
+            )
+        else:
+            self.logger.error(
+                f"Erreur inattendue spread paginé page={page_index} category={category}: {type(error).__name__}: {error}"
+            )
+    
+    def _fetch_missing_spreads(self, base_url: str, symbols: List[str], found: Dict[str, float], timeout: int, category: str):
+        """
+        Récupère les spreads manquants via des requêtes unitaires.
+        
+        Args:
+            base_url: URL de base de l'API Bybit
+            symbols: Liste des symboles cibles
+            found: Dictionnaire des résultats (modifié en place)
+            timeout: Timeout HTTP
+            category: Catégorie des instruments
+        """
         missing = [s for s in symbols if s not in found]
         for s in missing:
             try:
@@ -245,8 +371,6 @@ class MarketDataFetcher:
             except (httpx.RequestError, ValueError, TypeError):
                 # Erreurs réseau ou conversion - ignorer silencieusement pour le fallback
                 pass
-        
-        return found
     
     def _fetch_single_spread(self, base_url: str, symbol: str, timeout: int, category: str) -> Optional[float]:
         """

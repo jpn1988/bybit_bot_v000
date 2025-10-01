@@ -28,4 +28,4 @@ funding_time_max_minutes: 240 # Optionnel: maximum 120 minutes avant funding
 # ============================================
 # Configuration de l'affichage
 # ============================================
-display_interval_seconds: 10  # Intervalle d'affichage de la watchlist (secondes)
+display_interval_seconds: 10 # Intervalle d'affichage de la watchlist (secondes)

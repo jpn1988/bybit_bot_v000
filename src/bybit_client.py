@@ -60,27 +60,37 @@ class BybitClient:
         Raises:
             RuntimeError: En cas d'erreur HTTP ou API
         """
-        if params is None:
-            params = {}
+        params = params or {}
+        
+        # Construire les headers d'authentification
+        headers, query_string = self._build_auth_headers(params)
+        
+        # Construire l'URL complète
+        url = self._build_request_url(path, query_string)
+        
+        # Exécuter la requête avec retry
+        return self._execute_request_with_retry(url, headers)
+    
+    def _build_auth_headers(self, params: dict) -> tuple[dict, str]:
+        """
+        Construit les headers d'authentification pour une requête privée.
+        
+        Args:
+            params: Paramètres de la requête
             
-        # Générer timestamp et recv_window
+        Returns:
+            Tuple (headers, query_string)
+        """
         timestamp = int(time.time() * 1000)
         recv_window_ms = 10000
         
         # Créer la query string triée
         query_string = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
         
-        # Créer le payload pour la signature
-        payload = f"{timestamp}{self.api_key}{recv_window_ms}{query_string}"
+        # Générer la signature
+        signature = self._generate_signature(timestamp, recv_window_ms, query_string)
         
-        # Générer la signature HMAC-SHA256
-        signature = hmac.new(
-            self.api_secret.encode('utf-8'),
-            payload.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Headers requis
+        # Construire les headers
         headers = {
             "X-BAPI-API-KEY": self.api_key,
             "X-BAPI-SIGN": signature,
@@ -90,124 +100,242 @@ class BybitClient:
             "Content-Type": "application/json"
         }
         
-        # Construire l'URL complète
+        return headers, query_string
+    
+    def _generate_signature(self, timestamp: int, recv_window_ms: int, query_string: str) -> str:
+        """
+        Génère la signature HMAC-SHA256 pour l'authentification.
+        
+        Args:
+            timestamp: Timestamp en millisecondes
+            recv_window_ms: Fenêtre de réception en millisecondes
+            query_string: Query string des paramètres
+            
+        Returns:
+            Signature hexadécimale
+        """
+        payload = f"{timestamp}{self.api_key}{recv_window_ms}{query_string}"
+        return hmac.new(
+            self.api_secret.encode('utf-8'),
+            payload.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+    
+    def _build_request_url(self, path: str, query_string: str) -> str:
+        """
+        Construit l'URL complète de la requête.
+        
+        Args:
+            path: Chemin de l'endpoint
+            query_string: Query string des paramètres
+            
+        Returns:
+            URL complète
+        """
         url = f"{self.base_url}{path}"
         if query_string:
             url += f"?{query_string}"
+        return url
+    
+    def _execute_request_with_retry(self, url: str, headers: dict) -> dict:
+        """
+        Exécute une requête HTTP avec mécanisme de retry.
         
-        attempts = 0
+        Args:
+            url: URL de la requête
+            headers: Headers HTTP
+            
+        Returns:
+            Réponse JSON décodée
+            
+        Raises:
+            RuntimeError: En cas d'erreur
+        """
         max_attempts = 4
         backoff_base = 0.5
         last_error: Exception | None = None
         start_time = time.time()
         
-        while attempts < max_attempts:
-            attempts += 1
+        for attempt in range(1, max_attempts + 1):
             try:
+                # Effectuer la requête
                 client = get_http_client(timeout=self.timeout)
                 response = client.get(url, headers=headers)
                 
-                # HTTP errors (4xx/5xx)
-                if response.status_code >= 500:
-                    raise httpx.HTTPStatusError(
-                        "Server error", request=None, response=response
-                    )
-                if response.status_code == 429:
-                    # Respecter Retry-After si présent
-                    retry_after = response.headers.get("Retry-After")
-                    delay = (
-                        float(retry_after) if retry_after 
-                        else backoff_base * (2 ** (attempts - 1))
-                    )
-                    delay += random.uniform(0, 0.25)
-                    time.sleep(delay)
-                    continue
-                if response.status_code >= 400:
-                    # Erreurs client non récupérables
-                    detail = response.text[:100]
-                    raise RuntimeError(
-                        f"Erreur HTTP Bybit: status={response.status_code} "
-                        f"detail=\"{detail}\""
-                    )
+                # Gérer la réponse HTTP
+                self._handle_http_response(response, attempt, max_attempts, backoff_base)
                 
+                # Décoder et valider la réponse API
                 data = response.json()
+                self._handle_api_response(data, response, attempt, max_attempts, backoff_base)
                 
-                # API retCode handling
-                if data.get("retCode") != 0:
-                    ret_code = data.get("retCode")
-                    ret_msg = data.get("retMsg", "")
-                    if ret_code in [10005, 10006]:
-                        raise RuntimeError(
-                            "Authentification échouée : clé/secret invalides "
-                            "ou signature incorrecte"
-                        )
-                    elif ret_code == 10018:
-                        raise RuntimeError(
-                            "Accès refusé : IP non autorisée "
-                            "(whitelist requise dans Bybit)"
-                        )
-                    elif ret_code == 10017:
-                        raise RuntimeError(
-                            "Horodatage invalide : horloge locale désynchronisée "
-                            "(corrige l'heure système)"
-                        )
-                    elif ret_code == 10016:
-                        # Rate limit: backoff + jitter puis retry
-                        retry_after = response.headers.get("Retry-After")
-                        delay = (
-                            float(retry_after) if retry_after 
-                            else backoff_base * (2 ** (attempts - 1))
-                        )
-                        delay += random.uniform(0, 0.25)
-                        time.sleep(delay)
-                        if attempts < max_attempts:
-                            continue
-                        raise RuntimeError(
-                            "Limite de requêtes atteinte : ralentis ou réessaie plus tard"
-                        )
-                    else:
-                        raise RuntimeError(
-                            f"Erreur API Bybit : retCode={ret_code} "
-                            f"retMsg=\"{ret_msg}\""
-                        )
-                
-                # Enregistrer les métriques de succès
+                # Succès - enregistrer les métriques
                 latency = time.time() - start_time
                 record_api_call(latency, success=True)
                 
                 return data.get("result", {})
+                
             except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
-                # Timeouts spécifiques - retry avec backoff
                 last_error = e
-                if attempts >= max_attempts:
+                if attempt >= max_attempts:
                     break
-                delay = backoff_base * (2 ** (attempts - 1)) + random.uniform(0, 0.25)
+                delay = self._calculate_retry_delay(attempt, backoff_base)
                 time.sleep(delay)
+                
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                # Autres erreurs réseau/HTTP - retry avec backoff
                 last_error = e
-                if attempts >= max_attempts:
+                if attempt >= max_attempts:
                     break
-                delay = backoff_base * (2 ** (attempts - 1)) + random.uniform(0, 0.25)
+                delay = self._calculate_retry_delay(attempt, backoff_base)
                 time.sleep(delay)
+                
             except (ValueError, TypeError, KeyError) as e:
-                # Erreurs de données/parsing - pas de retry
+                # Erreurs de données - pas de retry
                 last_error = e
                 break
+                
             except Exception as e:
-                # Erreur inattendue - propager si c'est une erreur formatée connue
+                # Propager les erreurs formatées connues
                 if "Erreur" in str(e):
                     raise
                 last_error = e
                 break
-        # Enregistrer les métriques d'erreur
+        
+        # Échec après tous les retries
         latency = time.time() - start_time
         record_api_call(latency, success=False)
         
-        # Échec après retries
+        raise RuntimeError(f"Erreur réseau/HTTP Bybit : {last_error}")
+    
+    def _handle_http_response(self, response: httpx.Response, attempt: int, 
+                              max_attempts: int, backoff_base: float):
+        """
+        Gère les erreurs HTTP et rate limiting.
+        
+        Args:
+            response: Réponse HTTP
+            attempt: Numéro de la tentative actuelle
+            max_attempts: Nombre maximum de tentatives
+            backoff_base: Délai de base pour le backoff
+            
+        Raises:
+            httpx.HTTPStatusError: Pour les erreurs serveur (retry)
+            RuntimeError: Pour les erreurs client (pas de retry)
+        """
+        # Erreurs serveur (5xx) - retry
+        if response.status_code >= 500:
+            raise httpx.HTTPStatusError(
+                "Server error", request=None, response=response
+            )
+        
+        # Rate limiting (429) - retry avec backoff
+        if response.status_code == 429:
+            delay = self._get_retry_after_delay(response, attempt, backoff_base)
+            time.sleep(delay)
+            raise httpx.HTTPStatusError(
+                "Rate limited", request=None, response=response
+            )
+        
+        # Erreurs client (4xx) - pas de retry
+        if response.status_code >= 400:
+            detail = response.text[:100]
+            raise RuntimeError(
+                f"Erreur HTTP Bybit: status={response.status_code} detail=\"{detail}\""
+            )
+    
+    def _handle_api_response(self, data: dict, response: httpx.Response, 
+                            attempt: int, max_attempts: int, backoff_base: float):
+        """
+        Gère les codes de retour de l'API Bybit.
+        
+        Args:
+            data: Réponse JSON décodée
+            response: Réponse HTTP brute
+            attempt: Numéro de la tentative actuelle
+            max_attempts: Nombre maximum de tentatives
+            backoff_base: Délai de base pour le backoff
+            
+        Raises:
+            RuntimeError: Pour les erreurs API
+        """
+        ret_code = data.get("retCode")
+        if ret_code == 0:
+            return  # Succès
+        
+        ret_msg = data.get("retMsg", "")
+        
+        # Erreurs d'authentification
+        if ret_code in [10005, 10006]:
+            raise RuntimeError(
+                "Authentification échouée : clé/secret invalides ou signature incorrecte"
+            )
+        
+        # Erreur d'IP non autorisée
+        if ret_code == 10018:
+            raise RuntimeError(
+                "Accès refusé : IP non autorisée (whitelist requise dans Bybit)"
+            )
+        
+        # Erreur de timestamp
+        if ret_code == 10017:
+            raise RuntimeError(
+                "Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)"
+            )
+        
+        # Rate limit API - retry
+        if ret_code == 10016:
+            delay = self._get_retry_after_delay(response, attempt, backoff_base)
+            time.sleep(delay)
+            if attempt < max_attempts:
+                raise httpx.HTTPStatusError(
+                    "API Rate limited", request=None, response=response
+                )
+            raise RuntimeError(
+                "Limite de requêtes atteinte : ralentis ou réessaie plus tard"
+            )
+        
+        # Autre erreur API
         raise RuntimeError(
-            f"Erreur réseau/HTTP Bybit : {last_error}"
+            f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\""
         )
+    
+    def _get_retry_after_delay(self, response: httpx.Response, 
+                               attempt: int, backoff_base: float) -> float:
+        """
+        Calcule le délai à attendre avant de retry en respectant Retry-After.
+        
+        Args:
+            response: Réponse HTTP
+            attempt: Numéro de la tentative
+            backoff_base: Délai de base pour le backoff
+            
+        Returns:
+            Délai en secondes
+        """
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
+            delay = float(retry_after)
+        else:
+            delay = backoff_base * (2 ** (attempt - 1))
+        
+        # Ajouter un jitter aléatoire
+        delay += random.uniform(0, 0.25)
+        return delay
+    
+    def _calculate_retry_delay(self, attempt: int, backoff_base: float) -> float:
+        """
+        Calcule le délai de retry avec backoff exponentiel et jitter.
+        
+        Args:
+            attempt: Numéro de la tentative
+            backoff_base: Délai de base
+            
+        Returns:
+            Délai en secondes
+        """
+        delay = backoff_base * (2 ** (attempt - 1))
+        delay += random.uniform(0, 0.25)
+        return delay
     
     def public_base_url(self) -> str:
         """

@@ -232,14 +232,31 @@ class VolatilityTracker:
         Returns:
             Liste des (symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct)
         """
-        filtered_symbols = []
-        rejected_count = 0
+        # Préparer les volatilités (cache + calcul)
+        all_volatilities = await self._prepare_volatility_data(symbols_data)
         
+        # Appliquer les filtres de volatilité
+        filtered_symbols = self._apply_volatility_filters(
+            symbols_data, all_volatilities, volatility_min, volatility_max
+        )
+        
+        return filtered_symbols
+    
+    async def _prepare_volatility_data(self, symbols_data: List[Tuple[str, float, float, str, float]]) -> Dict[str, Optional[float]]:
+        """
+        Prépare les données de volatilité en utilisant le cache et les calculs.
+        
+        Args:
+            symbols_data: Liste des données de symboles
+            
+        Returns:
+            Dictionnaire {symbol: volatility_pct}
+        """
         # Séparer les symboles en cache et ceux à calculer
         symbols_to_calculate = []
         cached_volatilities = {}
         
-        for symbol, funding, volume, funding_time_remaining, spread_pct in symbols_data:
+        for symbol, _, _, _, _ in symbols_data:
             cached_vol = self.get_cached_volatility(symbol)
             if cached_vol is not None:
                 cached_volatilities[symbol] = cached_vol
@@ -248,51 +265,90 @@ class VolatilityTracker:
         
         # Calculer la volatilité pour les symboles manquants
         if symbols_to_calculate:
-            # Calcul volatilité async
-            batch_volatilities = await self.compute_volatility_batch(symbols_to_calculate)
-            
-            # Mettre à jour le cache avec les nouveaux résultats
-            for symbol, vol_pct in batch_volatilities.items():
-                if vol_pct is not None:
-                    self.set_cached_volatility(symbol, vol_pct)
-                cached_volatilities[symbol] = vol_pct
+            await self._calculate_missing_volatilities(symbols_to_calculate, cached_volatilities)
         
-        # Appliquer les filtres avec toutes les volatilités (cache + calculées)
-        for symbol, funding, volume, funding_time_remaining, spread_pct in symbols_data:
-            vol_pct = cached_volatilities.get(symbol)
+        return cached_volatilities
+    
+    async def _calculate_missing_volatilities(self, symbols_to_calculate: List[str], all_volatilities: Dict[str, Optional[float]]):
+        """
+        Calcule la volatilité pour les symboles manquants et met à jour le cache.
+        
+        Args:
+            symbols_to_calculate: Liste des symboles à calculer
+            all_volatilities: Dictionnaire des volatilités (modifié en place)
+        """
+        # Calcul volatilité async
+        batch_volatilities = await self.compute_volatility_batch(symbols_to_calculate)
+        
+        # Mettre à jour le cache avec les nouveaux résultats
+        for symbol, vol_pct in batch_volatilities.items():
+            if vol_pct is not None:
+                self.set_cached_volatility(symbol, vol_pct)
+            all_volatilities[symbol] = vol_pct
+    
+    def _apply_volatility_filters(
+        self, 
+        symbols_data: List[Tuple[str, float, float, str, float]], 
+        all_volatilities: Dict[str, Optional[float]], 
+        volatility_min: Optional[float], 
+        volatility_max: Optional[float]
+    ) -> List[Tuple[str, float, float, str, float, Optional[float]]]:
+        """
+        Applique les filtres de volatilité aux symboles.
+        
+        Args:
+            symbols_data: Liste des données de symboles
+            all_volatilities: Dictionnaire des volatilités
+            volatility_min: Seuil minimum
+            volatility_max: Seuil maximum
             
-            # Appliquer le filtre de volatilité seulement si des seuils sont définis
-            if volatility_min is not None or volatility_max is not None:
-                if vol_pct is not None:
-                    # Vérifier les seuils de volatilité
-                    rejected_reason = None
-                    if volatility_min is not None and vol_pct < volatility_min:
-                        rejected_reason = f"< seuil min {volatility_min:.2%}"
-                    elif volatility_max is not None and vol_pct > volatility_max:
-                        rejected_reason = f"> seuil max {volatility_max:.2%}"
-                    
-                    if rejected_reason:
-                        rejected_count += 1
-                        continue
-                else:
-                    # Symbole sans volatilité calculée - le rejeter si des filtres sont actifs
-                    rejected_count += 1
-                    continue
+        Returns:
+            Liste filtrée des symboles avec volatilité
+        """
+        filtered_symbols = []
+        rejected_count = 0
+        
+        for symbol, funding, volume, funding_time_remaining, spread_pct in symbols_data:
+            vol_pct = all_volatilities.get(symbol)
+            
+            # Vérifier si le symbole passe les filtres
+            if self._should_reject_symbol(vol_pct, volatility_min, volatility_max):
+                rejected_count += 1
+                continue
             
             # Ajouter le symbole avec sa volatilité
             filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct, vol_pct))
         
-        # Log des résultats
-        kept_count = len(filtered_symbols)
-        threshold_info = []
-        if volatility_min is not None:
-            threshold_info.append(f"min={volatility_min:.2%}")
-        if volatility_max is not None:
-            threshold_info.append(f"max={volatility_max:.2%}")
-        threshold_str = " | ".join(threshold_info) if threshold_info else "aucun seuil"
-        # Filtre volatilité appliqué
-        
         return filtered_symbols
+    
+    def _should_reject_symbol(self, vol_pct: Optional[float], volatility_min: Optional[float], volatility_max: Optional[float]) -> bool:
+        """
+        Détermine si un symbole doit être rejeté selon les critères de volatilité.
+        
+        Args:
+            vol_pct: Volatilité du symbole
+            volatility_min: Seuil minimum
+            volatility_max: Seuil maximum
+            
+        Returns:
+            True si le symbole doit être rejeté
+        """
+        # Pas de filtres actifs - accepter tous les symboles
+        if volatility_min is None and volatility_max is None:
+            return False
+        
+        # Symbole sans volatilité calculée - le rejeter si des filtres sont actifs
+        if vol_pct is None:
+            return True
+        
+        # Vérifier les seuils de volatilité
+        if volatility_min is not None and vol_pct < volatility_min:
+            return True
+        
+        if volatility_max is not None and vol_pct > volatility_max:
+            return True
+        
+        return False
     
     def filter_by_volatility(
         self,
@@ -335,96 +391,161 @@ class VolatilityTracker:
     
     def _refresh_loop(self):
         """Boucle de rafraîchissement périodique du cache de volatilité."""
-        # Calculer l'intervalle de rafraîchissement
-        refresh_interval = max(30, min(60, self.ttl_seconds - 10))
-        
-        # Volatilité: thread actif
+        refresh_interval = self._calculate_refresh_interval()
         
         while self._running:
             try:
-                # Obtenir la liste des symboles à rafraîchir
-                symbols_to_refresh = []
-                if self._get_active_symbols_callback:
-                    try:
-                        symbols_to_refresh = self._get_active_symbols_callback()
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Erreur callback symboles actifs: {e}")
+                # Obtenir les symboles à rafraîchir
+                symbols_to_refresh = self._get_symbols_to_refresh()
                 
                 if not symbols_to_refresh:
-                    # Rien à faire, patienter un court instant
                     time.sleep(5)
                     continue
                 
-                # Log de cycle
-                # Refresh volatilité
-                
-                # Calculer la volatilité en batch
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Si la boucle tourne, créer une tâche dans un thread séparé
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            future = executor.submit(asyncio.run, self.compute_volatility_batch(symbols_to_refresh))
-                            results = future.result()
-                    else:
-                        results = loop.run_until_complete(self.compute_volatility_batch(symbols_to_refresh))
-                except RuntimeError:
-                    results = asyncio.run(self.compute_volatility_batch(symbols_to_refresh))
-                
-                # Mettre à jour le cache
-                now_ts = time.time()
-                ok_count = 0
-                fail_count = 0
-                
-                for sym, vol_pct in results.items():
-                    if vol_pct is not None:
-                        cache_key = get_volatility_cache_key(sym)
-                        self.volatility_cache[cache_key] = (now_ts, vol_pct)
-                        ok_count += 1
-                    else:
-                        fail_count += 1
-                
-                self.logger.info(f"✅ Refresh volatilité terminé: ok={ok_count} | fail={fail_count}")
-                
-                # Retry pour les symboles en échec
-                failed = [s for s, v in results.items() if v is None]
-                if failed:
-                    self.logger.info(f"🔁 Retry volatilité pour {len(failed)} symboles…")
-                    time.sleep(5)
-                    
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            # Si la boucle tourne, créer une tâche dans un thread séparé
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                future = executor.submit(asyncio.run, self.compute_volatility_batch(failed))
-                                retry_results = future.result()
-                        else:
-                            retry_results = loop.run_until_complete(self.compute_volatility_batch(failed))
-                    except RuntimeError:
-                        retry_results = asyncio.run(self.compute_volatility_batch(failed))
-                    retry_ok = 0
-                    
-                    for sym, vol_pct in retry_results.items():
-                        if vol_pct is not None:
-                            cache_key = get_volatility_cache_key(sym)
-                            self.volatility_cache[cache_key] = (now_ts, vol_pct)
-                            retry_ok += 1
-                    
-                    self.logger.info(f"🔁 Retry volatilité terminé: récupérés={retry_ok}/{len(failed)}")
-                
-                # Nettoyer le cache des symboles non suivis
-                self.clear_stale_cache(symbols_to_refresh)
+                # Effectuer le cycle de rafraîchissement
+                self._perform_refresh_cycle(symbols_to_refresh)
                 
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur refresh volatilité: {e}")
-                # Backoff simple en cas d'erreur globale du cycle
                 time.sleep(5)
             
-            # Attendre l'intervalle de rafraîchissement
-            for _ in range(refresh_interval):
+            # Attendre l'intervalle de rafraîchissement avec vérification d'interruption
+            self._wait_for_next_cycle(refresh_interval)
+    
+    def _calculate_refresh_interval(self) -> int:
+        """
+        Calcule l'intervalle de rafraîchissement optimal.
+        
+        Returns:
+            Intervalle en secondes (entre 30 et 60s)
+        """
+        return max(30, min(60, self.ttl_seconds - 10))
+    
+    def _get_symbols_to_refresh(self) -> List[str]:
+        """
+        Récupère la liste des symboles actifs à rafraîchir.
+        
+        Returns:
+            Liste des symboles ou liste vide si erreur
+        """
+        if not self._get_active_symbols_callback:
+            return []
+        
+        try:
+            return self._get_active_symbols_callback()
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur callback symboles actifs: {e}")
+            return []
+    
+    def _perform_refresh_cycle(self, symbols: List[str]):
+        """
+        Effectue un cycle complet de rafraîchissement de volatilité.
+        
+        Args:
+            symbols: Liste des symboles à rafraîchir
+        """
+        # Calculer la volatilité pour tous les symboles
+        results = self._run_async_volatility_batch(symbols)
+        
+        # Mettre à jour le cache avec les résultats
+        now_ts = time.time()
+        ok_count, fail_count = self._update_cache_with_results(results, now_ts)
+        
+        self.logger.info(f"✅ Refresh volatilité terminé: ok={ok_count} | fail={fail_count}")
+        
+        # Retry pour les symboles en échec
+        failed_symbols = [s for s, v in results.items() if v is None]
+        if failed_symbols:
+            self._retry_failed_symbols(failed_symbols, now_ts)
+        
+        # Nettoyer le cache des symboles non suivis
+        self.clear_stale_cache(symbols)
+    
+    def _run_async_volatility_batch(self, symbols: List[str]) -> Dict[str, Optional[float]]:
+        """
+        Exécute le calcul de volatilité en batch de manière synchrone.
+        
+        Args:
+            symbols: Liste des symboles
+            
+        Returns:
+            Dictionnaire {symbol: volatility_pct}
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Event loop en cours - utiliser un thread séparé
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run, 
+                        self.compute_volatility_batch(symbols)
+                    )
+                    return future.result()
+            else:
+                # Event loop disponible - l'utiliser directement
+                return loop.run_until_complete(self.compute_volatility_batch(symbols))
+        except RuntimeError:
+            # Pas d'event loop - en créer un nouveau
+            return asyncio.run(self.compute_volatility_batch(symbols))
+    
+    def _update_cache_with_results(self, results: Dict[str, Optional[float]], 
+                                   timestamp: float) -> tuple[int, int]:
+        """
+        Met à jour le cache de volatilité avec les résultats.
+        
+        Args:
+            results: Résultats du calcul de volatilité
+            timestamp: Timestamp pour le cache
+            
+        Returns:
+            Tuple (ok_count, fail_count)
+        """
+        ok_count = 0
+        fail_count = 0
+        
+        for symbol, vol_pct in results.items():
+            if vol_pct is not None:
+                cache_key = get_volatility_cache_key(symbol)
+                self.volatility_cache[cache_key] = (timestamp, vol_pct)
+                ok_count += 1
+            else:
+                fail_count += 1
+        
+        return ok_count, fail_count
+    
+    def _retry_failed_symbols(self, failed_symbols: List[str], timestamp: float):
+        """
+        Effectue un retry pour les symboles en échec.
+        
+        Args:
+            failed_symbols: Liste des symboles à retry
+            timestamp: Timestamp pour le cache
+        """
+        self.logger.info(f"🔁 Retry volatilité pour {len(failed_symbols)} symboles…")
+        time.sleep(5)
+        
+        # Retry du calcul
+        retry_results = self._run_async_volatility_batch(failed_symbols)
+        
+        # Mettre à jour le cache avec les résultats du retry
+        retry_ok = 0
+        for symbol, vol_pct in retry_results.items():
+            if vol_pct is not None:
+                cache_key = get_volatility_cache_key(symbol)
+                self.volatility_cache[cache_key] = (timestamp, vol_pct)
+                retry_ok += 1
+        
+        self.logger.info(f"🔁 Retry volatilité terminé: récupérés={retry_ok}/{len(failed_symbols)}")
+    
+    def _wait_for_next_cycle(self, interval: int):
+        """
+        Attend l'intervalle spécifié avec vérification d'interruption.
+        
+        Args:
+            interval: Intervalle en secondes
+        """
+        for _ in range(interval):
                 if not self._running:
                     break
                 time.sleep(1)
