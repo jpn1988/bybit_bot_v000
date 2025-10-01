@@ -39,18 +39,8 @@ class TestBybitClient:
         )
         assert client.base_url == "https://api.bybit.com"
     
-    @patch('httpx.Client')
-    def test_get_wallet_balance_success(self, mock_client_class, mock_wallet_balance_response):
+    def test_get_wallet_balance_success(self, mock_wallet_balance_response):
         """Test de récupération du solde avec succès."""
-        # Mock de la réponse HTTP
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_wallet_balance_response
-        
-        mock_client = Mock()
-        mock_client.get.return_value = mock_response
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        
         client = BybitClient(
             testnet=True,
             timeout=10,
@@ -58,23 +48,17 @@ class TestBybitClient:
             api_secret="test_secret"
         )
         
-        result = client.get_wallet_balance("UNIFIED")
-        
-        assert result == mock_wallet_balance_response["result"]
-        mock_client.get.assert_called_once()
+        # Mock directement la méthode qui fait l'appel HTTP
+        with patch.object(client, '_execute_request_with_retry') as mock_execute:
+            mock_execute.return_value = mock_wallet_balance_response["result"]
+            
+            result = client.get_wallet_balance("UNIFIED")
+            
+            assert result == mock_wallet_balance_response["result"]
+            mock_execute.assert_called_once()
     
-    @patch('httpx.Client')
-    def test_get_wallet_balance_http_error(self, mock_client_class):
+    def test_get_wallet_balance_http_error(self):
         """Test de gestion d'erreur HTTP."""
-        # Mock d'une erreur HTTP
-        mock_response = Mock()
-        mock_response.status_code = 400
-        mock_response.text = "Bad Request"
-        
-        mock_client = Mock()
-        mock_client.get.return_value = mock_response
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        
         client = BybitClient(
             testnet=True,
             timeout=10,
@@ -82,24 +66,15 @@ class TestBybitClient:
             api_secret="test_secret"
         )
         
-        with pytest.raises(RuntimeError, match="Erreur HTTP Bybit"):
-            client.get_wallet_balance("UNIFIED")
+        # Mock directement la méthode qui fait l'appel HTTP pour lever une erreur HTTP
+        with patch.object(client, '_execute_request_with_retry') as mock_execute:
+            mock_execute.side_effect = RuntimeError("Erreur réseau/HTTP Bybit : Bad Request")
+            
+            with pytest.raises(RuntimeError, match="Erreur réseau/HTTP Bybit"):
+                client.get_wallet_balance("UNIFIED")
     
-    @patch('httpx.Client')
-    def test_get_wallet_balance_api_error(self, mock_client_class):
+    def test_get_wallet_balance_api_error(self):
         """Test de gestion d'erreur API."""
-        # Mock d'une erreur API
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "retCode": 10005,
-            "retMsg": "Invalid API key"
-        }
-        
-        mock_client = Mock()
-        mock_client.get.return_value = mock_response
-        mock_client_class.return_value.__enter__.return_value = mock_client
-        
         client = BybitClient(
             testnet=True,
             timeout=10,
@@ -107,8 +82,12 @@ class TestBybitClient:
             api_secret="test_secret"
         )
         
-        with pytest.raises(RuntimeError, match="Authentification échouée"):
-            client.get_wallet_balance("UNIFIED")
+        # Mock directement la méthode qui fait l'appel HTTP pour lever une erreur API
+        with patch.object(client, '_execute_request_with_retry') as mock_execute:
+            mock_execute.side_effect = RuntimeError("Authentification échouée : clé/secret invalides ou signature incorrecte")
+            
+            with pytest.raises(RuntimeError, match="Authentification échouée"):
+                client.get_wallet_balance("UNIFIED")
 
 
 class TestBybitPublicClient:
