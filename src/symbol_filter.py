@@ -173,3 +173,56 @@ class SymbolFilter:
         """
         # Déléguer à la nouvelle implémentation
         return self._new_filter.separate_symbols_by_category(symbols_data, symbol_categories)
+    
+    def check_candidate_filters(
+        self, 
+        symbol: str, 
+        funding_map: Dict, 
+        funding_min: Optional[float], 
+        funding_max: Optional[float], 
+        volume_min_millions: Optional[float], 
+        funding_time_max_minutes: Optional[int]
+    ) -> bool:
+        """
+        Vérifie si un symbole candidat passe les filtres de base.
+        
+        Args:
+            symbol: Symbole à vérifier
+            funding_map: Dictionnaire des données de funding
+            funding_min: Funding minimum
+            funding_max: Funding maximum
+            volume_min_millions: Volume minimum en millions
+            funding_time_max_minutes: Temps maximum avant funding en minutes
+            
+        Returns:
+            True si le symbole passe les filtres
+        """
+        return self._new_filter.check_candidate_filters(
+            symbol, funding_map, funding_min, funding_max, 
+            volume_min_millions, funding_time_max_minutes
+        )
+    
+    def check_realtime_filters(
+        self, 
+        symbol: str, 
+        ticker_data: dict, 
+        funding_min: Optional[float], 
+        funding_max: Optional[float], 
+        volume_min_millions: Optional[float]
+    ) -> bool:
+        """
+        Vérifie si un symbole passe les filtres en temps réel.
+        
+        Args:
+            symbol: Symbole à vérifier
+            ticker_data: Données du ticker reçues via WebSocket
+            funding_min: Funding minimum
+            funding_max: Funding maximum
+            volume_min_millions: Volume minimum en millions
+            
+        Returns:
+            True si le symbole passe les filtres
+        """
+        return self._new_filter.check_realtime_filters(
+            symbol, ticker_data, funding_min, funding_max, volume_min_millions
+        )

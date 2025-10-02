@@ -312,4 +312,126 @@ class SymbolFilter(BaseFilter):
                 inverse_symbols.append(symbol)
         
         return linear_symbols, inverse_symbols
+    
+    def check_candidate_filters(
+        self, 
+        symbol: str, 
+        funding_map: Dict, 
+        funding_min: Optional[float], 
+        funding_max: Optional[float], 
+        volume_min_millions: Optional[float], 
+        funding_time_max_minutes: Optional[int]
+    ) -> bool:
+        """
+        Vérifie si un symbole candidat passe les filtres de base.
+        
+        Args:
+            symbol: Symbole à vérifier
+            funding_map: Dictionnaire des données de funding
+            funding_min: Funding minimum
+            funding_max: Funding maximum
+            volume_min_millions: Volume minimum en millions
+            funding_time_max_minutes: Temps maximum avant funding en minutes
+            
+        Returns:
+            True si le symbole passe les filtres
+        """
+        try:
+            data = funding_map.get(symbol)
+            if not data or len(data) < 3:
+                return False
+            
+            funding = data[0]
+            volume = data[1]
+            funding_time_remaining = data[2]
+            
+            # Vérifier que les données sont valides
+            if funding is None or volume is None:
+                return False
+            
+            # Vérifier le funding
+            if funding_min is not None and abs(funding) < funding_min:
+                return False
+            if funding_max is not None and abs(funding) > funding_max:
+                return False
+            
+            # Vérifier le volume
+            if volume_min_millions is not None and volume < volume_min_millions:
+                return False
+            
+            # Vérifier le temps avant funding
+            if funding_time_max_minutes is not None:
+                try:
+                    # Convertir le temps restant en minutes
+                    if isinstance(funding_time_remaining, str) and funding_time_remaining != "-":
+                        # Format "Xh Ym Zs" -> minutes
+                        time_parts = funding_time_remaining.split()
+                        total_minutes = 0
+                        for part in time_parts:
+                            if part.endswith('h'):
+                                total_minutes += int(part[:-1]) * 60
+                            elif part.endswith('m'):
+                                total_minutes += int(part[:-1])
+                            elif part.endswith('s'):
+                                total_minutes += int(part[:-1]) / 60
+                        
+                        if total_minutes > funding_time_max_minutes:
+                            return False
+                except (ValueError, AttributeError):
+                    pass
+            
+            return True
+            
+        except Exception as e:
+            # Ignorer silencieusement les erreurs de vérification des candidats
+            # (cela se produit normalement pour les symboles sans données complètes)
+            return False
+    
+    def check_realtime_filters(
+        self, 
+        symbol: str, 
+        ticker_data: dict, 
+        funding_min: Optional[float], 
+        funding_max: Optional[float], 
+        volume_min_millions: Optional[float]
+    ) -> bool:
+        """
+        Vérifie si un symbole passe les filtres en temps réel.
+        
+        Args:
+            symbol: Symbole à vérifier
+            ticker_data: Données du ticker reçues via WebSocket
+            funding_min: Funding minimum
+            funding_max: Funding maximum
+            volume_min_millions: Volume minimum en millions
+            
+        Returns:
+            True si le symbole passe les filtres
+        """
+        try:
+            # Extraire les données du ticker
+            funding_rate = ticker_data.get("fundingRate")
+            volume24h = ticker_data.get("volume24h")
+            
+            if funding_rate is None or volume24h is None:
+                return False
+            
+            funding = float(funding_rate)
+            volume = float(volume24h)
+            
+            # Vérifier le funding
+            if funding_min is not None and abs(funding) < funding_min:
+                return False
+            if funding_max is not None and abs(funding) > funding_max:
+                return False
+            
+            # Vérifier le volume
+            if volume_min_millions is not None and volume < volume_min_millions:
+                return False
+            
+            return True
+            
+        except (ValueError, TypeError) as e:
+            self.logger.warning(f"⚠️ Erreur données ticker {symbol}: {e}")
+            return False
 

@@ -182,7 +182,7 @@ class PriceTracker:
         """
         try:
             # Ajouter le symbole à la watchlist principale
-                self._add_symbol_to_main_watchlist(symbol, ticker_data)
+            self._add_symbol_to_main_watchlist(symbol, ticker_data)
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur traitement candidat {symbol}: {e}")
     
@@ -285,17 +285,9 @@ class PriceTracker:
             
             # Mettre à jour les données de funding
             for symbol, data in funding_data.items():
-                if isinstance(data, (list, tuple)) and len(data) >= 4:
+                if len(data) >= 4:
                     funding, volume, funding_time, spread = data[:4]
                     volatility = data[4] if len(data) > 4 else None
-                    self.data_manager.update_funding_data(symbol, funding, volume, funding_time, spread, volatility)
-                elif isinstance(data, dict):
-                    # Si c'est un dictionnaire, extraire les valeurs
-                    funding = data.get('funding', 0.0)
-                    volume = data.get('volume', 0.0)
-                    funding_time = data.get('funding_time_remaining', '-')
-                    spread = data.get('spread_pct', 0.0)
-                    volatility = data.get('volatility_pct', None)
                     self.data_manager.update_funding_data(symbol, funding, volume, funding_time, spread, volatility)
             
             # Mettre à jour les données originales

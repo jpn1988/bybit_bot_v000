@@ -10,7 +10,8 @@ import asyncio
 import aiohttp
 from typing import Optional, Dict, List
 from collections import deque
-from imports import category_of_symbol, get_rate_limiter
+from instruments import category_of_symbol
+from http_utils import get_rate_limiter
 
 
 """La version synchrone compute_5m_range_pct a été retirée pour éviter les écarts de logique.
