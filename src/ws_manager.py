@@ -177,6 +177,9 @@ class WebSocketManager:
         """
         Arrête toutes les connexions WebSocket.
         """
+        if not self.running:
+            return
+            
         # Arrêt des connexions WebSocket
         self.running = False
         
@@ -187,13 +190,15 @@ class WebSocketManager:
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur fermeture connexion WebSocket: {e}")
         
-        # Attendre la fin des threads
-        for thread in self._ws_threads:
+        # Attendre la fin des threads avec timeout
+        for i, thread in enumerate(self._ws_threads):
             if thread.is_alive():
                 try:
-                    thread.join(timeout=5)
+                    thread.join(timeout=3)
+                    if thread.is_alive():
+                        self.logger.warning(f"⚠️ Thread WebSocket {i} n'a pas pu être arrêté dans les temps")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Erreur attente thread WebSocket: {e}")
+                    self.logger.warning(f"⚠️ Erreur attente thread WebSocket {i}: {e}")
         
         # Nettoyer les listes
         self._ws_conns.clear()

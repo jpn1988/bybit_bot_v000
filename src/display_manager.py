@@ -96,10 +96,15 @@ class DisplayManager:
         """
         Arrête la boucle d'affichage.
         """
+        if not self._running:
+            return
+            
         self._running = False
         if self._display_thread and self._display_thread.is_alive():
             try:
                 self._display_thread.join(timeout=2)
+                if self._display_thread.is_alive():
+                    self.logger.warning("⚠️ Thread d'affichage n'a pas pu être arrêté dans les temps")
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur arrêt thread affichage: {e}")
         
@@ -137,6 +142,13 @@ class DisplayManager:
                 self._first_display = False
             return
         
+        # Vérifier si toutes les données sont disponibles avant d'afficher
+        if not self._are_all_data_available(funding_data):
+            if self._first_display:
+                self.logger.info("⏳ En attente des données de volatilité et spread...")
+                self._first_display = False
+            return
+        
         # Calculer les largeurs de colonnes
         col_widths = self._calculate_column_widths(funding_data)
         
@@ -150,6 +162,35 @@ class DisplayManager:
             print(line)
         
         print()  # Ligne vide après le tableau
+    
+    def _are_all_data_available(self, funding_data: Dict) -> bool:
+        """
+        Vérifie si toutes les données nécessaires (volatilité et spread) sont disponibles.
+        
+        Args:
+            funding_data: Données de funding des symboles
+            
+        Returns:
+            True si toutes les données sont disponibles, False sinon
+        """
+        if not funding_data:
+            return False
+        
+        # Vérifier pour chaque symbole si les données sont disponibles
+        for symbol in funding_data.keys():
+            row_data = self._prepare_row_data(symbol)
+            
+            # Vérifier si la volatilité est disponible
+            volatility_pct = row_data.get("volatility_pct")
+            if volatility_pct is None:
+                return False
+            
+            # Vérifier si le spread est disponible (pas null)
+            spread_pct = row_data.get("spread_pct")
+            if spread_pct is None:
+                return False
+        
+        return True
     
     def _calculate_column_widths(self, funding_data: Dict) -> Dict[str, int]:
         """

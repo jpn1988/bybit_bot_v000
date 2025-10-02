@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 """
-Wrapper de compatibilité pour le filtre de symboles du bot Bybit.
+Filtre de symboles pour le bot Bybit.
 
-Ce fichier maintient la compatibilité avec l'interface existante
-tout en utilisant la nouvelle implémentation basée sur BaseFilter.
+Ce module implémente le filtrage par funding, volume, spread et temps avant funding.
 """
 
+import time
 from typing import List, Tuple, Dict, Optional
 from logging_setup import setup_logging
-from filters.symbol_filter import SymbolFilter as NewSymbolFilter
 
 
 class SymbolFilter:
     """
-    Wrapper de compatibilité pour le filtre de symboles.
-    
-    Cette classe maintient l'interface publique de l'ancien SymbolFilter
-    tout en utilisant la nouvelle implémentation basée sur BaseFilter.
+    Filtre de symboles pour le bot Bybit.
     
     Responsabilités :
     - Filtrage par funding, volume et fenêtre temporelle
@@ -33,7 +29,6 @@ class SymbolFilter:
             logger: Logger pour les messages (optionnel)
         """
         self.logger = logger or setup_logging()
-        self._new_filter = NewSymbolFilter(logger=self.logger)
     
     def filter_by_funding(
         self, 
@@ -62,17 +57,59 @@ class SymbolFilter:
         Returns:
             Liste des (symbol, funding, volume, funding_time_remaining) triés
         """
-        # Déléguer à la nouvelle implémentation
-        return self._new_filter.filter_by_funding(
-            perp_data,
-            funding_map,
-            funding_min,
-            funding_max,
-            volume_min_millions,
-            limite,
-            funding_time_min_minutes=funding_time_min_minutes,
-            funding_time_max_minutes=funding_time_max_minutes,
-        )
+        # Récupérer tous les symboles perpétuels
+        all_symbols = list(set(perp_data["linear"] + perp_data["inverse"]))
+        
+        # Déterminer le volume minimum à utiliser
+        effective_volume_min = None
+        if volume_min_millions is not None:
+            effective_volume_min = volume_min_millions * 1_000_000  # Convertir en valeur brute
+        
+        # Filtrer par funding, volume et fenêtre temporelle
+        filtered_symbols = []
+        for symbol in all_symbols:
+            if symbol in funding_map:
+                data = funding_map[symbol]
+                funding = data["funding"]
+                volume = data["volume"]
+                next_funding_time = data.get("next_funding_time")
+                
+                # Appliquer les bornes funding/volume (utiliser valeur absolue pour funding)
+                if funding_min is not None and abs(funding) < funding_min:
+                    continue
+                if funding_max is not None and abs(funding) > funding_max:
+                    continue
+                if effective_volume_min is not None and volume < effective_volume_min:
+                    continue
+                
+                # Appliquer le filtre temporel si demandé
+                if funding_time_min_minutes is not None or funding_time_max_minutes is not None:
+                    # Utiliser la fonction centralisée pour calculer les minutes restantes
+                    minutes_remaining = self.calculate_funding_minutes_remaining(next_funding_time)
+                    
+                    # Si pas de temps valide alors qu'on filtre, rejeter
+                    if minutes_remaining is None:
+                        continue
+                    if (funding_time_min_minutes is not None and 
+                        minutes_remaining < float(funding_time_min_minutes)):
+                        continue
+                    if (funding_time_max_minutes is not None and 
+                        minutes_remaining > float(funding_time_max_minutes)):
+                        continue
+                
+                # Calculer le temps restant avant le prochain funding (formaté)
+                funding_time_remaining = self.calculate_funding_time_remaining(next_funding_time)
+                
+                filtered_symbols.append((symbol, funding, volume, funding_time_remaining))
+        
+        # Trier par |funding| décroissant
+        filtered_symbols.sort(key=lambda x: abs(x[1]), reverse=True)
+        
+        # Appliquer la limite
+        if limite is not None:
+            filtered_symbols = filtered_symbols[:limite]
+        
+        return filtered_symbols
     
     def filter_by_spread(
         self, 
@@ -91,8 +128,19 @@ class SymbolFilter:
         Returns:
             Liste des (symbol, funding, volume, funding_time_remaining, spread_pct) filtrés
         """
-        # Déléguer à la nouvelle implémentation
-        return self._new_filter.filter_by_spread(symbols_data, spread_data, spread_max)
+        if spread_max is None:
+            # Pas de filtre de spread, ajouter 0.0 comme spread par défaut
+            return [(symbol, funding, volume, funding_time_remaining, 0.0) 
+                    for symbol, funding, volume, funding_time_remaining in symbols_data]
+        
+        filtered_symbols = []
+        for symbol, funding, volume, funding_time_remaining in symbols_data:
+            if symbol in spread_data:
+                spread_pct = spread_data[symbol]
+                if spread_pct <= spread_max:
+                    filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct))
+        
+        return filtered_symbols
     
     def calculate_funding_time_remaining(self, next_funding_time) -> str:
         """
@@ -104,8 +152,44 @@ class SymbolFilter:
         Returns:
             str: Temps restant formaté ou "-" si invalide
         """
-        # Déléguer à la nouvelle implémentation
-        return self._new_filter.calculate_funding_time_remaining(next_funding_time)
+        if not next_funding_time:
+            return "-"
+        
+        try:
+            # Gérer les deux formats : timestamp ms ou ISO string
+            if isinstance(next_funding_time, str):
+                if next_funding_time.isdigit():
+                    # Timestamp en ms
+                    target_timestamp = int(next_funding_time) / 1000
+                else:
+                    # ISO string
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(next_funding_time.replace('Z', '+00:00'))
+                    target_timestamp = dt.timestamp()
+            else:
+                # Déjà un timestamp
+                target_timestamp = float(next_funding_time) / 1000 if next_funding_time > 1e10 else float(next_funding_time)
+            
+            current_timestamp = time.time()
+            remaining_seconds = target_timestamp - current_timestamp
+            
+            if remaining_seconds <= 0:
+                return "0s"
+            
+            hours = int(remaining_seconds // 3600)
+            minutes = int((remaining_seconds % 3600) // 60)
+            seconds = int(remaining_seconds % 60)
+            
+            if hours > 0:
+                return f"{hours}h {minutes}m {seconds}s"
+            elif minutes > 0:
+                return f"{minutes}m {seconds}s"
+            else:
+                return f"{seconds}s"
+                
+        except (ValueError, TypeError, OverflowError) as e:
+            self.logger.warning(f"⚠️ Erreur calcul temps funding: {e}")
+            return "-"
     
     def calculate_funding_minutes_remaining(self, next_funding_time) -> Optional[float]:
         """
@@ -117,8 +201,32 @@ class SymbolFilter:
         Returns:
             float: Minutes restantes ou None si erreur
         """
-        # Déléguer à la nouvelle implémentation
-        return self._new_filter.calculate_funding_minutes_remaining(next_funding_time)
+        if not next_funding_time:
+            return None
+        
+        try:
+            # Gérer les deux formats : timestamp ms ou ISO string
+            if isinstance(next_funding_time, str):
+                if next_funding_time.isdigit():
+                    # Timestamp en ms
+                    target_timestamp = int(next_funding_time) / 1000
+                else:
+                    # ISO string
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(next_funding_time.replace('Z', '+00:00'))
+                    target_timestamp = dt.timestamp()
+            else:
+                # Déjà un timestamp
+                target_timestamp = float(next_funding_time) / 1000 if next_funding_time > 1e10 else float(next_funding_time)
+            
+            current_timestamp = time.time()
+            remaining_seconds = target_timestamp - current_timestamp
+            remaining_minutes = remaining_seconds / 60
+            
+            return remaining_minutes if remaining_minutes > 0 else 0
+            
+        except (ValueError, TypeError, OverflowError):
+            return None
     
     def build_funding_data_dict(
         self, 
@@ -171,8 +279,27 @@ class SymbolFilter:
         Returns:
             Tuple[linear_symbols, inverse_symbols]
         """
-        # Déléguer à la nouvelle implémentation
-        return self._new_filter.separate_symbols_by_category(symbols_data, symbol_categories)
+        from instruments import category_of_symbol
+        
+        linear_symbols = []
+        inverse_symbols = []
+        
+        # Déterminer la structure des données selon la longueur des tuples
+        if symbols_data and len(symbols_data[0]) >= 4:
+            # Format: (symbol, funding, volume, funding_time_remaining, ...)
+            symbols = [item[0] for item in symbols_data]
+        else:
+            # Format simple: [symbol, ...]
+            symbols = symbols_data if isinstance(symbols_data[0], str) else [item[0] for item in symbols_data]
+        
+        for symbol in symbols:
+            category = category_of_symbol(symbol, symbol_categories)
+            if category == "linear":
+                linear_symbols.append(symbol)
+            elif category == "inverse":
+                inverse_symbols.append(symbol)
+        
+        return linear_symbols, inverse_symbols
     
     def check_candidate_filters(
         self, 
@@ -197,10 +324,56 @@ class SymbolFilter:
         Returns:
             True si le symbole passe les filtres
         """
-        return self._new_filter.check_candidate_filters(
-            symbol, funding_map, funding_min, funding_max, 
-            volume_min_millions, funding_time_max_minutes
-        )
+        try:
+            data = funding_map.get(symbol)
+            if not data or len(data) < 3:
+                return False
+            
+            funding = data[0]
+            volume = data[1]
+            funding_time_remaining = data[2]
+            
+            # Vérifier que les données sont valides
+            if funding is None or volume is None:
+                return False
+            
+            # Vérifier le funding
+            if funding_min is not None and abs(funding) < funding_min:
+                return False
+            if funding_max is not None and abs(funding) > funding_max:
+                return False
+            
+            # Vérifier le volume
+            if volume_min_millions is not None and volume < volume_min_millions:
+                return False
+            
+            # Vérifier le temps avant funding
+            if funding_time_max_minutes is not None:
+                try:
+                    # Convertir le temps restant en minutes
+                    if isinstance(funding_time_remaining, str) and funding_time_remaining != "-":
+                        # Format "Xh Ym Zs" -> minutes
+                        time_parts = funding_time_remaining.split()
+                        total_minutes = 0
+                        for part in time_parts:
+                            if part.endswith('h'):
+                                total_minutes += int(part[:-1]) * 60
+                            elif part.endswith('m'):
+                                total_minutes += int(part[:-1])
+                            elif part.endswith('s'):
+                                total_minutes += int(part[:-1]) / 60
+                        
+                        if total_minutes > funding_time_max_minutes:
+                            return False
+                except (ValueError, AttributeError):
+                    pass
+            
+            return True
+            
+        except Exception as e:
+            # Ignorer silencieusement les erreurs de vérification des candidats
+            # (cela se produit normalement pour les symboles sans données complètes)
+            return False
     
     def check_realtime_filters(
         self, 
@@ -223,6 +396,29 @@ class SymbolFilter:
         Returns:
             True si le symbole passe les filtres
         """
-        return self._new_filter.check_realtime_filters(
-            symbol, ticker_data, funding_min, funding_max, volume_min_millions
-        )
+        try:
+            # Extraire les données du ticker
+            funding_rate = ticker_data.get("fundingRate")
+            volume24h = ticker_data.get("volume24h")
+            
+            if funding_rate is None or volume24h is None:
+                return False
+            
+            funding = float(funding_rate)
+            volume = float(volume24h)
+            
+            # Vérifier le funding
+            if funding_min is not None and abs(funding) < funding_min:
+                return False
+            if funding_max is not None and abs(funding) > funding_max:
+                return False
+            
+            # Vérifier le volume
+            if volume_min_millions is not None and volume < volume_min_millions:
+                return False
+            
+            return True
+            
+        except (ValueError, TypeError) as e:
+            self.logger.warning(f"⚠️ Erreur données ticker {symbol}: {e}")
+            return False

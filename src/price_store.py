@@ -27,25 +27,3 @@ def update(symbol: str, mark_price: float, last_price: float, timestamp: float) 
             "timestamp": timestamp
         }
 
-
-def get_snapshot() -> Dict[str, Dict[str, float]]:
-    """
-    Récupère un instantané de tous les prix stockés.
-    
-    Returns:
-        Dict[str, Dict[str, float]]: Dictionnaire des prix par symbole
-    """
-    with _price_lock:
-        return _price_data.copy()
-
-
-def purge_expired(ttl_seconds: int = 120) -> int:
-    """Supprime les entrées plus anciennes que ttl_seconds. Retourne le nombre purgé."""
-    now = time.time()
-    removed = 0
-    with _price_lock:
-        to_delete = [s for s, d in _price_data.items() if (now - d.get("timestamp", 0)) > ttl_seconds]
-        for s in to_delete:
-            _price_data.pop(s, None)
-            removed += 1
-    return removed

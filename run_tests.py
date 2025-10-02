@@ -53,37 +53,7 @@ def run_tests():
         return False
 
 
-def run_specific_test(test_name):
-    """Exécute un test spécifique."""
-    print(f"🧪 Exécution du test: {test_name}")
-    print("=" * 50)
-    
-    project_root = Path(__file__).parent
-    os.chdir(project_root)
-    
-    cmd = [
-        sys.executable, "-m", "pytest",
-        f"tests/{test_name}",
-        "-v",
-        "--tb=short",
-        "--color=yes"
-    ]
-    
-    try:
-        result = subprocess.run(cmd, check=False)
-        return result.returncode == 0
-    except Exception as e:
-        print(f"❌ Erreur: {e}")
-        return False
-
-
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        # Test spécifique
-        test_file = sys.argv[1]
-        success = run_specific_test(test_file)
-    else:
-        # Tous les tests
-        success = run_tests()
-    
+    # Exécuter tous les tests
+    success = run_tests()
     sys.exit(0 if success else 1)
