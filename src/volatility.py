@@ -88,7 +88,7 @@ def is_cache_valid(timestamp: float, ttl_seconds: int = 60) -> bool:
 async def compute_volatility_batch_async(
     bybit_client, 
     symbols: List[str], 
-    timeout: int = 10, 
+    timeout: int = 10,
     symbol_categories: Dict[str, str] | None = None
 ) -> Dict[str, Optional[float]]:
     """

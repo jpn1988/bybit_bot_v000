@@ -146,6 +146,3 @@ def get_metrics_summary() -> Dict[str, Any]:
     return metrics_collector.get_metrics_summary()
 
 
-def reset_metrics():
-    """Remet à zéro toutes les métriques."""
-    metrics_collector.reset()

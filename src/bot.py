@@ -1,99 +1,71 @@
 #!/usr/bin/env python3
 """
-🚀 Orchestrateur du bot (filters + WebSocket prix) - VERSION REFACTORISÉE
+Point d'entrée asynchrone pour le bot Bybit.
 
-Script pour filtrer les contrats perpétuels par funding ET suivre leurs prix en temps réel.
-
-Architecture modulaire :
-- WatchlistManager : Gestion des filtres et sélection de symboles
-- WebSocketManager : Gestion des connexions WebSocket publiques  
-- VolatilityTracker : Calcul et cache de volatilité
-- DataManager : Gestion des données en temps réel
-- DisplayManager : Gestion de l'affichage
-- MonitoringManager : Surveillance continue du marché
-- BotOrchestrator : Orchestration principale (refactorisée)
-- CallbackManager : Gestion des callbacks entre managers
-- OpportunityManager : Gestion des opportunités
-
-Usage:
-    python src/bot.py
+Cette classe lance le BotOrchestrator dans un event loop asyncio.
 """
 
-import time
+import asyncio
 import signal
-import atexit
-from typing import List, Dict, Optional
-from logging_setup import setup_logging
+import sys
 from bot_orchestrator import BotOrchestrator
+from logging_setup import setup_logging
 
 
-class PriceTracker:
+class AsyncBotRunner:
     """
-    Wrapper pour maintenir la compatibilité avec l'ancienne interface.
-    
-    Cette classe délègue toute la logique au BotOrchestrator refactorisé.
+    Lance le BotOrchestrator dans un event loop asyncio.
     """
-    
     def __init__(self):
-        """Initialise le wrapper en créant un BotOrchestrator."""
+        self.logger = setup_logging()
         self.orchestrator = BotOrchestrator()
-        self.logger = self.orchestrator.logger
-        self.running = self.orchestrator.running
-    
-    def start(self):
-        """Démarre le bot via l'orchestrateur."""
-        self.orchestrator.start()
-    
-    def _signal_handler(self, signum, frame):
-        """Délègue la gestion des signaux à l'orchestrateur."""
-        self.orchestrator._signal_handler(signum, frame)
-        self.running = self.orchestrator.running
+        self.running = True
 
-
-def main():
-    """Fonction principale."""
-    tracker = PriceTracker()
-    
-    # Configurer le signal handler AVANT de démarrer
-    def signal_handler(signum, frame):
-        print("\n🛑 Arrêt demandé par l'utilisateur")
-        tracker.running = False
-        
-        # Essayer d'abord un arrêt propre
+    async def start(self):
+        """Démarre le bot de manière asynchrone."""
+        self.logger.info("Démarrage du bot Bybit (mode asynchrone)...")
         try:
-            tracker._signal_handler(signal.SIGINT, None)
-            # Attendre un peu pour l'arrêt propre
-            import time
-            time.sleep(1)
-        except:
-            pass
-        
-        # Si l'arrêt propre échoue, forcer l'arrêt
-        print("🔄 Arrêt forcé pour libérer le terminal...")
-        import os
-        os._exit(0)
-    
-    signal.signal(signal.SIGINT, signal_handler)
-    
-    try:
-        tracker.start()
-        
-        # Boucle d'attente pour maintenir le bot actif
-        while tracker.running:
-            time.sleep(0.1)  # Réduire l'intervalle pour une réponse plus rapide
-            
-    except KeyboardInterrupt:
-        print("\n🛑 Arrêt demandé par l'utilisateur")
-        tracker.running = False
-    except Exception as e:
-        tracker.logger.error(f"❌ Erreur : {e}")
-        tracker.running = False
-    finally:
-        # Arrêt immédiat sans nettoyage
-        print("🔄 Arrêt immédiat...")
-        import os
-        os._exit(0)
+            # Configurer le signal handler pour l'arrêt propre (Windows compatible)
+            try:
+                loop = asyncio.get_running_loop()
+                for sig in (signal.SIGINT, signal.SIGTERM):
+                    loop.add_signal_handler(sig, lambda: asyncio.create_task(self.stop()))
+            except NotImplementedError:
+                # Sur Windows, les signal handlers ne sont pas supportés
+                self.logger.debug("Signal handlers non supportés sur cette plateforme")
+
+            await self.orchestrator.start()
+        except asyncio.CancelledError:
+            self.logger.info("Bot arrêté par annulation de tâche.")
+        except Exception as e:
+            self.logger.error(f"Erreur critique dans le runner asynchrone: {e}", exc_info=True)
+        finally:
+            self.logger.info("Bot Bybit arrêté.")
+
+    async def stop(self):
+        """Arrête le bot de manière asynchrone."""
+        if self.running:
+            self.running = False
+            self.logger.info("Signal d'arrêt reçu, arrêt propre du bot...")
+            await self.orchestrator._stop_all_managers_quick()
+            # Annuler toutes les tâches restantes pour permettre l'arrêt de l'event loop
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self.logger.info("Toutes les tâches asynchrones ont été annulées.")
+            sys.exit(0)  # Forcer la sortie après l'arrêt propre
+
+
+async def main_async():
+    runner = AsyncBotRunner()
+    await runner.start()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\nArrêt demandé par l'utilisateur (KeyboardInterrupt)")
+    except Exception as e:
+        print(f"Erreur inattendue: {e}")

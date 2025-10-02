@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Orchestrateur principal du bot Bybit - Version refactorisée.
+Orchestrateur principal du bot Bybit - Version asynchrone.
 
 Cette classe coordonne les différents managers :
 - DataManager : Gestion des données
@@ -11,6 +11,7 @@ Cette classe coordonne les différents managers :
 - WatchlistManager : Gestion de la watchlist
 """
 
+import asyncio
 import time
 import signal
 import atexit
@@ -106,6 +107,7 @@ class BotInitializer:
         # Callbacks pour le monitoring manager
         self.monitoring_manager.set_watchlist_manager(self.watchlist_manager)
         self.monitoring_manager.set_volatility_tracker(self.volatility_tracker)
+        self.monitoring_manager.set_ws_manager(self.ws_manager)  # Passer la référence au WebSocket
         self.monitoring_manager.set_on_new_opportunity_callback(
             lambda linear, inverse: self.opportunity_manager.on_new_opportunity(
                 linear, inverse, self.ws_manager, self.watchlist_manager
@@ -289,7 +291,7 @@ class BotStarter:
         self.testnet = testnet
         self.logger = logger
     
-    def start_bot_components(self, volatility_tracker: VolatilityTracker, display_manager: DisplayManager,
+    async def start_bot_components(self, volatility_tracker: VolatilityTracker, display_manager: DisplayManager,
                            ws_manager: WebSocketManager, data_manager: DataManager,
                            monitoring_manager: MonitoringManager, base_url: str, perp_data: Dict):
         """
@@ -308,19 +310,19 @@ class BotStarter:
         volatility_tracker.start_refresh_task()
         
         # Démarrer l'affichage
-        display_manager.start_display_loop()
+        await display_manager.start_display_loop()
 
         # Démarrer les connexions WebSocket via le gestionnaire dédié
         linear_symbols = data_manager.get_linear_symbols()
         inverse_symbols = data_manager.get_inverse_symbols()
         if linear_symbols or inverse_symbols:
-            ws_manager.start_connections(linear_symbols, inverse_symbols)
+            await ws_manager.start_connections(linear_symbols, inverse_symbols)
         
         # Configurer la surveillance des candidats (en arrière-plan)
         monitoring_manager.setup_candidate_monitoring(base_url, perp_data)
         
         # Démarrer le mode surveillance continue
-        monitoring_manager.start_continuous_monitoring(base_url, perp_data)
+        await monitoring_manager.start_continuous_monitoring(base_url, perp_data)
     
     def display_startup_summary(self, config: Dict, perp_data: Dict, data_manager: DataManager):
         """Affiche le résumé de démarrage structuré."""
@@ -425,7 +427,8 @@ class BotOrchestrator:
         
         # Essayer un arrêt propre avec timeout
         try:
-            self._stop_all_managers_quick()
+            # Utiliser une approche synchrone pour éviter les conflits de boucle d'événements
+            self._stop_all_managers_sync()
             
             # Calculer l'uptime
             uptime_seconds = time.time() - self.start_time
@@ -440,7 +443,7 @@ class BotOrchestrator:
         
         return
     
-    def _stop_all_managers_quick(self):
+    async def _stop_all_managers_quick(self):
         """Arrêt rapide des managers avec timeout court."""
         managers_to_stop = [
             ("WebSocket", lambda: self.ws_manager.stop()),
@@ -451,14 +454,206 @@ class BotOrchestrator:
         
         for name, stop_func in managers_to_stop:
             try:
-                stop_func()
+                if asyncio.iscoroutinefunction(stop_func):
+                    await stop_func()
+                else:
+                    stop_func()
                 self.logger.debug(f"✅ {name} manager arrêté")
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur arrêt {name} manager: {e}")
         
-        # Attendre très peu pour que les threads se terminent
-        import time
+        # Nettoyage des ressources
+        self._cleanup_resources()
+        
+        # Attendre très peu pour que les tâches se terminent
+        await asyncio.sleep(0.2)
+    
+    def _stop_all_managers_sync(self):
+        """Arrêt rapide des managers avec timeout court (version synchrone)."""
+        # Arrêt direct des managers sans coroutines pour éviter les conflits
+        try:
+            # WebSocket - arrêt forcé et nettoyage complet
+            if hasattr(self.ws_manager, 'stop_sync'):
+                self.ws_manager.stop_sync()
+            else:
+                # Arrêt forcé des WebSockets
+                self.ws_manager.running = False
+                
+            # Nettoyage supplémentaire des WebSockets
+            if hasattr(self.ws_manager, 'ws_public'):
+                try:
+                    self.ws_manager.ws_public.close()
+                except:
+                    pass
+            if hasattr(self.ws_manager, 'ws_private'):
+                try:
+                    self.ws_manager.ws_private.close()
+                except:
+                    pass
+                    
+            self.logger.debug("✅ WebSocket manager arrêté")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur arrêt WebSocket manager: {e}")
+        
+        try:
+            # Display - arrêt forcé
+            if hasattr(self.display_manager, 'display_running'):
+                self.display_manager.display_running = False
+            self.logger.debug("✅ Display manager arrêté")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur arrêt Display manager: {e}")
+        
+        try:
+            # Monitoring - utiliser la méthode synchrone si disponible
+            if hasattr(self.monitoring_manager, 'stop_monitoring'):
+                self.monitoring_manager.stop_monitoring()
+            elif hasattr(self.monitoring_manager, 'stop_candidate_monitoring'):
+                self.monitoring_manager.stop_candidate_monitoring()
+            else:
+                # Arrêt forcé
+                if hasattr(self.monitoring_manager, '_running'):
+                    self.monitoring_manager._running = False
+            self.logger.debug("✅ Monitoring manager arrêté")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur arrêt Monitoring manager: {e}")
+        
+        try:
+            # Volatility - arrêt direct (synchrone)
+            self.volatility_tracker.stop_refresh_task()
+            self.logger.debug("✅ Volatility manager arrêté")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur arrêt Volatility manager: {e}")
+        
+        # Nettoyage des ressources
+        self._cleanup_resources()
+        
+        # Nettoyage agressif des connexions réseau
+        self._force_close_network_connections()
+        
+        # Nettoyage agressif des threads et processus
+        self._force_cleanup_threads()
+        
+        # Attendre très peu pour que les tâches se terminent
         time.sleep(0.2)
+    
+    def _force_cleanup_threads(self):
+        """Nettoyage agressif des threads et processus pour éviter le blocage du terminal."""
+        import threading
+        import sys
+        import gc
+        import time
+        
+        try:
+            # Arrêter spécifiquement les threads problématiques
+            self._stop_specific_threads()
+            
+            # Arrêter tous les threads actifs de manière plus agressive
+            for thread in threading.enumerate():
+                if thread != threading.current_thread() and thread.is_alive():
+                    try:
+                        # Marquer le thread pour arrêt
+                        if hasattr(thread, '_stop'):
+                            thread._stop()
+                        elif hasattr(thread, 'stop'):
+                            thread.stop()
+                        elif hasattr(thread, 'running'):
+                            thread.running = False
+                        elif hasattr(thread, '_running'):
+                            thread._running = False
+                    except:
+                        pass
+            
+            # Nettoyer les buffers de sortie
+            sys.stdout.flush()
+            sys.stderr.flush()
+            
+            # Forcer le garbage collection
+            gc.collect()
+            
+            # Attendre plus longtemps pour que les threads se terminent
+            time.sleep(0.5)
+            
+            # Forcer l'arrêt des threads qui ne se sont pas arrêtés
+            for thread in threading.enumerate():
+                if thread != threading.current_thread() and thread.is_alive():
+                    try:
+                        # Forcer l'arrêt du thread
+                        if hasattr(thread, 'daemon'):
+                            thread.daemon = True
+                    except:
+                        pass
+            
+            self.logger.debug("✅ Nettoyage agressif des threads terminé")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur nettoyage threads: {e}")
+    
+    def _stop_specific_threads(self):
+        """Arrête spécifiquement les threads connus pour causer des problèmes."""
+        try:
+            # Arrêter le thread de volatilité
+            if hasattr(self, 'volatility_tracker') and hasattr(self.volatility_tracker, '_refresh_thread'):
+                if self.volatility_tracker._refresh_thread and self.volatility_tracker._refresh_thread.is_alive():
+                    self.volatility_tracker._refresh_thread._stop()
+                    self.logger.debug("✅ Thread volatilité forcé à s'arrêter")
+            
+            # Arrêter le thread de monitoring
+            if hasattr(self, 'monitoring_manager') and hasattr(self.monitoring_manager, '_candidate_ws_thread'):
+                if self.monitoring_manager._candidate_ws_thread and self.monitoring_manager._candidate_ws_thread.is_alive():
+                    self.monitoring_manager._candidate_ws_thread._stop()
+                    self.logger.debug("✅ Thread monitoring forcé à s'arrêter")
+            
+            # Arrêter le thread de métriques
+            if hasattr(self, 'metrics_monitor') and hasattr(self.metrics_monitor, 'monitor_thread'):
+                if self.metrics_monitor.monitor_thread and self.metrics_monitor.monitor_thread.is_alive():
+                    self.metrics_monitor.monitor_thread._stop()
+                    self.logger.debug("✅ Thread métriques forcé à s'arrêter")
+                    
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur arrêt threads spécifiques: {e}")
+    
+    def _force_close_network_connections(self):
+        """Force la fermeture de toutes les connexions réseau pour éviter le blocage."""
+        try:
+            # Fermer les clients HTTP
+            if hasattr(self, 'http_client_manager'):
+                self.http_client_manager.close_all()
+                self.logger.debug("✅ Clients HTTP fermés")
+            
+            # Fermer les WebSockets de manière plus agressive
+            if hasattr(self, 'ws_manager'):
+                # Fermer toutes les connexions WebSocket
+                if hasattr(self.ws_manager, '_ws_conns'):
+                    for conn in self.ws_manager._ws_conns:
+                        try:
+                            conn.close()
+                        except:
+                            pass
+                    self.ws_manager._ws_conns.clear()
+                
+                # Annuler toutes les tâches WebSocket
+                if hasattr(self.ws_manager, '_ws_tasks'):
+                    for task in self.ws_manager._ws_tasks:
+                        try:
+                            if not task.done():
+                                task.cancel()
+                        except:
+                            pass
+                    self.ws_manager._ws_tasks.clear()
+                
+                self.logger.debug("✅ Connexions WebSocket fermées")
+            
+            # Fermer les connexions de monitoring
+            if hasattr(self, 'monitoring_manager'):
+                if hasattr(self.monitoring_manager, 'candidate_ws_client'):
+                    try:
+                        self.monitoring_manager.candidate_ws_client.close()
+                    except:
+                        pass
+                self.logger.debug("✅ Connexions monitoring fermées")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur fermeture connexions réseau: {e}")
     
     def _stop_all_managers(self):
         """Arrête tous les managers avec timeout."""
@@ -486,7 +681,7 @@ class BotOrchestrator:
         # Attendre un peu pour que les threads se terminent
         time.sleep(0.5)
     
-    def start(self):
+    async def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""
         try:
             # 1. Charger et valider la configuration
@@ -518,8 +713,90 @@ class BotOrchestrator:
         self._starter.display_startup_summary(config, perp_data, self.data_manager)
         
         # 6. Démarrer tous les composants
-        self._starter.start_bot_components(
+        await self._starter.start_bot_components(
             self.volatility_tracker, self.display_manager, self.ws_manager,
             self.data_manager, self.monitoring_manager, base_url, perp_data
         )
+        
+        # 7. Maintenir le bot en vie avec une boucle d'attente
+        await self._keep_bot_alive()
+    
+    async def _keep_bot_alive(self):
+        """Maintient le bot en vie avec une boucle d'attente."""
+        self.logger.info("🔄 Bot en mode surveillance continue...")
+        
+        try:
+            while self.running:
+                # Vérifier que tous les composants principaux sont toujours actifs
+                if not self._check_components_health():
+                    self.logger.warning("⚠️ Un composant critique s'est arrêté, redémarrage...")
+                    # Optionnel: redémarrer les composants défaillants
+                
+                # Attendre avec vérification d'interruption
+                await asyncio.sleep(1.0)
+                    
+        except asyncio.CancelledError:
+            self.logger.info("🛑 Arrêt demandé par l'utilisateur")
+            self.running = False
+        except Exception as e:
+            self.logger.error(f"❌ Erreur dans la boucle principale: {e}")
+            self.running = False
+    
+    def _check_components_health(self) -> bool:
+        """Vérifie que tous les composants critiques sont actifs."""
+        try:
+            # Vérifier que le monitoring continue fonctionne
+            if not self.monitoring_manager.is_running():
+                self.logger.warning("⚠️ Monitoring manager arrêté")
+                return False
+            
+            # Vérifier que le display manager fonctionne
+            if not self.display_manager._running:
+                self.logger.warning("⚠️ Display manager arrêté")
+                return False
+            
+            # Vérifier que le volatility tracker fonctionne
+            if not self.volatility_tracker.is_running():
+                self.logger.warning("⚠️ Volatility tracker arrêté")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur vérification santé composants: {e}")
+            return False
+    
+    def _cleanup_resources(self):
+        """
+        Nettoie toutes les ressources pour éviter les fuites mémoire.
+        """
+        try:
+            # Nettoyer les références des managers
+            if hasattr(self, 'data_manager'):
+                # Nettoyer le cache de volatilité
+                if hasattr(self.data_manager, 'volatility_cache'):
+                    self.data_manager.volatility_cache.clear_all_cache()
+            
+            # Nettoyer les callbacks dans les managers
+            if hasattr(self, 'ws_manager'):
+                self.ws_manager._ticker_callback = None
+            
+            if hasattr(self, 'monitoring_manager'):
+                self.monitoring_manager._on_new_opportunity_callback = None
+                self.monitoring_manager._on_candidate_ticker_callback = None
+            
+            # Nettoyer les références des composants
+            if hasattr(self, '_initializer'):
+                self._initializer = None
+            if hasattr(self, '_configurator'):
+                self._configurator = None
+            if hasattr(self, '_data_loader'):
+                self._data_loader = None
+            if hasattr(self, '_starter'):
+                self._starter = None
+            
+            self.logger.debug("🧹 Ressources nettoyées avec succès")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur nettoyage ressources: {e}")
     

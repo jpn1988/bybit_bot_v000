@@ -8,7 +8,7 @@ Cette classe gère uniquement :
 - La gestion des symboles candidats
 """
 
-from typing import List, Dict, Optional, Callable
+from typing import List
 from logging_setup import setup_logging
 from data_manager import DataManager
 from watchlist_manager import WatchlistManager
@@ -57,9 +57,20 @@ class OpportunityManager:
             if ws_manager.running:
                 # Si déjà en cours, ne pas redémarrer, juste logger l'info
                 self.logger.info(f"🎯 Nouvelles opportunités détectées: {len(linear_symbols)} linear, {len(inverse_symbols)} inverse (WebSocket déjà actif)")
+                # Pas besoin de faire quoi que ce soit d'autre - le WebSocket gère déjà les données
             else:
                 # Démarrer les connexions WebSocket pour les nouvelles opportunités
-                ws_manager.start_connections(linear_symbols, inverse_symbols)
+                import asyncio
+                try:
+                    asyncio.run(ws_manager.start_connections(linear_symbols, inverse_symbols))
+                except RuntimeError:
+                    # Si une boucle est déjà en cours, utiliser une approche alternative
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Créer une tâche dans la boucle existante
+                        loop.create_task(ws_manager.start_connections(linear_symbols, inverse_symbols))
+                    else:
+                        loop.run_until_complete(ws_manager.start_connections(linear_symbols, inverse_symbols))
                 self.logger.info(f"🎯 Nouvelles opportunités intégrées: {len(linear_symbols)} linear, {len(inverse_symbols)} inverse")
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur intégration nouvelles opportunités: {e}")

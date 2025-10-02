@@ -39,6 +39,11 @@ class VolatilityCache:
         
         # Cache de volatilité {cache_key: (timestamp, volatility_pct)}
         self.volatility_cache: Dict[str, Tuple[float, float]] = {}
+        
+        # Nettoyage automatique
+        self._last_cleanup = time.time()
+        self._cleanup_interval = 60  # Nettoyer toutes les minutes
+        self._auto_cleanup_enabled = True
     
     def get_cached_volatility(self, symbol: str) -> Optional[float]:
         """
@@ -50,6 +55,9 @@ class VolatilityCache:
         Returns:
             Volatilité en pourcentage ou None si absent/expiré
         """
+        # Nettoyage automatique périodique
+        self._auto_cleanup_if_needed()
+        
         cache_key = get_volatility_cache_key(symbol)
         cached_data = self.volatility_cache.get(cache_key)
         
@@ -165,3 +173,50 @@ class VolatilityCache:
         """Vide complètement le cache."""
         self.volatility_cache.clear()
         self.logger.debug("🧹 Cache volatilité vidé complètement")
+    
+    def _auto_cleanup_if_needed(self):
+        """
+        Effectue un nettoyage automatique si nécessaire.
+        """
+        if not self._auto_cleanup_enabled:
+            return
+        
+        now = time.time()
+        if now - self._last_cleanup >= self._cleanup_interval:
+            self._cleanup_expired_entries()
+            self._last_cleanup = now
+    
+    def _cleanup_expired_entries(self):
+        """
+        Nettoie les entrées expirées du cache.
+        """
+        try:
+            now = time.time()
+            expired_keys = []
+            
+            for cache_key, (timestamp, _) in self.volatility_cache.items():
+                if not is_cache_valid(timestamp, self.ttl_seconds):
+                    expired_keys.append(cache_key)
+            
+            # Supprimer les entrées expirées
+            for key in expired_keys:
+                self.volatility_cache.pop(key, None)
+            
+            if expired_keys:
+                self.logger.debug(f"🧹 Cache volatilité nettoyé automatiquement: {len(expired_keys)} entrées expirées supprimées")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur nettoyage automatique cache volatilité: {e}")
+    
+    def enable_auto_cleanup(self, enabled: bool = True):
+        """
+        Active ou désactive le nettoyage automatique.
+        
+        Args:
+            enabled: True pour activer, False pour désactiver
+        """
+        self._auto_cleanup_enabled = enabled
+        if enabled:
+            self.logger.debug("🧹 Nettoyage automatique du cache activé")
+        else:
+            self.logger.debug("🧹 Nettoyage automatique du cache désactivé")

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Gestionnaire WebSocket dédié pour les connexions publiques Bybit.
+Gestionnaire WebSocket dédié pour les connexions publiques Bybit - Version asynchrone.
 
 Cette classe gère uniquement :
 - La connexion WS publique
-- La souscription aux symboles  
+- La souscription aux symboles
 - La réception et mise à jour des prix en temps réel
 """
 
-import threading
+import asyncio
 import time
 from typing import List, Callable, Optional
 from logging_setup import setup_logging
@@ -18,19 +18,19 @@ from price_store import update
 
 class WebSocketManager:
     """
-    Gestionnaire WebSocket pour les connexions publiques Bybit.
-    
+    Gestionnaire WebSocket pour les connexions publiques Bybit - Version asynchrone.
+
     Responsabilités :
     - Gestion des connexions WebSocket publiques (linear/inverse)
     - Souscription aux symboles pour les tickers
     - Réception et traitement des données de prix en temps réel
     - Callbacks vers l'application principale
     """
-    
+
     def __init__(self, testnet: bool = True, logger=None):
         """
         Initialise le gestionnaire WebSocket.
-        
+
         Args:
             testnet (bool): Utiliser le testnet (True) ou le marché réel (False)
             logger: Logger pour les messages (optionnel)
@@ -38,31 +38,31 @@ class WebSocketManager:
         self.testnet = testnet
         self.logger = logger or setup_logging()
         self.running = False
-        
-        # Connexions WebSocket
+
+        # Connexions WebSocket asynchrones
         self._ws_conns: List[PublicWSClient] = []
-        self._ws_threads: List[threading.Thread] = []
-        
+        self._ws_tasks: List[asyncio.Task] = []
+
         # Callbacks
         self._ticker_callback: Optional[Callable] = None
-        
+
         # Symboles par catégorie
         self.linear_symbols: List[str] = []
         self.inverse_symbols: List[str] = []
-    
+
     def set_ticker_callback(self, callback: Callable[[dict], None]):
         """
         Définit le callback à appeler lors de la réception de données ticker.
-        
+
         Args:
             callback: Fonction à appeler avec les données ticker reçues
         """
         self._ticker_callback = callback
-    
-    def start_connections(self, linear_symbols: List[str], inverse_symbols: List[str]):
+
+    async def start_connections(self, linear_symbols: List[str], inverse_symbols: List[str]):
         """
         Démarre les connexions WebSocket pour les symboles donnés.
-        
+
         Args:
             linear_symbols: Liste des symboles linear à suivre
             inverse_symbols: Liste des symboles inverse à suivre
@@ -70,29 +70,29 @@ class WebSocketManager:
         if self.running:
             self.logger.warning("⚠️ WebSocketManager déjà en cours d'exécution")
             return
-        
+
         self.linear_symbols = linear_symbols or []
         self.inverse_symbols = inverse_symbols or []
         self.running = True
-        
+
         # Déterminer le type de connexions nécessaires
         if self.linear_symbols and self.inverse_symbols:
             # Démarrage des connexions WebSocket
-            self._start_dual_connections()
+            await self._start_dual_connections()
         elif self.linear_symbols:
             # Démarrage de la connexion WebSocket linear
-            self._start_single_connection("linear", self.linear_symbols)
+            await self._start_single_connection("linear", self.linear_symbols)
         elif self.inverse_symbols:
             # Démarrage de la connexion WebSocket inverse
-            self._start_single_connection("inverse", self.inverse_symbols)
+            await self._start_single_connection("inverse", self.inverse_symbols)
         else:
             self.logger.warning("⚠️ Aucun symbole fourni pour les connexions WebSocket")
-    
+
     def _handle_ticker(self, ticker_data: dict):
         """
         Gestionnaire interne pour les données ticker reçues.
         Met à jour le store de prix et appelle le callback externe.
-        
+
         Args:
             ticker_data: Données ticker reçues via WebSocket
         """
@@ -101,23 +101,23 @@ class WebSocketManager:
             symbol = ticker_data.get("symbol", "")
             mark_price = ticker_data.get("markPrice")
             last_price = ticker_data.get("lastPrice")
-            
+
             if symbol and mark_price is not None and last_price is not None:
                 mark_val = float(mark_price)
                 last_val = float(last_price)
                 update(symbol, mark_val, last_val, time.time())
-            
+
             # Appeler le callback externe si défini
             if self._ticker_callback and symbol:
                 self._ticker_callback(ticker_data)
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur traitement ticker WebSocket: {e}")
-    
-    def _start_single_connection(self, category: str, symbols: List[str]):
+
+    async def _start_single_connection(self, category: str, symbols: List[str]):
         """
         Démarre une connexion WebSocket pour une seule catégorie.
-        
+
         Args:
             category: Catégorie ("linear" ou "inverse")
             symbols: Liste des symboles à suivre
@@ -130,11 +130,12 @@ class WebSocketManager:
             on_ticker_callback=self._handle_ticker
         )
         self._ws_conns = [conn]
-        
-        # Lancer la connexion (bloquant)
-        conn.run()
-    
-    def _start_dual_connections(self):
+
+        # Lancer la connexion dans une tâche asynchrone
+        task = asyncio.create_task(self._run_websocket_connection(conn))
+        self._ws_tasks = [task]
+
+    async def _start_dual_connections(self):
         """
         Démarre deux connexions WebSocket isolées (linear et inverse).
         """
@@ -153,70 +154,84 @@ class WebSocketManager:
             logger=self.logger,
             on_ticker_callback=self._handle_ticker
         )
-        
+
         self._ws_conns = [linear_conn, inverse_conn]
+
+        # Lancer en parallèle dans des tâches asynchrones
+        linear_task = asyncio.create_task(self._run_websocket_connection(linear_conn))
+        inverse_task = asyncio.create_task(self._run_websocket_connection(inverse_conn))
+
+        self._ws_tasks = [linear_task, inverse_task]
+
+    async def _run_websocket_connection(self, conn: PublicWSClient):
+        """
+        Exécute une connexion WebSocket de manière asynchrone.
         
-        # Lancer en parallèle dans des threads séparés
-        linear_thread = threading.Thread(target=linear_conn.run)
-        inverse_thread = threading.Thread(target=inverse_conn.run)
-        linear_thread.daemon = True
-        inverse_thread.daemon = True
-        
-        self._ws_threads = [linear_thread, inverse_thread]
-        linear_thread.start()
-        inverse_thread.start()
-        
-        # Attendre la fin des connexions avec timeout
+        Args:
+            conn: Connexion WebSocket à exécuter
+        """
         try:
-            linear_thread.join(timeout=1)
-            inverse_thread.join(timeout=1)
+            # Exécuter la connexion dans un thread séparé pour éviter de bloquer l'event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, conn.run)
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur attente threads WebSocket: {e}")
-    
-    def stop(self):
+            if self.running:
+                self.logger.warning(f"⚠️ Erreur connexion WebSocket: {e}")
+
+    async def stop(self):
         """
         Arrête toutes les connexions WebSocket.
         """
         if not self.running:
             return
-            
+
         # Arrêt des connexions WebSocket
         self.running = False
-        
+
+        # Nettoyer les callbacks pour éviter les fuites mémoire
+        self._ticker_callback = None
+
         # Fermer toutes les connexions
         for conn in self._ws_conns:
             try:
                 conn.close()
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur fermeture connexion WebSocket: {e}")
-        
-        # Attendre la fin des threads avec timeout
-        for i, thread in enumerate(self._ws_threads):
-            if thread.is_alive():
+
+        # Annuler toutes les tâches asynchrones
+        for i, task in enumerate(self._ws_tasks):
+            if not task.done():
                 try:
-                    thread.join(timeout=3)
-                    if thread.is_alive():
-                        self.logger.warning(f"⚠️ Thread WebSocket {i} n'a pas pu être arrêté dans les temps")
+                    task.cancel()
+                    # Attendre l'annulation avec timeout
+                    try:
+                        await asyncio.wait_for(task, timeout=5.0)
+                    except asyncio.TimeoutError:
+                        self.logger.warning(f"⚠️ Tâche WebSocket {i} n'a pas pu être annulée dans les temps")
+                    except asyncio.CancelledError:
+                        pass  # Annulation normale
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Erreur attente thread WebSocket {i}: {e}")
-        
-        # Nettoyer les listes
+                    self.logger.warning(f"⚠️ Erreur annulation tâche WebSocket {i}: {e}")
+
+        # Nettoyer les listes et références
         self._ws_conns.clear()
-        self._ws_threads.clear()
-    
+        self._ws_tasks.clear()
+        self.linear_symbols.clear()
+        self.inverse_symbols.clear()
+
     def is_running(self) -> bool:
         """
         Vérifie si le gestionnaire WebSocket est en cours d'exécution.
-        
+
         Returns:
             bool: True si en cours d'exécution
         """
         return self.running
-    
+
     def get_connected_symbols(self) -> dict:
         """
         Retourne les symboles actuellement connectés par catégorie.
-        
+
         Returns:
             dict: {"linear": [...], "inverse": [...]}
         """

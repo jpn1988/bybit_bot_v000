@@ -97,22 +97,24 @@ class VolatilityCalculator:
             Dictionnaire {symbol: volatility_pct}
         """
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Event loop en cours - utiliser un thread séparé
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run, 
-                        self.compute_volatility_batch(symbols)
-                    )
-                    return future.result()
-            else:
-                # Event loop disponible - l'utiliser directement
-                return loop.run_until_complete(self.compute_volatility_batch(symbols))
-        except RuntimeError:
-            # Pas d'event loop - en créer un nouveau
-            return asyncio.run(self.compute_volatility_batch(symbols))
+            import asyncio
+            import concurrent.futures
+            
+            # Créer un nouveau event loop dans un thread séparé pour éviter les conflits
+            def run_in_new_loop():
+                return asyncio.run(self.compute_volatility_batch(symbols))
+            
+            # Utiliser un ThreadPoolExecutor avec timeout pour éviter les blocages
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_new_loop)
+                return future.result(timeout=30)  # Timeout de 30 secondes
+                
+        except concurrent.futures.TimeoutError:
+            self.logger.warning(f"⚠️ Timeout calcul volatilité synchrone pour {len(symbols)} symboles")
+            return {symbol: None for symbol in symbols}
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur calcul volatilité synchrone: {e}")
+            return {symbol: None for symbol in symbols}
     
     async def filter_by_volatility_async(
         self,
@@ -240,23 +242,23 @@ class VolatilityCalculator:
             Liste filtrée avec volatilité
         """
         try:
-            # Essayer d'utiliser l'event loop existant
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Si la boucle tourne, créer une tâche
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self.filter_by_volatility_async(
-                        symbols_data, volatility_min, volatility_max
-                    ))
-                    return future.result()
-            else:
-                # Si la boucle ne tourne pas, l'utiliser directement
-                return loop.run_until_complete(self.filter_by_volatility_async(
+            import asyncio
+            import concurrent.futures
+            
+            # Créer un nouveau event loop dans un thread séparé pour éviter les conflits
+            def run_in_new_loop():
+                return asyncio.run(self.filter_by_volatility_async(
                     symbols_data, volatility_min, volatility_max
                 ))
-        except RuntimeError:
-            # Pas d'event loop, en créer un nouveau
-            return asyncio.run(self.filter_by_volatility_async(
-                symbols_data, volatility_min, volatility_max
-            ))
+            
+            # Utiliser un ThreadPoolExecutor avec timeout pour éviter les blocages
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_new_loop)
+                return future.result(timeout=30)  # Timeout de 30 secondes
+                
+        except concurrent.futures.TimeoutError:
+            self.logger.warning(f"⚠️ Timeout filtrage volatilité pour {len(symbols_data)} symboles")
+            return []
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur filtrage volatilité: {e}")
+            return []

@@ -11,22 +11,22 @@ from metrics import record_ws_connection, record_ws_error
 class PublicWSClient:
     """
     Client WebSocket publique Bybit v5 réutilisable.
-    
+
     Gère automatiquement la connexion, reconnexion, souscription aux symboles
     et le traitement des messages tickers.
     """
-    
+
     def __init__(
-        self, 
-        category: str, 
-        symbols: List[str], 
-        testnet: bool, 
-        logger, 
+        self,
+        category: str,
+        symbols: List[str],
+        testnet: bool,
+        logger,
         on_ticker_callback: Callable[[dict], None]
     ):
         """
         Initialise le client WebSocket publique.
-        
+
         Args:
             category (str): Catégorie des symboles ("linear" ou "inverse")
             symbols (List[str]): Liste des symboles à suivre
@@ -41,11 +41,11 @@ class PublicWSClient:
         self.on_ticker_callback = on_ticker_callback
         self.ws: Optional[websocket.WebSocketApp] = None
         self.running = False
-        
+
         # Configuration de reconnexion avec backoff progressif
         self.reconnect_delays = [1, 2, 5, 10, 30]  # secondes
         self.current_delay_index = 0
-        
+
         # Callbacks optionnels pour événements de connexion
         self.on_open_callback: Optional[Callable] = None
         self.on_close_callback: Optional[Callable] = None
@@ -55,25 +55,25 @@ class PublicWSClient:
         """Construit l'URL WebSocket selon la catégorie et l'environnement."""
         if self.category == "linear":
             return (
-                "wss://stream-testnet.bybit.com/v5/public/linear" if self.testnet 
+                "wss://stream-testnet.bybit.com/v5/public/linear" if self.testnet
                 else "wss://stream.bybit.com/v5/public/linear"
             )
         else:
             return (
-                "wss://stream-testnet.bybit.com/v5/public/inverse" if self.testnet 
+                "wss://stream-testnet.bybit.com/v5/public/inverse" if self.testnet
                 else "wss://stream.bybit.com/v5/public/inverse"
             )
 
     def _on_open(self, ws):
         """Callback interne appelé à l'ouverture de la connexion."""
         # WebSocket ouverte
-        
+
         # Enregistrer la connexion WebSocket
         record_ws_connection(connected=True)
-        
+
         # Réinitialiser l'index de délai de reconnexion après une connexion réussie
         self.current_delay_index = 0
-        
+
         # S'abonner aux tickers pour tous les symboles
         if self.symbols:
             subscribe_message = {
@@ -93,7 +93,7 @@ class PublicWSClient:
                 self.logger.warning(f"⚠️ Erreur souscription {self.category}: {e}")
         else:
             self.logger.warning(f"⚠️ Aucun symbole à suivre pour {self.category}")
-        
+
         # Appeler le callback externe si défini
         if self.on_open_callback:
             try:
@@ -123,7 +123,7 @@ class PublicWSClient:
         if self.running:
             self.logger.warning(f"⚠️ WS erreur ({self.category}) : {error}")
             record_ws_error()
-            
+
             # Appeler le callback externe si défini
             if self.on_error_callback:
                 try:
@@ -137,7 +137,7 @@ class PublicWSClient:
             self.logger.info(
                 f"🔌 WS fermée ({self.category}) (code={close_status_code}, reason={close_msg})"
             )
-            
+
             # Appeler le callback externe si défini
             if self.on_close_callback:
                 try:
@@ -148,15 +148,15 @@ class PublicWSClient:
     def run(self):
         """
         Boucle principale avec reconnexion automatique et backoff progressif.
-        
+
         Cette méthode bloque jusqu'à ce que close() soit appelé.
         """
         self.running = True
-        
+
         while self.running:
             try:
                 # Connexion à la WebSocket publique
-                
+
                 url = self._build_url()
                 self.ws = websocket.WebSocketApp(
                     url,
@@ -165,9 +165,9 @@ class PublicWSClient:
                     on_error=self._on_error,
                     on_close=self._on_close
                 )
-                
+
                 self.ws.run_forever(ping_interval=20, ping_timeout=10)
-                
+
             except (ConnectionError, OSError, TimeoutError) as e:
                 if self.running:
                     try:
@@ -183,7 +183,7 @@ class PublicWSClient:
                         self.logger.error(f"Erreur connexion WS publique ({self.category}): {e}")
                     except Exception:
                         pass
-            
+
             # Reconnexion avec backoff progressif
             if self.running:
                 delay = self.reconnect_delays[
@@ -196,13 +196,13 @@ class PublicWSClient:
                     record_ws_connection(connected=False)  # Enregistrer la reconnexion
                 except Exception:
                     pass
-                
+
                 # Attendre le délai avec vérification périodique de l'arrêt
                 for _ in range(delay):
                     if not self.running:
                         break
                     time.sleep(1)
-                
+
                 # Augmenter l'index de délai pour le prochain backoff (jusqu'à la limite)
                 if self.current_delay_index < len(self.reconnect_delays) - 1:
                     self.current_delay_index += 1
@@ -219,14 +219,14 @@ class PublicWSClient:
                 pass
 
     def set_callbacks(
-        self, 
+        self,
         on_open: Optional[Callable] = None,
         on_close: Optional[Callable] = None,
         on_error: Optional[Callable] = None
     ):
         """
         Définit des callbacks optionnels pour les événements de connexion.
-        
+
         Args:
             on_open (Callable, optional): Appelé à l'ouverture de la connexion
             on_close (Callable, optional): Appelé à la fermeture (code, reason)

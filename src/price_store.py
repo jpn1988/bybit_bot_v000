@@ -1,8 +1,7 @@
 """Module pour stocker et gérer les prix en temps réel."""
 
-import time
 import threading
-from typing import Dict, Tuple
+from typing import Dict
 
 
 # Stockage global des prix (protégé par verrou)
@@ -26,4 +25,3 @@ def update(symbol: str, mark_price: float, last_price: float, timestamp: float) 
             "last_price": last_price,
             "timestamp": timestamp
         }
-

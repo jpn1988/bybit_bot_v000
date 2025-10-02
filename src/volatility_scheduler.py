@@ -109,7 +109,7 @@ class VolatilityScheduler:
         Returns:
             Intervalle en secondes (entre 30 et 60s)
         """
-        return max(30, min(60, self.cache.ttl_seconds - 10))
+        return max(20, min(40, self.cache.ttl_seconds - 10))  # Intervalle plus court : 20-40s
     
     def _get_symbols_to_refresh(self) -> List[str]:
         """
@@ -163,23 +163,23 @@ class VolatilityScheduler:
         """
         try:
             import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Event loop en cours - utiliser un thread séparé
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run, 
-                        self.calculator.compute_volatility_batch(symbols)
-                    )
-                    return future.result()
-            else:
-                # Event loop disponible - l'utiliser directement
-                return loop.run_until_complete(self.calculator.compute_volatility_batch(symbols))
-        except RuntimeError:
-            # Pas d'event loop - en créer un nouveau
-            import asyncio
-            return asyncio.run(self.calculator.compute_volatility_batch(symbols))
+            import concurrent.futures
+            
+            # Créer un nouveau event loop dans un thread séparé pour éviter les conflits
+            def run_in_new_loop():
+                return asyncio.run(self.calculator.compute_volatility_batch(symbols))
+            
+            # Utiliser un ThreadPoolExecutor avec timeout pour éviter les blocages
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_new_loop)
+                return future.result(timeout=30)  # Timeout de 30 secondes
+                
+        except concurrent.futures.TimeoutError:
+            self.logger.warning(f"⚠️ Timeout calcul volatilité pour {len(symbols)} symboles")
+            return {symbol: None for symbol in symbols}
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur calcul volatilité: {e}")
+            return {symbol: None for symbol in symbols}
     
     def _retry_failed_symbols(self, failed_symbols: List[str], timestamp: float):
         """

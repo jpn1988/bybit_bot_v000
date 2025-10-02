@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gestionnaire d'affichage pour le bot Bybit.
+Gestionnaire d'affichage pour le bot Bybit - Version asynchrone.
 
 Cette classe gère uniquement :
 - L'affichage des données de prix en temps réel
@@ -9,8 +9,8 @@ Cette classe gère uniquement :
 - Le calcul des largeurs de colonnes
 """
 
+import asyncio
 import time
-import threading
 from typing import Dict, List, Optional, Any
 from logging_setup import setup_logging
 from data_manager import DataManager
@@ -18,7 +18,7 @@ from data_manager import DataManager
 
 class DisplayManager:
     """
-    Gestionnaire d'affichage pour le bot Bybit.
+    Gestionnaire d'affichage pour le bot Bybit - Version asynchrone.
     
     Responsabilités :
     - Affichage des données de prix en temps réel
@@ -44,7 +44,7 @@ class DisplayManager:
         
         # État d'affichage
         self._first_display = True
-        self._display_thread: Optional[threading.Thread] = None
+        self._display_task: Optional[asyncio.Task] = None
         self._running = False
         
         # Callback pour la volatilité
@@ -77,22 +77,20 @@ class DisplayManager:
         """
         self.price_ttl_sec = ttl_seconds
     
-    def start_display_loop(self):
+    async def start_display_loop(self):
         """
         Démarre la boucle d'affichage.
         """
-        if self._display_thread and self._display_thread.is_alive():
+        if self._display_task and not self._display_task.done():
             self.logger.warning("⚠️ DisplayManager déjà en cours d'exécution")
             return
         
         self._running = True
-        self._display_thread = threading.Thread(target=self._display_loop)
-        self._display_thread.daemon = True
-        self._display_thread.start()
+        self._display_task = asyncio.create_task(self._display_loop())
         
         self.logger.info("📊 Boucle d'affichage démarrée")
     
-    def stop_display_loop(self):
+    async def stop_display_loop(self):
         """
         Arrête la boucle d'affichage.
         """
@@ -100,17 +98,22 @@ class DisplayManager:
             return
             
         self._running = False
-        if self._display_thread and self._display_thread.is_alive():
+        if self._display_task and not self._display_task.done():
             try:
-                self._display_thread.join(timeout=2)
-                if self._display_thread.is_alive():
-                    self.logger.warning("⚠️ Thread d'affichage n'a pas pu être arrêté dans les temps")
+                self._display_task.cancel()
+                # Attendre l'annulation avec timeout
+                try:
+                    await asyncio.wait_for(self._display_task, timeout=2.0)
+                except asyncio.TimeoutError:
+                    self.logger.warning("⚠️ Tâche d'affichage n'a pas pu être annulée dans les temps")
+                except asyncio.CancelledError:
+                    pass  # Annulation normale
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur arrêt thread affichage: {e}")
+                self.logger.warning(f"⚠️ Erreur arrêt tâche affichage: {e}")
         
         self.logger.info("📊 Boucle d'affichage arrêtée")
     
-    def _display_loop(self):
+    async def _display_loop(self):
         """
         Boucle d'affichage avec intervalle configurable.
         """
@@ -122,11 +125,7 @@ class DisplayManager:
             self._print_price_table()
             
             # Attendre selon l'intervalle configuré
-            steps = int(self.display_interval_seconds * 10)  # 10 * 0.1s = interval_seconds
-            for _ in range(steps):
-                if not self._running:
-                    break
-                time.sleep(0.1)
+            await asyncio.sleep(self.display_interval_seconds)
         
         # Boucle d'affichage arrêtée
     
@@ -534,4 +533,4 @@ class DisplayManager:
         Returns:
             True si en cours d'exécution
         """
-        return self._running and self._display_thread and self._display_thread.is_alive()
+        return self._running and self._display_task and not self._display_task.done()

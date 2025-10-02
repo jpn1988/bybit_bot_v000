@@ -6,11 +6,11 @@ Bot de trading automatisé pour Bybit avec WebSocket et API REST, incluant un sy
 
 1. Installer les dépendances : `pip install -r requirements.txt`
 2. (Optionnel privé) Créer `.env` avec `BYBIT_API_KEY` et `BYBIT_API_SECRET`
-3. Lancer l'orchestrateur principal (watchlist + WS) : `python src/bot.py`
+3. Lancer le bot asynchrone : `python src/bot.py`
 
 ## 📊 Système de watchlist avancé
 
-### Suivi des prix en temps réel avec filtrage intelligent
+### Suivi des prix en temps réel avec filtrage intelligent (Architecture asynchrone)
 ```bash
 python src/bot.py
 ```
