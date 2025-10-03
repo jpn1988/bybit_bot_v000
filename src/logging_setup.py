@@ -4,7 +4,10 @@ import sys
 from datetime import datetime
 from typing import Dict, Any, Optional
 from loguru import logger
-from config import get_settings
+try:
+    from .config import get_settings
+except ImportError:
+    from config import get_settings
 
 
 def setup_logging():
@@ -105,14 +108,10 @@ def log_startup_summary(
     for param_name, param_value in params:
         logger.info(f"   • {param_name} : {param_value}")
     
-    # Section résultats filtrage
-    logger.info("\n📊 Résultats filtrage :")
+    # Section résultats filtrage (simplifiée)
     filter_stats = filter_results.get('stats', {})
-    logger.info(f"   Avant filtres       : {filter_stats.get('total_symbols', 0)} symboles")
-    logger.info(f"   Funding/Volume      : {filter_stats.get('after_funding_volume', 0)}")
-    logger.info(f"   Spread              : {filter_stats.get('after_spread', 0)}")
-    logger.info(f"   Volatilité          : {filter_stats.get('after_volatility', 0)}")
-    logger.info(f"   Après tri+limite    : {filter_stats.get('final_count', 0)}")
+    final_count = filter_stats.get('final_count', 0)
+    logger.info(f"\n📊 Filtrage terminé: {final_count} symboles sélectionnés")
     
     # Confirmation opérationnelle
     logger.info("\n✅ Initialisation terminée.")

@@ -10,9 +10,9 @@ Cette classe gère uniquement :
 
 from typing import List, Dict, Optional, Callable
 from logging_setup import setup_logging
-from data_manager import DataManager
+from unified_data_manager import UnifiedDataManager
 from display_manager import DisplayManager
-from monitoring_manager import MonitoringManager
+from unified_monitoring_manager import UnifiedMonitoringManager
 from volatility_tracker import VolatilityTracker
 from ws_manager import WebSocketManager
 
@@ -39,10 +39,10 @@ class CallbackManager:
     def setup_manager_callbacks(
         self,
         display_manager: DisplayManager,
-        monitoring_manager: MonitoringManager,
+        monitoring_manager: UnifiedMonitoringManager,
         volatility_tracker: VolatilityTracker,
         ws_manager: WebSocketManager,
-        data_manager: DataManager
+        data_manager: UnifiedDataManager
     ):
         """
         Configure les callbacks entre les différents managers.
@@ -64,7 +64,7 @@ class CallbackManager:
     def setup_ws_callbacks(
         self,
         ws_manager: WebSocketManager,
-        data_manager: DataManager
+        data_manager: UnifiedDataManager
     ):
         """
         Configure les callbacks WebSocket.
@@ -79,7 +79,7 @@ class CallbackManager:
     def setup_volatility_callbacks(
         self,
         volatility_tracker: VolatilityTracker,
-        data_manager: DataManager
+        data_manager: UnifiedDataManager
     ):
         """
         Configure les callbacks de volatilité.
@@ -91,7 +91,7 @@ class CallbackManager:
         # Callback pour obtenir les symboles actifs
         volatility_tracker.set_active_symbols_callback(self._create_active_symbols_callback(data_manager))
     
-    def _create_ticker_callback(self, data_manager: DataManager) -> Callable:
+    def _create_ticker_callback(self, data_manager: UnifiedDataManager) -> Callable:
         """
         Crée le callback pour les données ticker.
         
@@ -118,7 +118,7 @@ class CallbackManager:
         
         return ticker_callback
     
-    def _create_active_symbols_callback(self, data_manager: DataManager) -> Callable:
+    def _create_active_symbols_callback(self, data_manager: UnifiedDataManager) -> Callable:
         """
         Crée le callback pour obtenir les symboles actifs.
         

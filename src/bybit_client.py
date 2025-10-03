@@ -5,9 +5,14 @@ import hashlib
 import hmac
 import httpx
 import random
-from config import get_settings
-from metrics import record_api_call
-from http_client_manager import get_http_client
+try:
+    from .config import get_settings
+    from .metrics import record_api_call
+    from .http_client_manager import get_http_client
+except ImportError:
+    from config import get_settings
+    from metrics import record_api_call
+    from http_client_manager import get_http_client
 
 
 class BybitClient:
@@ -16,7 +21,7 @@ class BybitClient:
     def __init__(
         self, 
         testnet: bool = True, 
-        timeout: int = 10, 
+        timeout: int = 15,  # Timeout augmenté de 10s à 15s 
         api_key: str | None = None, 
         api_secret: str | None = None
     ):
@@ -153,41 +158,39 @@ class BybitClient:
         """
         max_attempts = 4
         backoff_base = 0.5
-        last_error: Exception | None = None
         start_time = time.time()
+        
+        # Exécuter la boucle de retry
+        result = self._handle_retry_loop(url, headers, max_attempts, backoff_base, start_time)
+        
+        if result is not None:
+            return result
+        
+        # Échec après tous les retries
+        self._handle_final_failure(start_time)
+    
+    def _handle_retry_loop(self, url: str, headers: dict, max_attempts: int, 
+                          backoff_base: float, start_time: float) -> dict | None:
+        """Gère la boucle de retry pour les requêtes HTTP."""
+        last_error: Exception | None = None
         
         for attempt in range(1, max_attempts + 1):
             try:
-                # Effectuer la requête
-                client = get_http_client(timeout=self.timeout)
-                response = client.get(url, headers=headers)
-                
-                # Gérer la réponse HTTP
-                self._handle_http_response(response, attempt, max_attempts, backoff_base)
-                
-                # Décoder et valider la réponse API
-                data = response.json()
-                self._handle_api_response(data, response, attempt, max_attempts, backoff_base)
-                
-                # Succès - enregistrer les métriques
-                latency = time.time() - start_time
-                record_api_call(latency, success=True)
-                
-                return data.get("result", {})
+                # Effectuer la requête et traiter la réponse
+                return self._process_successful_request(url, headers, attempt, 
+                                                      max_attempts, backoff_base, start_time)
                 
             except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
                 last_error = e
-                if attempt >= max_attempts:
+                if not self._should_retry(attempt, max_attempts):
                     break
-                delay = self._calculate_retry_delay(attempt, backoff_base)
-                time.sleep(delay)
+                self._wait_before_retry(attempt, backoff_base)
                 
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 last_error = e
-                if attempt >= max_attempts:
+                if not self._should_retry(attempt, max_attempts):
                     break
-                delay = self._calculate_retry_delay(attempt, backoff_base)
-                time.sleep(delay)
+                self._wait_before_retry(attempt, backoff_base)
                 
             except (ValueError, TypeError, KeyError) as e:
                 # Erreurs de données - pas de retry
@@ -201,11 +204,50 @@ class BybitClient:
                 last_error = e
                 break
         
-        # Échec après tous les retries
+        # Échec - préparer l'erreur finale
+        self._prepare_final_error(last_error)
+        return None
+    
+    def _process_successful_request(self, url: str, headers: dict, attempt: int,
+                                  max_attempts: int, backoff_base: float, start_time: float) -> dict:
+        """Traite une requête HTTP réussie."""
+        # Effectuer la requête
+        client = get_http_client(timeout=self.timeout)
+        response = client.get(url, headers=headers)
+        
+        # Gérer la réponse HTTP
+        self._handle_http_response(response, attempt, max_attempts, backoff_base)
+        
+        # Décoder et valider la réponse API
+        data = response.json()
+        self._handle_api_response(data, response, attempt, max_attempts, backoff_base)
+        
+        # Succès - enregistrer les métriques
+        latency = time.time() - start_time
+        record_api_call(latency, success=True)
+        
+        return data.get("result", {})
+    
+    def _should_retry(self, attempt: int, max_attempts: int) -> bool:
+        """Détermine si un retry doit être effectué."""
+        return attempt < max_attempts
+    
+    def _wait_before_retry(self, attempt: int, backoff_base: float):
+        """Attend avant de retry avec délai de backoff."""
+        delay = self._calculate_retry_delay(attempt, backoff_base)
+        time.sleep(delay)
+    
+    def _prepare_final_error(self, last_error: Exception | None):
+        """Prépare l'erreur finale pour l'échec."""
+        # Stocker l'erreur pour le traitement final
+        self._last_error = last_error
+    
+    def _handle_final_failure(self, start_time: float):
+        """Gère l'échec final après tous les retries."""
         latency = time.time() - start_time
         record_api_call(latency, success=False)
         
-        raise RuntimeError(f"Erreur réseau/HTTP Bybit : {last_error}")
+        raise RuntimeError(f"Erreur réseau/HTTP Bybit : {getattr(self, '_last_error', 'Erreur inconnue')}")
     
     def _handle_http_response(self, response: httpx.Response, attempt: int, 
                               max_attempts: int, backoff_base: float):

@@ -11,7 +11,10 @@ Cette classe gère uniquement :
 import os
 import yaml
 from typing import Dict
-from config import get_settings
+try:
+    from .config import get_settings
+except ImportError:
+    from config import get_settings
 
 
 # Constantes pour les limites et seuils
@@ -44,10 +47,20 @@ class ConfigManager:
         """
         self.config_path = config_path
         self.config = {}
+        # Initialiser le logger
+        try:
+            from .logging_setup import setup_logging
+        except ImportError:
+            from logging_setup import setup_logging
+        self.logger = setup_logging()
     
     def load_and_validate_config(self) -> Dict:
         """
-        Charge et valide la configuration depuis le fichier YAML et les variables d'environnement.
+        Charge et valide la configuration avec hiérarchie claire :
+        
+        PRIORITÉ 1 (MAXIMALE) : Variables d'environnement (.env)
+        PRIORITÉ 2 (MOYENNE) : Fichier YAML (parameters.yaml)  
+        PRIORITÉ 3 (MINIMALE) : Valeurs par défaut dans le code
         
         Returns:
             Dict: Configuration validée
@@ -55,7 +68,7 @@ class ConfigManager:
         Raises:
             ValueError: Si la configuration est invalide
         """
-        # Valeurs par défaut
+        # ÉTAPE 1: Valeurs par défaut (priorité minimale)
         default_config = {
             "categorie": "linear",
             "funding_min": None,
@@ -73,16 +86,18 @@ class ConfigManager:
             "display_interval_seconds": 10,
         }
         
-        # Charger depuis le fichier si disponible
+        # ÉTAPE 2: Charger depuis le fichier YAML (priorité moyenne)
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 file_config = yaml.safe_load(f)
             if file_config:
                 default_config.update(file_config)
         except FileNotFoundError:
-            pass  # Utiliser les valeurs par défaut
+            self.logger.warning(f"⚠️ Fichier YAML non trouvé : {self.config_path} (utilisation des valeurs par défaut)")
+        except Exception as e:
+            self.logger.error(f"❌ Erreur lors du chargement YAML : {e}")
         
-        # Récupérer les variables d'environnement (priorité maximale)
+        # ÉTAPE 3: Récupérer les variables d'environnement (priorité maximale)
         settings = get_settings()
         env_mappings = {
             "spread_max": "spread_max",

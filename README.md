@@ -16,7 +16,13 @@ python src/bot.py
 ```
 
 ### Configuration
-#### Fichier YAML (`src/parameters.yaml`)
+
+> **🎯 HIÉRARCHIE DE CONFIGURATION :**
+> 1. **Variables d'environnement** (`.env`) - **PRIORITÉ MAXIMALE**
+> 2. **Fichier YAML** (`parameters.yaml`) - **PRIORITÉ MOYENNE**  
+> 3. **Valeurs par défaut** (code) - **PRIORITÉ MINIMALE**
+
+#### Fichier YAML (`src/parameters.yaml`) - Configuration par défaut
 ```yaml
 categorie: "linear"            # "linear" | "inverse" | "both"
 funding_min: null              # ex: 0.0001 pour >= 0.01%
@@ -32,7 +38,7 @@ volatility_ttl_sec: 120        # TTL du cache volatilité (secondes)
 limite: 10                     # ex: 10 symboles max
 ```
 
-#### Variables d'environnement (priorité maximale)
+#### Variables d'environnement (.env) - Configuration sensible et spécifique
 ```bash
 # Windows
 setx TESTNET true                  # true|false (défaut true)
@@ -110,7 +116,6 @@ REXUSDT  |     +0.4951% |      121.9 |    +0.050% |     +0.320% |          45m
 
 ### Scripts principaux
 - `src/bot.py` - **ORCHESTRATEUR PRINCIPAL** : Watchlist (REST) + suivi temps réel (WS)
-- `src/app.py` - Orchestrateur supervision (REST + WS public + WS privé)
 - `src/main.py` - Point d'entrée privé (lecture du solde)
 
 ### Modules de base
@@ -125,9 +130,13 @@ REXUSDT  |     +0.4951% |      121.9 |    +0.050% |     +0.320% |          45m
 - `src/price_store.py` - Stockage des prix en mémoire
 - `src/parameters.yaml` - Configuration des paramètres
 
-### Scripts de test
-- `src/run_ws_public.py` - WebSocket publique
-- `src/run_ws_private.py` - WebSocket privée
+### Modules refactorisés
+- `src/bot_orchestrator_refactored.py` - Orchestrateur principal refactorisé
+- `src/bot_initializer.py` - Initialisation des managers
+- `src/bot_configurator.py` - Configuration du bot
+- `src/bot_data_loader.py` - Chargement des données
+- `src/bot_starter.py` - Démarrage des composants
+- `src/bot_health_monitor.py` - Surveillance de la santé
 
 ## 🗒️ Journal de bord & Workflow
 - Toutes les modifications importantes doivent être **documentées** dans `JOURNAL.md` (voir modèle).
@@ -138,13 +147,10 @@ REXUSDT  |     +0.4951% |      121.9 |    +0.050% |     +0.320% |          45m
 
 ## 🎯 Commandes utiles
 - **Orchestrateur principal (watchlist + WS)** : `python src/bot.py`
-- **Orchestrateur supervision (REST/WS public/privé)** : `python src/app.py`
 - **REST privé (solde)** : `python src/main.py`
-- **WS publique (test)** : `python src/run_ws_public.py`
-- **WS privée (test)** : `python src/run_ws_private.py`
 
 ## 🔧 Configuration avancée
 - **Variables d'environnement clés** : `TESTNET`, `TIMEOUT`, `LOG_LEVEL`, `VOLUME_MIN_MILLIONS`, `SPREAD_MAX`, `VOLATILITY_MIN`, `VOLATILITY_MAX`, `FUNDING_MIN`, `FUNDING_MAX`, `FUNDING_TIME_MIN_MINUTES`, `FUNDING_TIME_MAX_MINUTES`, `VOLATILITY_TTL_SEC`, `CATEGORY`, `LIMIT`, `PUBLIC_HTTP_MAX_CALLS_PER_SEC`, `PUBLIC_HTTP_WINDOW_SECONDS`
-- **Clés privées (.env)** : `BYBIT_API_KEY`, `BYBIT_API_SECRET` (requis pour `src/app.py` et `src/main.py`)
+- **Clés privées (.env)** : `BYBIT_API_KEY`, `BYBIT_API_SECRET` (requis pour `src/main.py`)
 - **Fichier de config** : `src/parameters.yaml`
 - **Priorité** : ENV > fichier YAML > valeurs par défaut

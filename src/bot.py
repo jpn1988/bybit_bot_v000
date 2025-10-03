@@ -8,7 +8,7 @@ Cette classe lance le BotOrchestrator dans un event loop asyncio.
 import asyncio
 import signal
 import sys
-from bot_orchestrator import BotOrchestrator
+from bot_orchestrator_refactored import BotOrchestrator
 from logging_setup import setup_logging
 
 
@@ -47,7 +47,8 @@ class AsyncBotRunner:
         if self.running:
             self.running = False
             self.logger.info("Signal d'arrêt reçu, arrêt propre du bot...")
-            await self.orchestrator._stop_all_managers_quick()
+            # Utiliser la nouvelle méthode stop() du orchestrateur refactorisé
+            self.orchestrator.stop()
             # Annuler toutes les tâches restantes pour permettre l'arrêt de l'event loop
             tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
             for task in tasks:

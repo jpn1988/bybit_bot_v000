@@ -166,7 +166,7 @@ class PublicWSClient:
                     on_close=self._on_close
                 )
 
-                self.ws.run_forever(ping_interval=20, ping_timeout=10)
+                self.ws.run_forever(ping_interval=20, ping_timeout=15)  # Timeout ping augmenté de 10s à 15s
 
             except (ConnectionError, OSError, TimeoutError) as e:
                 if self.running:
@@ -198,10 +198,11 @@ class PublicWSClient:
                     pass
 
                 # Attendre le délai avec vérification périodique de l'arrêt
-                for _ in range(delay):
+                # Utiliser time.sleep mais avec vérification plus fréquente pour éviter les blocages
+                for _ in range(delay * 10):  # 10 vérifications par seconde
                     if not self.running:
                         break
-                    time.sleep(1)
+                    time.sleep(0.1)  # Vérification très fréquente (100ms)
 
                 # Augmenter l'index de délai pour le prochain backoff (jusqu'à la limite)
                 if self.current_delay_index < len(self.reconnect_delays) - 1:
@@ -212,11 +213,31 @@ class PublicWSClient:
     def close(self):
         """Ferme proprement la connexion WebSocket."""
         self.running = False
+        
+        # Fermer la WebSocket de manière plus agressive
         if self.ws:
             try:
+                # Fermeture immédiate
                 self.ws.close()
+                # Attendre très peu pour que la fermeture se propage
+                import time
+                time.sleep(0.1)  # Augmenté pour permettre la fermeture
             except Exception:
                 pass
+            finally:
+                # Forcer la fermeture si nécessaire
+                try:
+                    if hasattr(self.ws, 'sock') and self.ws.sock:
+                        self.ws.sock.close()
+                except:
+                    pass
+        
+        # Nettoyer les références pour éviter les fuites mémoire
+        self.ws = None
+        self.on_ticker_callback = None
+        self.on_open_callback = None
+        self.on_close_callback = None
+        self.on_error_callback = None
 
     def set_callbacks(
         self,

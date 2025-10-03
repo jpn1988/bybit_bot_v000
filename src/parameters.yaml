@@ -13,17 +13,17 @@
 # ============================================
 
 categorie: "linear"      # "linear" | "inverse" | "both"
-funding_min: 0.0005     # ex: 0.0001 pour >= 0.01%  | null = pas de min
+funding_min: 0.0001     # ex: 0.0001 pour >= 0.01%  | null = pas de min
 funding_max: null        # ex: 0.0005 pour <= 0.05%  | null = pas de max
-volume_min_millions: 20   # ex: 5.0 pour >= 5M USDT | null = pas de min
+volume_min_millions: 20 # ex: 5.0 pour >= 5M USDT | null = pas de min
 # Normalisation: spread exprimé en ratio (0.003 = 0.30%)
 spread_max: null        # ex: 0.003 pour <= 0.30% | null = pas de filtre
 volatility_min: null     # ex: 0.002 pour >= 0.20% | null = pas de min [NOUVEAU]
 volatility_max: null    # ex: 0.007 pour <= 0.70% | null = pas de max [NOUVEAU]
 volatility_ttl_sec: 60  # TTL du cache volatilité (secondes)(recalcul de la volatiliter toute les 60 secondes)
-limite: null               # ex: 10  | null = pas de limite
+limite: 20                 # ex: 10  | null = pas de limite
 funding_time_min_minutes: null   # Optionnel: minimum 30 minutes avant funding
-funding_time_max_minutes: 240 # Optionnel: maximum 120 minutes avant funding
+funding_time_max_minutes: 1400 # Optionnel: maximum 120 minutes avant funding
 
 # ============================================
 # Configuration de l'affichage

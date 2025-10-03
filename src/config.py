@@ -10,7 +10,8 @@ load_dotenv()
 def get_settings():
     """
     Retourne un dictionnaire avec les paramètres de configuration.
-    Valide également les variables d'environnement pour détecter les fautes de frappe.
+    Valide également les variables d'environnement pour détecter 
+    les fautes de frappe.
     
     Returns:
         dict: Dictionnaire contenant les paramètres de configuration
@@ -21,7 +22,8 @@ def get_settings():
         "SPREAD_MAX", "VOLUME_MIN_MILLIONS", "VOLATILITY_MIN", "VOLATILITY_MAX",
         "FUNDING_MIN", "FUNDING_MAX", "CATEGORY", "LIMIT", "VOLATILITY_TTL_SEC",
         "FUNDING_TIME_MIN_MINUTES", "FUNDING_TIME_MAX_MINUTES", "WS_PRIV_CHANNELS",
-        # Variables de rate limiting public (utilisées par volatility.get_async_rate_limiter)
+        # Variables de rate limiting public 
+        # (utilisées par volatility.get_async_rate_limiter)
         "PUBLIC_HTTP_MAX_CALLS_PER_SEC", "PUBLIC_HTTP_WINDOW_SECONDS",
     }
     
@@ -38,7 +40,8 @@ def get_settings():
     # Filtrer les variables système et les variables non liées au bot
     bot_related_unknown = []
     for var in unknown_vars:
-        # Ignorer les variables système Windows/Python et les variables non liées au bot
+        # Ignorer les variables système Windows/Python et les variables 
+        # non liées au bot
         if not any(prefix in var.upper() for prefix in [
             "PATH", "PYTHON", "WINDOWS", "USER", "HOME", "TEMP", "TMP",
             "PROGRAM", "SYSTEM", "ALLUSER", "APPDATA", "LOCALAPPDATA",
@@ -49,7 +52,8 @@ def get_settings():
             "MAVEN", "GRADLE", "NODEJS", "NPM", "YARN", "BOWER", "FPS",
             "BROWSER", "APP", "PROFILE", "STRING"
         ]):
-            # Vérifier si la variable semble liée au bot (contient des mots-clés)
+            # Vérifier si la variable semble liée au bot 
+            # (contient des mots-clés)
             if any(keyword in var.upper() for keyword in [
                 "BYBIT", "FUNDING", "VOLATILITY", "SPREAD", "VOLUME", "CATEGORY",
                 "LIMIT", "TTL", "TIME", "MIN", "MAX", "CHANNELS", "WS", "PRIV"
@@ -58,19 +62,27 @@ def get_settings():
     
     # Logger les variables inconnues liées au bot
     if bot_related_unknown:
-        # Afficher directement sur stderr pour être sûr que le message soit visible
+        # Afficher directement sur stderr pour être sûr que le message 
+        # soit visible
         import sys
         for var in bot_related_unknown:
-            print(f"⚠️ Variable d'environnement inconnue ignorée: {var}", file=sys.stderr)
-            print(f"💡 Variables valides: {', '.join(sorted(valid_env_vars))}", file=sys.stderr)
+            print(
+                f"⚠️ Variable d'environnement inconnue ignorée: {var}", 
+                file=sys.stderr
+            )
+            valid_vars_str = ', '.join(sorted(valid_env_vars))
+            print(f"💡 Variables valides: {valid_vars_str}", file=sys.stderr)
         
         # Essayer aussi avec le logger si disponible
         try:
             import logging
             logger = logging.getLogger(__name__)
             for var in bot_related_unknown:
-                logger.warning(f"⚠️ Variable d'environnement inconnue ignorée: {var}")
-                logger.warning(f"💡 Variables valides: {', '.join(sorted(valid_env_vars))}")
+                logger.warning(
+                    f"⚠️ Variable d'environnement inconnue ignorée: {var}"
+                )
+                valid_vars_str = ', '.join(sorted(valid_env_vars))
+                logger.warning(f"💡 Variables valides: {valid_vars_str}")
         except Exception:
             pass  # Le message a déjà été affiché sur stderr
     # Récupérer les clés API et convertir les chaînes vides en None

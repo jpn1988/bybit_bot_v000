@@ -44,8 +44,17 @@ class MetricsMonitor:
         self._stop_event.set()
         
         if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_thread.join(timeout=5)
+            # Attendre l'arrêt propre avec timeout plus court
+            self.monitor_thread.join(timeout=3)  # Timeout réduit à 3s
+            
+            # Si le thread ne s'est pas arrêté, forcer l'arrêt
+            if self.monitor_thread.is_alive():
+                self.logger.warning("⚠️ Thread métriques n'a pas pu s'arrêter proprement, arrêt forcé")
+                # Marquer le thread comme daemon pour qu'il s'arrête avec le programme
+                self.monitor_thread.daemon = True
         
+        # Nettoyer la référence du thread
+        self.monitor_thread = None
         # Monitoring des métriques arrêté
     
     def _monitor_loop(self):
