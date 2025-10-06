@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-Implémentation concrète du filtre de symboles pour le bot Bybit.
+Filtre de symboles pour le bot Bybit.
 
-Cette classe implémente l'interface BaseFilter pour le filtrage par funding,
-volume et temps avant funding.
+Ce module implémente le filtrage par funding, volume, spread et temps avant funding.
 """
 
 import time
-from typing import List, Tuple, Dict, Optional, Any
-from .base_filter import BaseFilter
+from typing import List, Tuple, Dict, Optional
+from logging_setup import setup_logging
 
 
-class SymbolFilter(BaseFilter):
+class SymbolFilter:
     """
     Filtre de symboles pour le bot Bybit.
 
@@ -29,53 +28,7 @@ class SymbolFilter(BaseFilter):
         Args:
             logger: Logger pour les messages (optionnel)
         """
-        super().__init__(logger)
-
-    def get_name(self) -> str:
-        """Retourne le nom du filtre."""
-        return "symbol_filter"
-
-    def get_description(self) -> str:
-        """Retourne la description du filtre."""
-        return "Filtre par funding, volume et temps avant funding"
-
-    def apply(self, symbols_data: List[Any], config: Dict[str, Any]) -> List[Any]:
-        """
-        Applique le filtre de funding aux données de symboles.
-
-        Args:
-            symbols_data: Liste contenant (perp_data, funding_map, config_params)
-            config: Configuration du filtre (non utilisée ici, les paramètres sont dans symbols_data)
-
-        Returns:
-            Liste des symboles filtrés
-        """
-        if len(symbols_data) < 3:
-            raise ValueError("symbols_data doit contenir (perp_data, funding_map, config_params)")
-
-        perp_data, funding_map, config_params = symbols_data
-
-        # Extraire les paramètres de configuration
-        funding_min = config_params.get("funding_min")
-        funding_max = config_params.get("funding_max")
-        volume_min_millions = config_params.get("volume_min_millions")
-        limite = config_params.get("limite")
-        funding_time_min_minutes = config_params.get("funding_time_min_minutes")
-        funding_time_max_minutes = config_params.get("funding_time_max_minutes")
-
-        # Appliquer le filtre de funding
-        filtered_symbols = self.filter_by_funding(
-            perp_data,
-            funding_map,
-            funding_min,
-            funding_max,
-            volume_min_millions,
-            limite,
-            funding_time_min_minutes=funding_time_min_minutes,
-            funding_time_max_minutes=funding_time_max_minutes,
-        )
-
-        return filtered_symbols
+        self.logger = logger or setup_logging()
 
     def filter_by_funding(
         self,
@@ -121,6 +74,7 @@ class SymbolFilter(BaseFilter):
                 volume = data["volume"]
                 next_funding_time = data.get("next_funding_time")
 
+
                 # Appliquer les bornes funding/volume (utiliser valeur absolue pour funding)
                 if funding_min is not None and abs(funding) < funding_min:
                     continue
@@ -137,11 +91,16 @@ class SymbolFilter(BaseFilter):
                     # Si pas de temps valide alors qu'on filtre, rejeter
                     if minutes_remaining is None:
                         continue
+
+                    # Rejeter les symboles avec funding time = 0 (funding déjà passé)
+                    if minutes_remaining <= 0:
+                        continue
+
                     if (funding_time_min_minutes is not None and
-                        minutes_remaining < float(funding_time_min_minutes)):
+                            minutes_remaining < float(funding_time_min_minutes)):
                         continue
                     if (funding_time_max_minutes is not None and
-                        minutes_remaining > float(funding_time_max_minutes)):
+                            minutes_remaining > float(funding_time_max_minutes)):
                         continue
 
                 # Calculer le temps restant avant le prochain funding (formaté)
@@ -185,7 +144,8 @@ class SymbolFilter(BaseFilter):
             if symbol in spread_data:
                 spread_pct = spread_data[symbol]
                 if spread_pct <= spread_max:
-                    filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct))
+                    filtered_symbols.append(
+                        (symbol, funding, volume, funding_time_remaining, spread_pct))
 
         return filtered_symbols
 
@@ -215,7 +175,9 @@ class SymbolFilter(BaseFilter):
                     target_timestamp = dt.timestamp()
             else:
                 # Déjà un timestamp
-                target_timestamp = float(next_funding_time) / 1000 if next_funding_time > 1e10 else float(next_funding_time)
+                target_timestamp = (float(next_funding_time) / 1000
+                                   if next_funding_time > 1e10
+                                   else float(next_funding_time))
 
             current_timestamp = time.time()
             remaining_seconds = target_timestamp - current_timestamp
@@ -264,7 +226,9 @@ class SymbolFilter(BaseFilter):
                     target_timestamp = dt.timestamp()
             else:
                 # Déjà un timestamp
-                target_timestamp = float(next_funding_time) / 1000 if next_funding_time > 1e10 else float(next_funding_time)
+                target_timestamp = (float(next_funding_time) / 1000
+                                   if next_funding_time > 1e10
+                                   else float(next_funding_time))
 
             current_timestamp = time.time()
             remaining_seconds = target_timestamp - current_timestamp
@@ -274,6 +238,42 @@ class SymbolFilter(BaseFilter):
 
         except (ValueError, TypeError, OverflowError):
             return None
+
+    def build_funding_data_dict(
+        self,
+        symbols_data: List[Tuple]
+    ) -> Dict[str, Dict]:
+        """
+        Construit un dictionnaire de données de funding à partir des symboles filtrés.
+
+        Args:
+            symbols_data: Liste des tuples (symbol, funding, volume, funding_time_remaining, ...)
+
+        Returns:
+            Dictionnaire {symbol: {funding, volume, funding_time_remaining, spread_pct, volatility_pct}}
+        """
+        funding_data = {}
+
+        for symbol_data in symbols_data:
+            if len(symbol_data) >= 4:
+                symbol = symbol_data[0]
+                funding = symbol_data[1]
+                volume = symbol_data[2]
+                funding_time_remaining = symbol_data[3]
+
+                # Ajouter les données optionnelles selon la longueur du tuple
+                spread_pct = symbol_data[4] if len(symbol_data) > 4 else 0.0
+                volatility_pct = symbol_data[5] if len(symbol_data) > 5 else None
+
+                funding_data[symbol] = {
+                    "funding": funding,
+                    "volume": volume,
+                    "funding_time_remaining": funding_time_remaining,
+                    "spread_pct": spread_pct,
+                    "volatility_pct": volatility_pct
+                }
+
+        return funding_data
 
     def separate_symbols_by_category(
         self,
@@ -301,7 +301,8 @@ class SymbolFilter(BaseFilter):
             symbols = [item[0] for item in symbols_data]
         else:
             # Format simple: [symbol, ...]
-            symbols = symbols_data if isinstance(symbols_data[0], str) else [item[0] for item in symbols_data]
+            symbols = (symbols_data if isinstance(symbols_data[0], str)
+                      else [item[0] for item in symbols_data])
 
         for symbol in symbols:
             category = category_of_symbol(symbol, symbol_categories)
@@ -433,39 +434,3 @@ class SymbolFilter(BaseFilter):
         except (ValueError, TypeError) as e:
             self.logger.warning(f"⚠️ Erreur données ticker {symbol}: {e}")
             return False
-
-    def build_funding_data_dict(
-        self,
-        symbols_data: List[Tuple]
-    ) -> Dict[str, Dict]:
-        """
-        Construit un dictionnaire de données de funding à partir des symboles filtrés.
-
-        Args:
-            symbols_data: Liste des tuples (symbol, funding, volume, funding_time_remaining, ...)
-
-        Returns:
-            Dictionnaire {symbol: {funding, volume, funding_time_remaining, spread_pct, volatility_pct}}
-        """
-        funding_data = {}
-
-        for symbol_data in symbols_data:
-            if len(symbol_data) >= 4:
-                symbol = symbol_data[0]
-                funding = symbol_data[1]
-                volume = symbol_data[2]
-                funding_time_remaining = symbol_data[3]
-
-                # Ajouter les données optionnelles selon la longueur du tuple
-                spread_pct = symbol_data[4] if len(symbol_data) > 4 else 0.0
-                volatility_pct = symbol_data[5] if len(symbol_data) > 5 else None
-
-                funding_data[symbol] = {
-                    "funding": funding,
-                    "volume": volume,
-                    "funding_time_remaining": funding_time_remaining,
-                    "spread_pct": spread_pct,
-                    "volatility_pct": volatility_pct
-                }
-
-        return funding_data

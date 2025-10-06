@@ -213,7 +213,7 @@ class PublicWSClient:
     def close(self):
         """Ferme proprement la connexion WebSocket."""
         self.running = False
-        
+
         # Fermer la WebSocket de manière plus agressive
         if self.ws:
             try:
@@ -229,9 +229,9 @@ class PublicWSClient:
                 try:
                     if hasattr(self.ws, 'sock') and self.ws.sock:
                         self.ws.sock.close()
-                except:
+                except Exception:
                     pass
-        
+
         # Nettoyer les références pour éviter les fuites mémoire
         self.ws = None
         self.on_ticker_callback = None
@@ -256,5 +256,3 @@ class PublicWSClient:
         self.on_open_callback = on_open
         self.on_close_callback = on_close
         self.on_error_callback = on_error
-
-

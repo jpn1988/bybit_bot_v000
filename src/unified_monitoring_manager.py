@@ -18,7 +18,7 @@ Cette version unifiée remplace :
 import asyncio
 import threading
 import time
-from typing import List, Dict, Optional, Any, Callable
+from typing import List, Dict, Optional, Callable
 from logging_setup import setup_logging
 from unified_data_manager import UnifiedDataManager
 from watchlist_manager import WatchlistManager
@@ -30,7 +30,7 @@ from instruments import category_of_symbol
 class UnifiedMonitoringManager:
     """
     Gestionnaire de surveillance unifié pour le bot Bybit.
-    
+
     Cette classe consolide toutes les fonctionnalités de surveillance :
     - Surveillance continue du marché (scan périodique)
     - Surveillance des candidats en temps réel

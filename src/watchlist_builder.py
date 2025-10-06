@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gestionnaire de watchlist pour le bot Bybit - Version unifiée.
+Constructeur de watchlist pour le bot Bybit.
 
 Cette classe orchestre la construction de la watchlist en utilisant :
 - ConfigManager pour la configuration
@@ -10,15 +10,14 @@ Cette classe orchestre la construction de la watchlist en utilisant :
 
 Responsabilités principales :
 - Orchestration de la construction de la watchlist
-- Application des filtres de sélection (funding, volume, spread, volatilité)
-- Coordination entre ConfigManager, UnifiedDataManager, SymbolFilter et VolatilityTracker
+- Application des filtres de sélection
+- Coordination entre les différents composants
 - Gestion de la logique métier de sélection des symboles
-- Surveillance des candidats (symboles proches des critères)
 """
 
 from typing import List, Tuple, Dict, Optional
 from logging_setup import setup_logging
-from config_unified import UnifiedConfigManager
+from config_manager import ConfigManager
 from unified_data_manager import UnifiedDataManager
 from filters.symbol_filter import SymbolFilter
 from volatility_tracker import VolatilityTracker
@@ -26,9 +25,9 @@ from instruments import category_of_symbol
 from metrics import record_filter_result
 
 
-class WatchlistManager:
+class WatchlistBuilder:
     """
-    Gestionnaire de watchlist pour le bot Bybit - Version unifiée.
+    Constructeur de watchlist pour le bot Bybit.
 
     Responsabilités principales :
     - Orchestration de la construction de la watchlist
@@ -43,7 +42,7 @@ class WatchlistManager:
 
     def __init__(self, testnet: bool = True, logger=None):
         """
-        Initialise le gestionnaire de watchlist.
+        Initialise le constructeur de watchlist.
 
         Args:
             testnet (bool): Utiliser le testnet (True) ou le marché réel (False)
@@ -53,12 +52,12 @@ class WatchlistManager:
         self.logger = logger or setup_logging()
 
         # Composants
-        self.config_manager = UnifiedConfigManager()
+        self.config_manager = ConfigManager()
         self.market_data_fetcher = UnifiedDataManager(testnet=testnet, logger=self.logger)
         self.symbol_filter = SymbolFilter(logger=self.logger)
 
         # Configuration et données
-        self.config = self.config_manager.load_and_validate_config()
+        self.config = {}
         self.symbol_categories = {}
 
         # Données de la watchlist
@@ -66,13 +65,14 @@ class WatchlistManager:
         self.funding_data = {}
         self.original_funding_data = {}
 
-    def get_config(self) -> Dict:
+    def load_and_validate_config(self) -> Dict:
         """
-        Retourne la configuration actuelle.
+        Charge et valide la configuration.
 
         Returns:
-            Dict: Configuration actuelle
+            Dict: Configuration validée
         """
+        self.config = self.config_manager.load_and_validate_config()
         return self.config
 
     def set_symbol_categories(self, symbol_categories: Dict[str, str]):
@@ -490,15 +490,11 @@ class WatchlistManager:
         """
         return self.original_funding_data.copy()
 
-
-    def calculate_funding_time_remaining(self, next_funding_time) -> str:
+    def get_config(self) -> Dict:
         """
-        Retourne "Xh Ym Zs" à partir d'un timestamp Bybit (ms) ou ISO.
-
-        Args:
-            next_funding_time: Timestamp du prochain funding
+        Retourne la configuration actuelle.
 
         Returns:
-            str: Temps restant formaté ou "-" si invalide
+            Dictionnaire de configuration
         """
-        return self.symbol_filter.calculate_funding_time_remaining(next_funding_time)
+        return self.config.copy()

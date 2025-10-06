@@ -34,13 +34,13 @@ from config_unified import MAX_WORKERS_THREADPOOL
 class UnifiedDataManager:
     """
     Gestionnaire de données unifié pour le bot Bybit.
-    
+
     Responsabilités principales :
     - Récupération des données de marché (funding, spreads)
     - Stockage thread-safe des données
     - Gestion des erreurs et métriques
     - Interface pour la construction de watchlist (via WatchlistManager)
-    
+
     Cette classe fournit les données brutes nécessaires à WatchlistManager
     pour construire la watchlist selon les critères de filtrage.
     """
@@ -55,24 +55,24 @@ class UnifiedDataManager:
         """
         self.testnet = testnet
         self.logger = logger or setup_logging()
-        
+
         # Données de funding (format: {symbol: (funding, volume, funding_time, spread, volatility)})
         self.funding_data: Dict[str, Tuple[float, float, str, float, Optional[float]]] = {}
-        
+
         # Données de funding originales avec next_funding_time
         self.original_funding_data: Dict[str, str] = {}
-        
+
         # Données en temps réel via WebSocket
         # Format: {symbol: {funding_rate, volume24h, bid1, ask1, next_funding_time, ...}}
         self.realtime_data: Dict[str, Dict[str, Any]] = {}
-        
+
         # Verrous pour la synchronisation thread-safe
         self._funding_lock = threading.Lock()
         self._realtime_lock = threading.Lock()
-        
+
         # Catégories des symboles
         self.symbol_categories: Dict[str, str] = {}
-        
+
         # Listes de symboles par catégorie
         self.linear_symbols: List[str] = []
         self.inverse_symbols: List[str] = []
@@ -80,22 +80,22 @@ class UnifiedDataManager:
     def fetch_funding_map(self, base_url: str, category: str, timeout: int = 10) -> Dict[str, Dict]:
         """
         Récupère les taux de funding pour une catégorie donnée.
-        
+
         Args:
             base_url: URL de base de l'API Bybit
             category: Catégorie (linear ou inverse)
             timeout: Timeout pour les requêtes HTTP
-            
+
         Returns:
             Dict[str, Dict]: Dictionnaire {symbol: {funding, volume, next_funding_time}}
-            
+
         Raises:
             RuntimeError: En cas d'erreur HTTP ou API
         """
         funding_map = {}
         cursor = ""
         page_index = 0
-        
+
         rate_limiter = get_rate_limiter()
         while True:
             # Construire l'URL avec pagination
@@ -106,14 +106,14 @@ class UnifiedDataManager:
             }
             if cursor:
                 params["cursor"] = cursor
-                
+
             try:
                 page_index += 1
                 # Respecter le rate limit avant chaque appel
                 rate_limiter.acquire()
                 client = get_http_client(timeout=timeout)
                 response = client.get(url, params=params)
-                
+
                 # Vérifier le statut HTTP
                 if response.status_code >= 400:
                     raise RuntimeError(
@@ -122,9 +122,9 @@ class UnifiedDataManager:
                         f"collected={len(funding_map)} | status={response.status_code} "
                         f"detail=\"{response.text[:200]}\""
                     )
-                
+
                 data = response.json()
-                
+
                 # Vérifier le retCode
                 if data.get("retCode") != 0:
                     ret_code = data.get("retCode")
@@ -134,17 +134,17 @@ class UnifiedDataManager:
                         f"cursor={params.get('cursor', '-')} timeout={timeout}s page={page_index} "
                         f"collected={len(funding_map)} | retCode={ret_code} retMsg=\"{ret_msg}\""
                     )
-                
+
                 result = data.get("result", {})
                 tickers = result.get("list", [])
-                
+
                 # Extraire les funding rates, volumes et temps de funding
                 for ticker in tickers:
                     symbol = ticker.get("symbol", "")
                     funding_rate = ticker.get("fundingRate")
                     volume_24h = ticker.get("volume24h")
                     next_funding_time = ticker.get("nextFundingTime")
-                    
+
                     if symbol and funding_rate is not None:
                         try:
                             funding_map[symbol] = {
@@ -155,13 +155,13 @@ class UnifiedDataManager:
                         except (ValueError, TypeError):
                             # Ignorer si les données ne sont pas convertibles en float
                             pass
-                
+
                 # Vérifier s'il y a une page suivante
                 next_page_cursor = result.get("nextPageCursor")
                 if not next_page_cursor:
                     break
                 cursor = next_page_cursor
-                    
+
             except httpx.RequestError as e:
                 raise RuntimeError(
                     f"Erreur réseau Bybit GET {url} | category={category} limit={params.get('limit')} "
@@ -177,40 +177,40 @@ class UnifiedDataManager:
                         f"cursor={params.get('cursor', '-')} timeout={timeout}s page={page_index} "
                         f"collected={len(funding_map)} | error={e}"
                     )
-        
+
         return funding_map
 
     def fetch_spread_data(self, base_url: str, symbols: List[str], timeout: int = 10, category: str = "linear") -> Dict[str, float]:
         """
         Récupère les spreads via /v5/market/tickers paginé, puis filtre localement.
-        
+
         Args:
             base_url: URL de base de l'API Bybit
             symbols: Liste cible des symboles à retourner
             timeout: Timeout HTTP
             category: "linear" ou "inverse"
-            
+
         Returns:
             Dict[str, float]: map {symbol: spread_pct}
         """
         # Récupération paginée des spreads
         found = self._fetch_spreads_paginated(base_url, symbols, timeout, category)
-        
+
         # Fallback unitaire pour les symboles manquants
         self._fetch_missing_spreads(base_url, symbols, found, timeout, category)
-        
+
         return found
 
     def _fetch_spreads_paginated(self, base_url: str, symbols: List[str], timeout: int, category: str) -> Dict[str, float]:
         """
         Récupère les spreads via pagination de l'API.
-        
+
         Args:
             base_url: URL de base de l'API Bybit
             symbols: Liste des symboles cibles
             timeout: Timeout HTTP
             category: Catégorie des instruments
-            
+
         Returns:
             Dictionnaire {symbol: spread_pct}
         """
@@ -221,34 +221,34 @@ class UnifiedDataManager:
         cursor = ""
         page_index = 0
         rate_limiter = get_rate_limiter()
-        
+
         while True:
             page_index += 1
-            
+
             # Préparer les paramètres de la requête
             self._prepare_pagination_params(params, cursor)
-            
+
             try:
                 # Effectuer la requête paginée
                 result = self._make_paginated_request(url, params, timeout, page_index, category, rate_limiter)
                 tickers = result.get("list", [])
-                
+
                 # Traiter les tickers de cette page
                 self._process_tickers_for_spreads(tickers, wanted, found)
-                
+
                 # Vérifier si on doit continuer la pagination
                 if not self._should_continue_pagination(found, wanted, tickers):
                     break
-                    
+
                 # Préparer la page suivante
                 cursor = result.get("nextPageCursor")
                 if not cursor:
                     break
-                    
+
             except Exception as e:
                 self._handle_pagination_error(e, page_index, category)
                 break
-        
+
         return found
 
     def _prepare_pagination_params(self, params: dict, cursor: str):
@@ -263,7 +263,7 @@ class UnifiedDataManager:
         rate_limiter.acquire()
         client = get_http_client(timeout=timeout)
         resp = client.get(url, params=params)
-        
+
         # Vérifier le statut HTTP
         if resp.status_code >= 400:
             raise RuntimeError(
@@ -271,14 +271,14 @@ class UnifiedDataManager:
                 f"limit={params.get('limit')} cursor={params.get('cursor','-')} status={resp.status_code} "
                 f"detail=\"{resp.text[:200]}\""
             )
-        
+
         data = resp.json()
         if data.get("retCode") != 0:
             raise RuntimeError(
                 f"Erreur API Bybit GET {url} | category={category} page={page_index} "
                 f"retCode={data.get('retCode')} retMsg=\"{data.get('retMsg','')}\""
             )
-        
+
         return data.get("result", {})
 
     def _process_tickers_for_spreads(self, tickers: list, wanted: set, found: Dict[str, float]):
@@ -294,7 +294,7 @@ class UnifiedDataManager:
         """Calcule le spread en pourcentage à partir d'un ticker."""
         bid1 = ticker.get("bid1Price")
         ask1 = ticker.get("ask1Price")
-        
+
         try:
             if bid1 is not None and ask1 is not None:
                 b = float(bid1)
@@ -306,7 +306,7 @@ class UnifiedDataManager:
         except (ValueError, TypeError):
             # Erreur de conversion numérique - ignorer silencieusement
             pass
-        
+
         return None
 
     def _should_continue_pagination(self, found: Dict[str, float], wanted: set, tickers: list) -> bool:
@@ -314,7 +314,7 @@ class UnifiedDataManager:
         # Arrêt anticipé si on a tout trouvé
         if len(found) >= len(wanted):
             return False
-        
+
         # Continuer si on a des tickers
         return len(tickers) > 0
 
@@ -350,20 +350,20 @@ class UnifiedDataManager:
         try:
             url = f"{base_url}/v5/market/tickers"
             params = {"category": category, "symbol": symbol}
-            
+
             rate_limiter = get_rate_limiter()
             rate_limiter.acquire()
             client = get_http_client(timeout=timeout)
             response = client.get(url, params=params)
-            
+
             if response.status_code >= 400:
                 raise RuntimeError(
                     f"Erreur HTTP Bybit GET {url} | category={category} symbol={symbol} "
                     f"timeout={timeout}s status={response.status_code} detail=\"{response.text[:200]}\""
                 )
-            
+
             data = response.json()
-            
+
             if data.get("retCode") != 0:
                 ret_code = data.get("retCode")
                 ret_msg = data.get("retMsg", "")
@@ -371,58 +371,58 @@ class UnifiedDataManager:
                     f"Erreur API Bybit GET {url} | category={category} symbol={symbol} "
                     f"timeout={timeout}s retCode={ret_code} retMsg=\"{ret_msg}\""
                 )
-            
+
             result = data.get("result", {})
             tickers = result.get("list", [])
-            
+
             if not tickers:
                 return None
-            
+
             ticker = tickers[0]
             bid1_price = ticker.get("bid1Price")
             ask1_price = ticker.get("ask1Price")
-            
+
             if bid1_price is not None and ask1_price is not None:
                 try:
                     bid1 = float(bid1_price)
                     ask1 = float(ask1_price)
-                    
+
                     if bid1 > 0 and ask1 > 0:
                         spread_pct = (ask1 - bid1) / ((ask1 + bid1) / 2)
                         return spread_pct
                 except (ValueError, TypeError, ZeroDivisionError):
                     pass
-            
+
             return None
-            
+
         except Exception:
             return None
 
     def fetch_funding_data_parallel(self, base_url: str, categories: List[str], timeout: int = 10) -> Dict[str, Dict]:
         """
         Récupère les données de funding pour plusieurs catégories en parallèle.
-        
+
         Args:
             base_url: URL de base de l'API Bybit
             categories: Liste des catégories à récupérer
             timeout: Timeout pour les requêtes HTTP
-            
+
         Returns:
             Dict[str, Dict]: Dictionnaire combiné de toutes les catégories
         """
         if len(categories) == 1:
             return self.fetch_funding_map(base_url, categories[0], timeout)
-        
+
         funding_map = {}
-        
+
         # Paralléliser les requêtes
         with ThreadPoolExecutor(max_workers=MAX_WORKERS_THREADPOOL) as executor:
             # Lancer les requêtes en parallèle
             futures = {
-                executor.submit(self.fetch_funding_map, base_url, category, timeout): category 
+                executor.submit(self.fetch_funding_map, base_url, category, timeout): category
                 for category in categories
             }
-            
+
             # Récupérer les résultats
             for future in futures:
                 category = futures[future]
@@ -432,54 +432,54 @@ class UnifiedDataManager:
                 except Exception as e:
                     self.logger.error(f"Erreur récupération funding pour {category}: {e}")
                     raise
-        
+
         return funding_map
 
     def load_watchlist_data(
-        self, 
-        base_url: str, 
-        perp_data: Dict, 
+        self,
+        base_url: str,
+        perp_data: Dict,
         watchlist_manager,
         volatility_tracker: VolatilityTracker
     ) -> bool:
         """
         Interface pour charger les données de la watchlist via WatchlistManager.
-        
+
         Cette méthode délègue la construction de la watchlist à WatchlistManager
         et stocke les résultats dans ce gestionnaire pour utilisation ultérieure.
-        
+
         Args:
             base_url: URL de base de l'API
             perp_data: Données des perpétuels
             watchlist_manager: Gestionnaire de watchlist (WatchlistManager)
             volatility_tracker: Tracker de volatilité
-            
+
         Returns:
             bool: True si le chargement a réussi
         """
         try:
             self.logger.info("📊 Chargement des données de la watchlist...")
-            
+
             # Construire la watchlist via le gestionnaire
             linear_symbols, inverse_symbols, funding_data = watchlist_manager.build_watchlist(
                 base_url, perp_data, volatility_tracker
             )
-            
+
             if not linear_symbols and not inverse_symbols:
                 self.logger.warning("⚠️ Aucun symbole trouvé pour la watchlist")
                 return False
-            
+
             # Mettre à jour les listes de symboles
             self.set_symbol_lists(linear_symbols, inverse_symbols)
-            
+
             # Mettre à jour les données de funding
             self._update_funding_data_in_manager(funding_data, self)
-            
+
             # Mettre à jour les données originales
             self._update_original_funding_data(watchlist_manager, self)
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Erreur chargement watchlist: {e}")
             return False
@@ -512,7 +512,7 @@ class UnifiedDataManager:
     def validate_data_integrity(self) -> bool:
         """
         Valide l'intégrité des données chargées.
-        
+
         Returns:
             bool: True si les données sont valides
         """
@@ -520,20 +520,20 @@ class UnifiedDataManager:
             # Vérifier que les listes de symboles ne sont pas vides
             linear_symbols = self.get_linear_symbols()
             inverse_symbols = self.get_inverse_symbols()
-            
+
             if not linear_symbols and not inverse_symbols:
                 self.logger.warning("⚠️ Aucun symbole dans les listes")
                 return False
-            
+
             # Vérifier que les données de funding sont présentes
             funding_data = self.get_all_funding_data()
             if not funding_data:
                 self.logger.warning("⚠️ Aucune donnée de funding")
                 return False
-            
+
             self.logger.info(f"✅ Intégrité des données validée: {len(linear_symbols)} linear, {len(inverse_symbols)} inverse")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Erreur validation intégrité: {e}")
             return False
@@ -541,7 +541,7 @@ class UnifiedDataManager:
     def get_loading_summary(self) -> Dict[str, Any]:
         """
         Retourne un résumé du chargement des données.
-        
+
         Returns:
             Dict[str, Any]: Résumé des données chargées
         """
@@ -549,7 +549,7 @@ class UnifiedDataManager:
             linear_symbols = self.get_linear_symbols()
             inverse_symbols = self.get_inverse_symbols()
             funding_data = self.get_all_funding_data()
-            
+
             return {
                 'linear_count': len(linear_symbols),
                 'inverse_count': len(inverse_symbols),
@@ -558,7 +558,7 @@ class UnifiedDataManager:
                 'linear_symbols': linear_symbols[:5],  # Premiers 5 pour debug
                 'inverse_symbols': inverse_symbols[:5]  # Premiers 5 pour debug
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Erreur résumé chargement: {e}")
             return {
@@ -568,23 +568,23 @@ class UnifiedDataManager:
                 'funding_data_count': 0,
                 'error': str(e)
             }
-    
+
     # ===== MÉTHODES DE STOCKAGE DE DONNÉES (intégrées de DataManager) =====
-    
+
     def set_symbol_categories(self, symbol_categories: Dict[str, str]):
         """
         Définit le mapping des catégories de symboles.
-        
+
         Args:
             symbol_categories: Dictionnaire {symbol: category}
         """
         self.symbol_categories = symbol_categories
-    
-    def update_funding_data(self, symbol: str, funding: float, volume: float, 
+
+    def update_funding_data(self, symbol: str, funding: float, volume: float,
                            funding_time: str, spread: float, volatility: Optional[float] = None):
         """
         Met à jour les données de funding pour un symbole.
-        
+
         Args:
             symbol: Symbole à mettre à jour
             funding: Taux de funding
@@ -595,41 +595,41 @@ class UnifiedDataManager:
         """
         with self._funding_lock:
             self.funding_data[symbol] = (funding, volume, funding_time, spread, volatility)
-    
+
     def get_funding_data(self, symbol: str) -> Optional[Tuple[float, float, str, float, Optional[float]]]:
         """
         Récupère les données de funding pour un symbole.
-        
+
         Args:
             symbol: Symbole à récupérer
-            
+
         Returns:
             Tuple des données de funding ou None si absent
         """
         with self._funding_lock:
             return self.funding_data.get(symbol)
-    
+
     def get_all_funding_data(self) -> Dict[str, Tuple[float, float, str, float, Optional[float]]]:
         """
         Récupère toutes les données de funding.
-        
+
         Returns:
             Dictionnaire des données de funding
         """
         with self._funding_lock:
             return self.funding_data.copy()
-    
+
     def update_realtime_data(self, symbol: str, ticker_data: Dict[str, Any]):
         """
         Met à jour les données en temps réel pour un symbole.
-        
+
         Args:
             symbol: Symbole à mettre à jour
             ticker_data: Données du ticker reçues via WebSocket
         """
         if not symbol:
             return
-        
+
         try:
             # Construire un diff et fusionner avec l'état précédent
             now_ts = time.time()
@@ -642,13 +642,13 @@ class UnifiedDataManager:
                 'mark_price': ticker_data.get('markPrice'),
                 'last_price': ticker_data.get('lastPrice'),
             }
-            
+
             # Vérifier si des données importantes sont présentes
             important_keys = [
-                'funding_rate', 'volume24h', 'bid1_price', 
+                'funding_rate', 'volume24h', 'bid1_price',
                 'ask1_price', 'next_funding_time', 'mark_price', 'last_price'
             ]
-            
+
             if any(incoming[key] is not None for key in important_keys):
                 with self._realtime_lock:
                     current = self.realtime_data.get(symbol, {})
@@ -658,14 +658,14 @@ class UnifiedDataManager:
                             merged[k] = v
                     merged['timestamp'] = now_ts
                     self.realtime_data[symbol] = merged
-                    
+
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur mise à jour données temps réel pour {symbol}: {e}")
-    
+
     def update_price_data(self, symbol: str, mark_price: float, last_price: float, timestamp: float):
         """
         Met à jour les prix pour un symbole donné (compatibilité avec price_store.py).
-        
+
         Args:
             symbol: Symbole du contrat (ex: BTCUSDT)
             mark_price: Prix de marque
@@ -674,7 +674,7 @@ class UnifiedDataManager:
         """
         if not symbol:
             return
-            
+
         try:
             ticker_data = {
                 'markPrice': mark_price,
@@ -684,14 +684,14 @@ class UnifiedDataManager:
             self.update_realtime_data(symbol, ticker_data)
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur mise à jour prix pour {symbol}: {e}")
-    
+
     def get_price_data(self, symbol: str) -> Optional[Dict[str, float]]:
         """
         Récupère les données de prix pour un symbole (compatibilité avec price_store.py).
-        
+
         Args:
             symbol: Symbole du contrat
-            
+
         Returns:
             Dictionnaire avec mark_price, last_price, timestamp ou None
         """
@@ -699,7 +699,7 @@ class UnifiedDataManager:
             realtime_data = self.get_realtime_data(symbol)
             if not realtime_data:
                 return None
-                
+
             return {
                 "mark_price": realtime_data.get('mark_price'),
                 "last_price": realtime_data.get('last_price'),
@@ -708,106 +708,106 @@ class UnifiedDataManager:
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur récupération prix pour {symbol}: {e}")
             return None
-    
+
     def get_realtime_data(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Récupère les données en temps réel pour un symbole.
-        
+
         Args:
             symbol: Symbole à récupérer
-            
+
         Returns:
             Dictionnaire des données temps réel ou None si absent
         """
         with self._realtime_lock:
             return self.realtime_data.get(symbol)
-    
+
     def get_all_realtime_data(self) -> Dict[str, Dict[str, Any]]:
         """
         Récupère toutes les données en temps réel.
-        
+
         Returns:
             Dictionnaire des données temps réel
         """
         with self._realtime_lock:
             return self.realtime_data.copy()
-    
+
     def update_original_funding_data(self, symbol: str, next_funding_time: str):
         """
         Met à jour les données de funding originales.
-        
+
         Args:
             symbol: Symbole à mettre à jour
             next_funding_time: Timestamp du prochain funding
         """
         with self._funding_lock:
             self.original_funding_data[symbol] = next_funding_time
-    
+
     def get_original_funding_data(self, symbol: str) -> Optional[str]:
         """
         Récupère les données de funding originales pour un symbole.
-        
+
         Args:
             symbol: Symbole à récupérer
-            
+
         Returns:
             Timestamp du prochain funding ou None si absent
         """
         with self._funding_lock:
             return self.original_funding_data.get(symbol)
-    
+
     def get_all_original_funding_data(self) -> Dict[str, str]:
         """
         Récupère toutes les données de funding originales.
-        
+
         Returns:
             Dictionnaire des données de funding originales
         """
         with self._funding_lock:
             return self.original_funding_data.copy()
-    
+
     def set_symbol_lists(self, linear_symbols: List[str], inverse_symbols: List[str]):
         """
         Définit les listes de symboles par catégorie.
-        
+
         Args:
             linear_symbols: Liste des symboles linear
             inverse_symbols: Liste des symboles inverse
         """
         self.linear_symbols = linear_symbols.copy()
         self.inverse_symbols = inverse_symbols.copy()
-    
+
     def get_linear_symbols(self) -> List[str]:
         """
         Récupère la liste des symboles linear.
-        
+
         Returns:
             Liste des symboles linear
         """
         return self.linear_symbols.copy()
-    
+
     def get_inverse_symbols(self) -> List[str]:
         """
         Récupère la liste des symboles inverse.
-        
+
         Returns:
             Liste des symboles inverse
         """
         return self.inverse_symbols.copy()
-    
+
     def get_all_symbols(self) -> List[str]:
         """
         Récupère tous les symboles (linear + inverse).
-        
+
         Returns:
             Liste de tous les symboles
         """
         return self.linear_symbols + self.inverse_symbols
-    
+
     def add_symbol_to_category(self, symbol: str, category: str):
         """
         Ajoute un symbole à une catégorie.
-        
+
         Args:
             symbol: Symbole à ajouter
             category: Catégorie ("linear" ou "inverse")
@@ -816,11 +816,11 @@ class UnifiedDataManager:
             self.linear_symbols.append(symbol)
         elif category == "inverse" and symbol not in self.inverse_symbols:
             self.inverse_symbols.append(symbol)
-    
+
     def remove_symbol_from_category(self, symbol: str, category: str):
         """
         Retire un symbole d'une catégorie.
-        
+
         Args:
             symbol: Symbole à retirer
             category: Catégorie ("linear" ou "inverse")
@@ -829,7 +829,7 @@ class UnifiedDataManager:
             self.linear_symbols.remove(symbol)
         elif category == "inverse" and symbol in self.inverse_symbols:
             self.inverse_symbols.remove(symbol)
-    
+
     def clear_all_data(self):
         """
         Vide toutes les données stockées.
@@ -837,27 +837,27 @@ class UnifiedDataManager:
         with self._funding_lock:
             self.funding_data.clear()
             self.original_funding_data.clear()
-        
+
         with self._realtime_lock:
             self.realtime_data.clear()
-        
+
         self.linear_symbols.clear()
         self.inverse_symbols.clear()
-    
+
     def get_data_stats(self) -> Dict[str, int]:
         """
         Retourne les statistiques des données stockées.
-        
+
         Returns:
             Dictionnaire avec les statistiques
         """
         with self._funding_lock:
             funding_count = len(self.funding_data)
             original_count = len(self.original_funding_data)
-        
+
         with self._realtime_lock:
             realtime_count = len(self.realtime_data)
-        
+
         return {
             "funding_data": funding_count,
             "original_funding_data": original_count,
@@ -874,7 +874,7 @@ _global_data_manager: Optional[UnifiedDataManager] = None
 def _get_global_data_manager() -> UnifiedDataManager:
     """
     Récupère l'instance globale du gestionnaire de données.
-    
+
     Returns:
         Instance du UnifiedDataManager
     """
@@ -887,7 +887,7 @@ def _get_global_data_manager() -> UnifiedDataManager:
 def set_global_data_manager(data_manager: UnifiedDataManager):
     """
     Définit l'instance globale du gestionnaire de données.
-    
+
     Args:
         data_manager: Instance du UnifiedDataManager
     """
@@ -898,7 +898,7 @@ def set_global_data_manager(data_manager: UnifiedDataManager):
 def update(symbol: str, mark_price: float, last_price: float, timestamp: float) -> None:
     """
     Met à jour les prix pour un symbole donné (compatibilité avec price_store.py).
-    
+
     Args:
         symbol (str): Symbole du contrat (ex: BTCUSDT)
         mark_price (float): Prix de marque
@@ -912,10 +912,10 @@ def update(symbol: str, mark_price: float, last_price: float, timestamp: float) 
 def get_price_data(symbol: str) -> Optional[Dict[str, float]]:
     """
     Récupère les données de prix pour un symbole (compatibilité avec price_store.py).
-    
+
     Args:
         symbol (str): Symbole du contrat
-        
+
     Returns:
         Dictionnaire avec mark_price, last_price, timestamp ou None
     """

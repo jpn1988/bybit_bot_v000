@@ -18,24 +18,24 @@ from instruments import category_of_symbol
 class OpportunityManager:
     """
     Gestionnaire d'opportunités pour le bot Bybit.
-    
+
     Responsabilités :
     - Détection de nouvelles opportunités
     - Intégration des opportunités dans la watchlist
     - Gestion des symboles candidats
     """
-    
+
     def __init__(self, data_manager: UnifiedDataManager, logger=None):
         """
         Initialise le gestionnaire d'opportunités.
-        
+
         Args:
             data_manager: Gestionnaire de données
             logger: Logger pour les messages (optionnel)
         """
         self.data_manager = data_manager
         self.logger = logger or setup_logging()
-    
+
     def on_new_opportunity(
         self,
         linear_symbols: List[str],
@@ -45,7 +45,7 @@ class OpportunityManager:
     ):
         """
         Callback appelé lors de nouvelles opportunités détectées.
-        
+
         Args:
             linear_symbols: Nouveaux symboles linear
             inverse_symbols: Nouveaux symboles inverse
@@ -61,10 +61,10 @@ class OpportunityManager:
                     f"{len(linear_symbols)} linear, {len(inverse_symbols)} inverse "
                     f"(WebSocket déjà actif)"
                 )
-                # Pas besoin de faire quoi que ce soit d'autre - 
+                # Pas besoin de faire quoi que ce soit d'autre -
                 # le WebSocket gère déjà les données
             else:
-                # Démarrer les connexions WebSocket pour les nouvelles 
+                # Démarrer les connexions WebSocket pour les nouvelles
                 # opportunités
                 import asyncio
                 try:
@@ -93,7 +93,7 @@ class OpportunityManager:
             self.logger.warning(
                 f"⚠️ Erreur intégration nouvelles opportunités: {e}"
             )
-    
+
     def on_candidate_ticker(
         self,
         symbol: str,
@@ -102,7 +102,7 @@ class OpportunityManager:
     ):
         """
         Callback appelé pour les tickers des candidats.
-        
+
         Args:
             symbol: Symbole candidat
             ticker_data: Données du ticker
@@ -113,7 +113,7 @@ class OpportunityManager:
             self._add_symbol_to_main_watchlist(symbol, ticker_data, watchlist_manager)
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur traitement candidat {symbol}: {e}")
-    
+
     def _add_symbol_to_main_watchlist(
         self,
         symbol: str,
@@ -122,7 +122,7 @@ class OpportunityManager:
     ):
         """
         Ajoute un symbole à la watchlist principale.
-        
+
         Args:
             symbol: Symbole à ajouter
             ticker_data: Données du ticker
@@ -132,17 +132,17 @@ class OpportunityManager:
             # Vérifier que le symbole n'est pas déjà dans la watchlist
             if self.data_manager.get_funding_data(symbol):
                 return  # Déjà présent
-            
+
             # Construire les données du symbole
             funding_rate = ticker_data.get("fundingRate")
             volume24h = ticker_data.get("volume24h")
             next_funding_time = ticker_data.get("nextFundingTime")
-            
+
             if funding_rate is not None:
                 funding = float(funding_rate)
                 volume = float(volume24h) if volume24h is not None else 0.0
                 funding_time_remaining = watchlist_manager.calculate_funding_time_remaining(next_funding_time)
-                
+
                 # Calculer le spread si disponible
                 spread_pct = 0.0
                 bid1_price = ticker_data.get("bid1Price")
@@ -157,19 +157,19 @@ class OpportunityManager:
                                 spread_pct = (ask - bid) / mid
                     except (ValueError, TypeError):
                         pass
-                
+
                 # Ajouter à la watchlist via le DataManager
                 self.data_manager.update_funding_data(symbol, funding, volume, funding_time_remaining, spread_pct, None)
-                
+
                 # Ajouter aux listes par catégorie
                 category = category_of_symbol(symbol, self.data_manager.symbol_categories)
                 self.data_manager.add_symbol_to_category(symbol, category)
-                
+
                 # Mettre à jour les données originales
                 if next_funding_time:
                     self.data_manager.update_original_funding_data(symbol, next_funding_time)
-                
+
                 self.logger.info(f"✅ Symbole {symbol} ajouté à la watchlist principale")
-                
+
         except Exception as e:
             self.logger.error(f"❌ Erreur ajout symbole {symbol}: {e}")

@@ -15,7 +15,7 @@ import time
 import threading
 import asyncio
 import gc
-from typing import Optional, List
+from typing import List
 try:
     from .logging_setup import setup_logging
 except ImportError:
@@ -25,30 +25,30 @@ except ImportError:
 class ThreadManager:
     """
     Gestionnaire de threads pour le bot Bybit.
-    
+
     Responsabilités :
     - Arrêt forcé des threads récalcitrants
     - Gestion des threads asyncio
     - Nettoyage des threads de monitoring
     - Interruption des threads avec ctypes
     """
-    
+
     def __init__(self, logger=None):
         """
         Initialise le gestionnaire de threads.
-        
+
         Args:
             logger: Logger pour les messages (optionnel)
         """
         self.logger = logger or setup_logging()
-    
+
     def force_stop_stubborn_threads(self):
         """
         Force l'arrêt des threads qui ne se sont pas arrêtés.
         """
         # Attendre plus longtemps pour que les threads se terminent
         time.sleep(0.5)
-        
+
         # Forcer l'arrêt des threads qui ne se sont pas arrêtés
         for thread in threading.enumerate():
             if thread != threading.current_thread() and thread.is_alive():
@@ -61,35 +61,35 @@ class ThreadManager:
                         thread._running = False
                     if hasattr(thread, 'running'):
                         thread.running = False
-                except:
+                except Exception:
                     pass
-        
+
         # Attendre un peu plus pour que les threads se terminent
         time.sleep(0.2)
-        
+
         # Forcer le nettoyage des ressources système
         try:
             gc.collect()
-        except:
+        except Exception:
             pass
-        
+
         # Nettoyer les buffers de sortie pour libérer le terminal
         try:
             sys.stdout.flush()
             sys.stderr.flush()
-        except:
+        except Exception:
             pass
-        
+
         # Forcer l'arrêt de l'event loop asyncio si nécessaire
         self._stop_asyncio_event_loop()
-        
+
         # Si des threads sont encore actifs, essayer un arrêt plus propre
         time.sleep(0.3)
         active_threads = [t for t in threading.enumerate() if t != threading.current_thread() and t.is_alive()]
         if active_threads:
             self.logger.warning(f"⚠️ {len(active_threads)} threads encore actifs, tentative d'arrêt propre...")
             self._stop_active_threads_properly(active_threads)
-    
+
     def _stop_asyncio_event_loop(self):
         """
         Arrête l'event loop asyncio si nécessaire.
@@ -98,44 +98,44 @@ class ThreadManager:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 self.logger.warning("⚠️ Event loop asyncio encore actif, arrêt forcé...")
-                
+
                 # Annuler toutes les tâches d'abord
                 try:
                     tasks = asyncio.all_tasks(loop)
                     for task in tasks:
                         if not task.done():
                             task.cancel()
-                    
+
                     # Ne pas essayer d'exécuter des coroutines dans un event loop déjà en cours
                     # Juste annuler les tâches et arrêter l'event loop
                     self.logger.debug(f"✅ {len(tasks)} tâches asyncio annulées")
-                    
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Erreur annulation tâches asyncio: {e}")
-                
+
                 # Arrêter l'event loop directement
                 try:
                     loop.stop()
                     self.logger.debug("✅ Event loop asyncio arrêté")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Erreur arrêt event loop: {e}")
-                
+
                 # Attendre un peu pour que l'arrêt se propage
                 time.sleep(0.2)
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur arrêt event loop asyncio: {e}")
-    
+
     def _stop_active_threads_properly(self, active_threads: List[threading.Thread]):
         """
         Arrête les threads actifs de manière plus propre.
-        
+
         Args:
             active_threads: Liste des threads actifs
         """
         # Identifier et logger les threads récalcitrants
         for i, thread in enumerate(active_threads):
             self.logger.warning(f"  Thread {i+1}: {thread.name} (daemon={thread.daemon})")
-        
+
         # Essayer d'arrêter les threads de manière plus propre
         for thread in active_threads:
             try:
@@ -145,22 +145,22 @@ class ThreadManager:
                     thread._running = False
                 if hasattr(thread, 'running'):
                     thread.running = False
-            except:
+            except Exception:
                 pass
-        
+
         # Attendre un peu plus pour que les threads se terminent
         time.sleep(0.5)
-        
+
         # Vérifier si des threads sont encore actifs
         remaining_threads = [t for t in threading.enumerate() if t != threading.current_thread() and t.is_alive()]
         if remaining_threads:
             self.logger.warning(f"⚠️ {len(remaining_threads)} threads récalcitrants, tentative d'arrêt forcé...")
             self._stop_threads_aggressively(remaining_threads)
-    
+
     def _stop_threads_aggressively(self, remaining_threads: List[threading.Thread]):
         """
         Arrête les threads de manière plus agressive.
-        
+
         Args:
             remaining_threads: Liste des threads restants
         """
@@ -197,26 +197,26 @@ class ThreadManager:
                 elif 'loguru' in thread.name:
                     # Thread logging - laisser se terminer naturellement
                     self.logger.warning(f"  Thread logging détecté: {thread.name}")
-                
+
                 # Marquer comme arrêté
                 if hasattr(thread, '_running'):
                     thread._running = False
                 if hasattr(thread, 'running'):
                     thread.running = False
-                
+
                 # Essayer de marquer comme daemon seulement si possible
                 try:
                     if not thread.is_alive():
                         thread.daemon = True
-                except:
+                except Exception:
                     # Ignorer l'erreur si on ne peut pas modifier le statut daemon
                     pass
-            except:
+            except Exception:
                 pass
-        
+
         # Attendre un peu plus
         time.sleep(0.3)
-        
+
         # Vérifier à nouveau
         final_threads = [t for t in threading.enumerate() if t != threading.current_thread() and t.is_alive()]
         if final_threads:
@@ -224,11 +224,11 @@ class ThreadManager:
             self._stop_threads_radically(final_threads)
         else:
             self.logger.info("✅ Tous les threads arrêtés après tentative forcée")
-    
+
     def _stop_threads_radically(self, final_threads: List[threading.Thread]):
         """
         Arrête les threads de manière radicale.
-        
+
         Args:
             final_threads: Liste des threads finaux
         """
@@ -248,12 +248,12 @@ class ThreadManager:
                 # Forcer l'arrêt du thread
                 if hasattr(thread, '_tstate_lock'):
                     thread._tstate_lock = None
-            except:
+            except Exception:
                 pass
-        
+
         # Attendre un peu plus
         time.sleep(0.2)
-        
+
         # Vérifier une dernière fois
         ultimate_threads = [t for t in threading.enumerate() if t != threading.current_thread() and t.is_alive()]
         if ultimate_threads:
@@ -261,11 +261,11 @@ class ThreadManager:
             self._stop_ultimate_threads(ultimate_threads)
         else:
             self.logger.info("✅ Tous les threads arrêtés après solution radicale")
-    
+
     def _stop_ultimate_threads(self, ultimate_threads: List[threading.Thread]):
         """
         Arrête les threads ultimes avec arrêt forcé du processus.
-        
+
         Args:
             ultimate_threads: Liste des threads ultimes
         """
@@ -286,43 +286,43 @@ class ThreadManager:
                 else:
                     # Autres threads - forcer l'interruption
                     self.logger.warning(f"Forçage arrêt thread: {thread.name}")
-                
+
                 # Essayer de marquer comme daemon seulement si le thread n'est pas encore actif
                 try:
                     if not thread.is_alive():
                         thread.daemon = True
-                except:
+                except Exception:
                     # Ignorer l'erreur si on ne peut pas modifier le statut daemon
                     pass
-                
+
                 # Forcer l'interruption du thread avec plusieurs méthodes
                 self._interrupt_thread(thread, SystemExit)
                 self._interrupt_thread(thread, KeyboardInterrupt)
-                
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur interruption thread {thread.name}: {e}")
-        
+
         # Attendre un peu pour voir si les threads se terminent
         time.sleep(0.5)
-        
+
         # Vérifier une dernière fois
         final_threads = [t for t in threading.enumerate() if t != threading.current_thread() and t.is_alive()]
         if final_threads:
             self.logger.warning(f"⚠️ {len(final_threads)} threads toujours actifs, arrêt forcé du processus")
-            
+
             # Identifier les threads qui persistent
             for thread in final_threads:
                 self.logger.warning(f"  Thread persistant: {thread.name} (daemon={thread.daemon})")
-            
+
             # Arrêt forcé du processus avec plusieurs méthodes
             self._force_process_exit()
         else:
             self.logger.info("✅ Tous les threads arrêtés après solution radicale")
-    
+
     def _interrupt_thread(self, thread: threading.Thread, exception_type):
         """
         Interrompt un thread avec une exception.
-        
+
         Args:
             thread: Thread à interrompre
             exception_type: Type d'exception à lever
@@ -330,12 +330,12 @@ class ThreadManager:
         try:
             import ctypes
             ctypes.pythonapi.PyThreadState_SetAsyncExc(
-                ctypes.c_long(thread.ident), 
+                ctypes.c_long(thread.ident),
                 ctypes.py_object(exception_type)
             )
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur {exception_type.__name__} pour {thread.name}: {e}")
-    
+
     def _force_process_exit(self):
         """
         Force l'arrêt du processus avec plusieurs méthodes.
@@ -355,15 +355,15 @@ class ThreadManager:
                 # Dernière tentative avec exit()
                 try:
                     exit(0)
-                except:
+                except Exception:
                     # Si tout échoue, forcer l'arrêt avec le système
                     import subprocess
                     subprocess.run(['taskkill', '/F', '/PID', str(os.getpid())], shell=True)
-    
+
     def stop_specific_threads(self, managers: dict):
         """
         Arrête spécifiquement les threads connus pour causer des problèmes.
-        
+
         Args:
             managers: Dictionnaire des managers
         """
@@ -382,7 +382,7 @@ class ThreadManager:
                         if thread.is_alive():
                             thread.daemon = True
                             self.logger.debug("✅ Thread volatilité arrêté proprement")
-            
+
             # Arrêter le thread de monitoring de manière plus propre
             monitoring_manager = managers.get('monitoring_manager')
             if monitoring_manager:
@@ -390,14 +390,14 @@ class ThreadManager:
                     try:
                         monitoring_manager.stop_continuous_monitoring()
                         self.logger.debug("✅ Thread monitoring arrêté proprement")
-                    except:
+                    except Exception:
                         pass
                 elif hasattr(monitoring_manager, '_candidate_ws_thread'):
                     thread = monitoring_manager._candidate_ws_thread
                     if thread and thread.is_alive():
                         thread.daemon = True
                         self.logger.debug("✅ Thread monitoring forcé à s'arrêter")
-            
+
             # Arrêter le thread de métriques de manière plus propre
             metrics_monitor = managers.get('metrics_monitor')
             if metrics_monitor and hasattr(metrics_monitor, 'monitor_thread'):
@@ -407,26 +407,26 @@ class ThreadManager:
                     if hasattr(metrics_monitor, 'stop_monitoring'):
                         try:
                             metrics_monitor.stop_monitoring()
-                        except:
+                        except Exception:
                             pass
                     # Si toujours actif, forcer l'arrêt
                     if thread.is_alive():
                         thread.daemon = True
                         self.logger.debug("✅ Thread métriques arrêté proprement")
-                    
+
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur arrêt threads spécifiques: {e}")
-    
+
     def stop_all_managers(self, managers: dict):
         """
         DEPRECATED: Cette méthode est dépréciée.
         Utilisez ShutdownManager.stop_all_managers_async() à la place.
-        
+
         Args:
             managers: Dictionnaire des managers
         """
         self.logger.warning("⚠️ ThreadManager.stop_all_managers() est dépréciée. Utilisez ShutdownManager à la place.")
-        
+
         # Arrêt simple sans nettoyage complexe - délégation à ShutdownManager
         try:
             # Juste marquer les managers comme arrêtés (logique simplifiée)
@@ -440,11 +440,11 @@ class ThreadManager:
                 managers['volatility_tracker']._running = False
             if managers.get('metrics_monitor'):
                 managers['metrics_monitor'].running = False
-                
+
             self.logger.debug("✅ Managers marqués comme arrêtés (délégation à ShutdownManager)")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur arrêt managers simplifié: {e}")
-        
+
         # Attendre un peu pour que les threads se terminent
         time.sleep(0.5)

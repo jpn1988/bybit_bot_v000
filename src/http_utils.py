@@ -44,5 +44,3 @@ def get_rate_limiter() -> RateLimiter:
         max_calls = 5
         window = 1.0
     return RateLimiter(max_calls=max_calls, window_seconds=window)
-
-

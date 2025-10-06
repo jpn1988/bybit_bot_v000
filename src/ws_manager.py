@@ -166,7 +166,7 @@ class WebSocketManager:
     async def _run_websocket_connection(self, conn: PublicWSClient):
         """
         Exécute une connexion WebSocket de manière asynchrone.
-        
+
         Args:
             conn: Connexion WebSocket à exécuter
         """
@@ -226,7 +226,7 @@ class WebSocketManager:
                     except Exception:
                         pass
             self._ws_conns.clear()
-            
+
             # Nettoyer les tâches asynchrones
             for task in self._ws_tasks:
                 if not task.done():
@@ -235,11 +235,11 @@ class WebSocketManager:
                     except Exception:
                         pass
             self._ws_tasks.clear()
-            
+
             # Nettoyer les listes de symboles
             self.linear_symbols.clear()
             self.inverse_symbols.clear()
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur nettoyage WebSocket: {e}")
 
