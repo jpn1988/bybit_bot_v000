@@ -18,7 +18,7 @@ Responsabilités principales :
 
 from typing import List, Tuple, Dict, Optional
 from logging_setup import setup_logging
-from config_manager import ConfigManager
+from config import UnifiedConfigManager
 from unified_data_manager import UnifiedDataManager
 from filters.symbol_filter import SymbolFilter
 from volatility_tracker import VolatilityTracker
@@ -53,7 +53,7 @@ class WatchlistManager:
         self.logger = logger or setup_logging()
 
         # Composants
-        self.config_manager = ConfigManager()
+        self.config_manager = UnifiedConfigManager()
         self.market_data_fetcher = UnifiedDataManager(testnet=testnet, logger=self.logger)
         self.symbol_filter = SymbolFilter(logger=self.logger)
 
@@ -491,14 +491,6 @@ class WatchlistManager:
         """
         return self.original_funding_data.copy()
 
-    def get_config(self) -> Dict:
-        """
-        Retourne la configuration actuelle.
-
-        Returns:
-            Dictionnaire de configuration
-        """
-        return self.config.copy()
 
     def calculate_funding_time_remaining(self, next_funding_time) -> str:
         """

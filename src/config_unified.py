@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-Gestionnaire de configuration pour le bot Bybit.
+Module de configuration unifié pour le bot Bybit.
 
-Cette classe gère uniquement :
-- Le chargement de la configuration depuis YAML et variables d'environnement
-- La validation des paramètres de configuration
+Ce module consolide :
+- Le chargement des variables d'environnement (.env)
+- Le chargement de la configuration YAML
+- La validation des paramètres
 - Les constantes et limites du système
+
+HIÉRARCHIE DE PRIORITÉ :
+1. Variables d'environnement (.env) - PRIORITÉ MAXIMALE
+2. Fichier YAML (parameters.yaml) - PRIORITÉ MOYENNE  
+3. Valeurs par défaut - PRIORITÉ MINIMALE
 """
 
 import os
 import yaml
-from typing import Dict
-try:
-    from .config import get_settings
-except ImportError:
-    from config import get_settings
+from typing import Dict, Optional
+from dotenv import load_dotenv
 
+# Charger les variables d'environnement depuis le fichier .env
+load_dotenv()
 
 # Constantes pour les limites et seuils
 MAX_LIMIT_RECOMMENDED = 1000
@@ -28,9 +33,160 @@ MAX_DISPLAY_INTERVAL_SECONDS = 300  # 5 minutes
 MAX_WORKERS_THREADPOOL = 2
 
 
-class ConfigManager:
+def get_settings() -> Dict:
     """
-    Gestionnaire de configuration pour le bot Bybit.
+    Retourne un dictionnaire avec les paramètres de configuration.
+    Valide également les variables d'environnement pour détecter 
+    les fautes de frappe.
+    
+    Returns:
+        dict: Dictionnaire contenant les paramètres de configuration
+    """
+    # Liste des variables d'environnement valides pour la configuration
+    valid_env_vars = {
+        "BYBIT_API_KEY", "BYBIT_API_SECRET", "TESTNET", "TIMEOUT", "LOG_LEVEL",
+        "SPREAD_MAX", "VOLUME_MIN_MILLIONS", "VOLATILITY_MIN", "VOLATILITY_MAX",
+        "FUNDING_MIN", "FUNDING_MAX", "CATEGORY", "LIMIT", "VOLATILITY_TTL_SEC",
+        "FUNDING_TIME_MIN_MINUTES", "FUNDING_TIME_MAX_MINUTES", "WS_PRIV_CHANNELS",
+        "DISPLAY_INTERVAL_SECONDS",
+        # Variables de rate limiting public 
+        # (utilisées par volatility.get_async_rate_limiter)
+        "PUBLIC_HTTP_MAX_CALLS_PER_SEC", "PUBLIC_HTTP_WINDOW_SECONDS",
+    }
+    
+    # Variables d'environnement à ignorer complètement (faux positifs)
+    ignored_vars = {
+        "FPS_BROWSER_APP_PROFILE_STRING",  # Variable système Windows
+        "FPS_BROWSER_APP_PROFILE_STRING_OLD",  # Autres variantes possibles
+    }
+    
+    # Détecter les variables d'environnement inconnues
+    all_env_vars = set(os.environ.keys())
+    unknown_vars = all_env_vars - valid_env_vars - ignored_vars
+    
+    # Filtrer les variables système et les variables non liées au bot
+    bot_related_unknown = []
+    for var in unknown_vars:
+        # Ignorer les variables système Windows/Python et les variables 
+        # non liées au bot
+        if not any(prefix in var.upper() for prefix in [
+            "PATH", "PYTHON", "WINDOWS", "USER", "HOME", "TEMP", "TMP",
+            "PROGRAM", "SYSTEM", "ALLUSER", "APPDATA", "LOCALAPPDATA",
+            "COMPUTERNAME", "USERNAME", "USERPROFILE", "WINDIR", "COMSPEC",
+            "PATHEXT", "PROCESSOR", "NUMBER_OF_PROCESSORS", "OS", "DRIVE",
+            "VIRTUAL_ENV", "CONDA", "PIP", "NODE", "NPM", "GIT", "SSH",
+            "DOCKER", "KUBERNETES", "AWS", "AZURE", "GOOGLE", "JAVA",
+            "MAVEN", "GRADLE", "NODEJS", "NPM", "YARN", "BOWER", "FPS",
+            "BROWSER", "APP", "PROFILE", "STRING"
+        ]):
+            # Vérifier si la variable semble liée au bot 
+            # (contient des mots-clés)
+            if any(keyword in var.upper() for keyword in [
+                "BYBIT", "FUNDING", "VOLATILITY", "SPREAD", "VOLUME", "CATEGORY",
+                "LIMIT", "TTL", "TIME", "MIN", "MAX", "CHANNELS", "WS", "PRIV"
+            ]):
+                bot_related_unknown.append(var)
+    
+    # Logger les variables inconnues liées au bot
+    if bot_related_unknown:
+        # Afficher directement sur stderr pour être sûr que le message 
+        # soit visible
+        import sys
+        for var in bot_related_unknown:
+            print(
+                f"⚠️ Variable d'environnement inconnue ignorée: {var}", 
+                file=sys.stderr
+            )
+            valid_vars_str = ', '.join(sorted(valid_env_vars))
+            print(f"💡 Variables valides: {valid_vars_str}", file=sys.stderr)
+        
+        # Essayer aussi avec le logger si disponible
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            for var in bot_related_unknown:
+                logger.warning(
+                    f"⚠️ Variable d'environnement inconnue ignorée: {var}"
+                )
+                valid_vars_str = ', '.join(sorted(valid_env_vars))
+                logger.warning(f"💡 Variables valides: {valid_vars_str}")
+        except Exception:
+            pass  # Le message a déjà été affiché sur stderr
+    
+    # Récupérer les clés API et convertir les chaînes vides en None
+    api_key = os.getenv("BYBIT_API_KEY") or None
+    api_secret = os.getenv("BYBIT_API_SECRET") or None
+    
+    # Récupérer les nouvelles variables d'environnement pour les filtres
+    spread_max = os.getenv("SPREAD_MAX")
+    volume_min_millions = os.getenv("VOLUME_MIN_MILLIONS")
+    volatility_min = os.getenv("VOLATILITY_MIN")
+    volatility_max = os.getenv("VOLATILITY_MAX")
+    # Variables supplémentaires alignées avec le README
+    funding_min = os.getenv("FUNDING_MIN")
+    funding_max = os.getenv("FUNDING_MAX")
+    category = os.getenv("CATEGORY")  # linear | inverse | both
+    limit = os.getenv("LIMIT")
+    volatility_ttl_sec = os.getenv("VOLATILITY_TTL_SEC")
+    # Nouveaux paramètres de filtre temporel funding
+    funding_time_min_minutes = os.getenv("FUNDING_TIME_MIN_MINUTES")
+    funding_time_max_minutes = os.getenv("FUNDING_TIME_MAX_MINUTES")
+    # Configuration d'affichage
+    display_interval_seconds = os.getenv("DISPLAY_INTERVAL_SECONDS")
+    
+    # Convertir en float/int si présentes, sinon None (avec gestion d'erreur)
+    def safe_float(value):
+        try:
+            return float(value) if value else None
+        except (ValueError, TypeError):
+            return None
+    
+    def safe_int(value):
+        try:
+            return int(value) if value else None
+        except (ValueError, TypeError):
+            return None
+    
+    spread_max = safe_float(spread_max)
+    volume_min_millions = safe_float(volume_min_millions)
+    volatility_min = safe_float(volatility_min)
+    volatility_max = safe_float(volatility_max)
+    funding_min = safe_float(funding_min)
+    funding_max = safe_float(funding_max)
+    limit = safe_int(limit)
+    volatility_ttl_sec = safe_int(volatility_ttl_sec)
+    # Conversions minutes → int
+    funding_time_min_minutes = safe_int(funding_time_min_minutes)
+    funding_time_max_minutes = safe_int(funding_time_max_minutes)
+    display_interval_seconds = safe_int(display_interval_seconds)
+    
+    return {
+        "testnet": os.getenv("TESTNET", "true").lower() == "true",
+        "timeout": safe_int(os.getenv("TIMEOUT", "10")) or 10,
+        "log_level": os.getenv("LOG_LEVEL", "INFO").upper(),
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "spread_max": spread_max,
+        "volume_min_millions": volume_min_millions,
+        "volatility_min": volatility_min,
+        "volatility_max": volatility_max,
+        # Ajouts alignés README
+        "funding_min": funding_min,
+        "funding_max": funding_max,
+        "category": category,
+        "limit": limit,
+        "volatility_ttl_sec": volatility_ttl_sec,
+        # Nouveaux paramètres temporels
+        "funding_time_min_minutes": funding_time_min_minutes,
+        "funding_time_max_minutes": funding_time_max_minutes,
+        # Configuration d'affichage
+        "display_interval_seconds": display_interval_seconds,
+    }
+
+
+class UnifiedConfigManager:
+    """
+    Gestionnaire de configuration unifié pour le bot Bybit.
     
     Responsabilités :
     - Chargement de la configuration depuis fichier YAML et variables d'environnement
@@ -38,21 +194,25 @@ class ConfigManager:
     - Fourniture des valeurs par défaut
     """
     
-    def __init__(self, config_path: str = "src/parameters.yaml"):
+    def __init__(self, config_path: str = "src/parameters.yaml", logger=None):
         """
-        Initialise le gestionnaire de configuration.
+        Initialise le gestionnaire de configuration unifié.
         
         Args:
             config_path (str): Chemin vers le fichier de configuration YAML
+            logger: Logger pour les messages (optionnel)
         """
         self.config_path = config_path
         self.config = {}
-        # Initialiser le logger
-        try:
-            from .logging_setup import setup_logging
-        except ImportError:
-            from logging_setup import setup_logging
-        self.logger = setup_logging()
+        self.logger = logger
+        
+        # Initialiser le logger si non fourni
+        if not self.logger:
+            try:
+                from .logging_setup import setup_logging
+            except ImportError:
+                from logging_setup import setup_logging
+            self.logger = setup_logging()
     
     def load_and_validate_config(self) -> Dict:
         """
@@ -264,3 +424,7 @@ class ConfigManager:
             Valeur de configuration ou valeur par défaut
         """
         return self.config.get(key, default)
+
+
+# Alias pour la compatibilité avec l'ancien code
+ConfigManager = UnifiedConfigManager

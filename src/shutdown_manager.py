@@ -18,9 +18,9 @@ import threading
 import gc
 from typing import Optional, Dict, Any
 try:
-    from .logging_setup import setup_logging, log_shutdown_summary
+    from .logging_setup import setup_logging, log_shutdown_summary, disable_logging, safe_log_info
 except ImportError:
-    from logging_setup import setup_logging, log_shutdown_summary
+    from logging_setup import setup_logging, log_shutdown_summary, disable_logging, safe_log_info
 
 
 class ShutdownManager:
@@ -67,7 +67,11 @@ class ShutdownManager:
         if not orchestrator.running or self._shutdown_in_progress:
             return
             
-        self.logger.info("🛑 Signal d'arrêt reçu (Ctrl+C)...")
+        # Désactiver le logging pour éviter les reentrant calls
+        disable_logging()
+        
+        # Utiliser safe_log_info pour éviter les reentrant calls
+        safe_log_info("🛑 Signal d'arrêt reçu (Ctrl+C)...")
         orchestrator.running = False
         self._shutdown_in_progress = True
         
@@ -83,13 +87,14 @@ class ShutdownManager:
             log_shutdown_summary(self.logger, last_candidates, uptime_seconds)
             
             # Arrêt immédiat du processus - pas de nettoyage complexe
-            self.logger.info("✅ Arrêt du bot terminé")
+            safe_log_info("✅ Arrêt du bot terminé")
             
             # Forcer l'arrêt immédiat
             os._exit(0)
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur lors de l'arrêt: {e}")
+            # Utiliser safe_log_info pour éviter les reentrant calls
+            safe_log_info(f"⚠️ Erreur lors de l'arrêt: {e}")
             # Arrêt forcé même en cas d'erreur
             os._exit(0)
     

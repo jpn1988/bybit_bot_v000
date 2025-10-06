@@ -28,7 +28,7 @@ from logging_setup import setup_logging
 from volatility_tracker import VolatilityTracker
 from http_utils import get_rate_limiter
 from http_client_manager import get_http_client
-from config_manager import MAX_WORKERS_THREADPOOL
+from config import MAX_WORKERS_THREADPOOL
 
 
 class UnifiedDataManager:
@@ -646,7 +646,7 @@ class UnifiedDataManager:
             # Vérifier si des données importantes sont présentes
             important_keys = [
                 'funding_rate', 'volume24h', 'bid1_price', 
-                'ask1_price', 'next_funding_time'
+                'ask1_price', 'next_funding_time', 'mark_price', 'last_price'
             ]
             
             if any(incoming[key] is not None for key in important_keys):
@@ -661,6 +661,53 @@ class UnifiedDataManager:
                     
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur mise à jour données temps réel pour {symbol}: {e}")
+    
+    def update_price_data(self, symbol: str, mark_price: float, last_price: float, timestamp: float):
+        """
+        Met à jour les prix pour un symbole donné (compatibilité avec price_store.py).
+        
+        Args:
+            symbol: Symbole du contrat (ex: BTCUSDT)
+            mark_price: Prix de marque
+            last_price: Dernier prix de transaction
+            timestamp: Timestamp de la mise à jour
+        """
+        if not symbol:
+            return
+            
+        try:
+            ticker_data = {
+                'markPrice': mark_price,
+                'lastPrice': last_price,
+                'timestamp': timestamp
+            }
+            self.update_realtime_data(symbol, ticker_data)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur mise à jour prix pour {symbol}: {e}")
+    
+    def get_price_data(self, symbol: str) -> Optional[Dict[str, float]]:
+        """
+        Récupère les données de prix pour un symbole (compatibilité avec price_store.py).
+        
+        Args:
+            symbol: Symbole du contrat
+            
+        Returns:
+            Dictionnaire avec mark_price, last_price, timestamp ou None
+        """
+        try:
+            realtime_data = self.get_realtime_data(symbol)
+            if not realtime_data:
+                return None
+                
+            return {
+                "mark_price": realtime_data.get('mark_price'),
+                "last_price": realtime_data.get('last_price'),
+                "timestamp": realtime_data.get('timestamp')
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur récupération prix pour {symbol}: {e}")
+            return None
     
     def get_realtime_data(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
@@ -818,3 +865,59 @@ class UnifiedDataManager:
             "linear_symbols": len(self.linear_symbols),
             "inverse_symbols": len(self.inverse_symbols)
         }
+
+
+# Instance globale pour la compatibilité avec price_store.py
+_global_data_manager: Optional[UnifiedDataManager] = None
+
+
+def _get_global_data_manager() -> UnifiedDataManager:
+    """
+    Récupère l'instance globale du gestionnaire de données.
+    
+    Returns:
+        Instance du UnifiedDataManager
+    """
+    global _global_data_manager
+    if _global_data_manager is None:
+        _global_data_manager = UnifiedDataManager()
+    return _global_data_manager
+
+
+def set_global_data_manager(data_manager: UnifiedDataManager):
+    """
+    Définit l'instance globale du gestionnaire de données.
+    
+    Args:
+        data_manager: Instance du UnifiedDataManager
+    """
+    global _global_data_manager
+    _global_data_manager = data_manager
+
+
+def update(symbol: str, mark_price: float, last_price: float, timestamp: float) -> None:
+    """
+    Met à jour les prix pour un symbole donné (compatibilité avec price_store.py).
+    
+    Args:
+        symbol (str): Symbole du contrat (ex: BTCUSDT)
+        mark_price (float): Prix de marque
+        last_price (float): Dernier prix de transaction
+        timestamp (float): Timestamp de la mise à jour
+    """
+    data_manager = _get_global_data_manager()
+    data_manager.update_price_data(symbol, mark_price, last_price, timestamp)
+
+
+def get_price_data(symbol: str) -> Optional[Dict[str, float]]:
+    """
+    Récupère les données de prix pour un symbole (compatibilité avec price_store.py).
+    
+    Args:
+        symbol (str): Symbole du contrat
+        
+    Returns:
+        Dictionnaire avec mark_price, last_price, timestamp ou None
+    """
+    data_manager = _get_global_data_manager()
+    return data_manager.get_price_data(symbol)

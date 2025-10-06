@@ -13,7 +13,7 @@ import time
 from typing import List, Callable, Optional
 from logging_setup import setup_logging
 from ws_public import PublicWSClient
-from price_store import update
+from unified_data_manager import update
 
 
 class WebSocketManager:

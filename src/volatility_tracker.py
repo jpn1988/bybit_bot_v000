@@ -14,8 +14,7 @@ import threading
 from typing import List, Tuple, Dict, Optional, Callable
 from logging_setup import setup_logging
 from bybit_client import BybitPublicClient
-from volatility import get_volatility_cache_key, is_cache_valid, compute_volatility_batch_async
-from volatility_calculator import VolatilityCalculator
+from volatility import get_volatility_cache_key, is_cache_valid, compute_volatility_batch_async, VolatilityCalculator
 from volatility_cache import VolatilityCache
 from volatility_scheduler import VolatilityScheduler
 

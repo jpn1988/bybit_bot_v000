@@ -12,7 +12,7 @@ import time
 import threading
 from typing import List, Optional, Callable, Dict
 from logging_setup import setup_logging
-from volatility_calculator import VolatilityCalculator
+from volatility import VolatilityCalculator
 from volatility_cache import VolatilityCache
 
 
