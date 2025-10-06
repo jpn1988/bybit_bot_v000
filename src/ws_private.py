@@ -2,8 +2,9 @@
 """
 Client WebSocket privé Bybit v5 réutilisable.
 
-Cette classe centralise la logique d'authentification, de souscription aux topics
-privés, la gestion du ping/pong, le watchdog d'auth, et la reconnexion avec backoff.
+Cette classe centralise la logique d'authentification, de souscription 
+aux topics privés, la gestion du ping/pong, le watchdog d'auth, et la 
+reconnexion avec backoff.
 
 Utilisation typique:
     client = PrivateWSClient(testnet, api_key, api_secret, channels, logger)
@@ -21,7 +22,8 @@ import websocket
 
 
 class PrivateWSClient:
-    """Client WebSocket privée Bybit v5 avec authentification et reconnexion."""
+    """Client WebSocket privée Bybit v5 avec authentification et 
+    reconnexion."""
 
     def __init__(
         self,
@@ -67,7 +69,9 @@ class PrivateWSClient:
     def _generate_ws_signature(self, expires_ms: int) -> str:
         payload = f"GET/realtime{expires_ms}"
         return hmac.new(
-            self.api_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+            self.api_secret.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
         ).hexdigest()
 
     # ========================= WebSocket callbacks =========================
@@ -82,7 +86,10 @@ class PrivateWSClient:
         # Authentification immédiate
         expires_ms = int((time.time() + 60) * 1000)
         signature = self._generate_ws_signature(expires_ms)
-        auth_message = {"op": "auth", "args": [self.api_key, expires_ms, signature]}
+        auth_message = {
+            "op": "auth",
+            "args": [self.api_key, expires_ms, signature],
+        }
 
         try:
             self.logger.info("🪪 Authentification en cours…")
@@ -134,10 +141,14 @@ class PrivateWSClient:
                         sub_msg = {"op": "subscribe", "args": self.channels}
                         try:
                             self.ws.send(json.dumps(sub_msg))
-                            self.logger.info(f"🧭 Souscription privée → {self.channels}")
+                            self.logger.info(
+                                f"🧭 Souscription privée → {self.channels}"
+                            )
                         except Exception as e:
                             try:
-                                self.logger.warning(f"⚠️ Échec souscription privée: {e}")
+                                self.logger.warning(
+                                    f"⚠️ Échec souscription privée: {e}"
+                                )
                             except Exception:
                                 pass
                     if callable(self.on_auth_success):
@@ -148,7 +159,8 @@ class PrivateWSClient:
                 else:
                     try:
                         self.logger.error(
-                            f"⛔ Échec authentification WS : retCode={ret_code} retMsg=\"{ret_msg}\""
+                            f'⛔ Échec authentification WS : '
+                            f'retCode={ret_code} retMsg="{ret_msg}"'
                         )
                     except Exception:
                         pass
@@ -177,7 +189,11 @@ class PrivateWSClient:
                     pass
             else:
                 # Debug court
-                message_preview = str(data)[:100] + "..." if len(str(data)) > 100 else str(data)
+                message_preview = (
+                    str(data)[:100] + "..."
+                    if len(str(data)) > 100
+                    else str(data)
+                )
                 try:
                     self.logger.debug(f"ℹ️ Private msg: {message_preview}")
                 except Exception:
@@ -224,9 +240,15 @@ class PrivateWSClient:
     def _watchdog_loop(self):
         while self.running:
             try:
-                if self.connected and not self._authed and time.monotonic() - self._auth_sent_at > 10:
+                if (
+                    self.connected
+                    and not self._authed
+                    and time.monotonic() - self._auth_sent_at > 10
+                ):
                     try:
-                        self.logger.warning("⏳ Auth sans réponse (>10s) → redémarrage WS")
+                        self.logger.warning(
+                            "⏳ Auth sans réponse (>10s) → redémarrage WS"
+                        )
                     except Exception:
                         pass
                     try:
@@ -270,9 +292,16 @@ class PrivateWSClient:
 
             # Reconnexion avec backoff
             if self.running:
-                delay = self.reconnect_delays[min(self.current_delay_index, len(self.reconnect_delays) - 1)]
+                delay = self.reconnect_delays[
+                    min(
+                        self.current_delay_index,
+                        len(self.reconnect_delays) - 1,
+                    )
+                ]
                 try:
-                    self.logger.warning(f"🔁 WS privée déconnectée → reconnexion dans {delay}s")
+                    self.logger.warning(
+                        f"🔁 WS privée déconnectée → reconnexion dans {delay}s"
+                    )
                 except Exception:
                     pass
                 for _ in range(delay):

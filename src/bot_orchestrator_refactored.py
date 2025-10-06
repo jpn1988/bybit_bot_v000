@@ -17,6 +17,7 @@ import time
 import atexit
 from typing import Dict, Any
 from logging_setup import setup_logging
+
 # cleaned: removed unused imports (log_startup_summary, log_shutdown_summary)
 from config_unified import get_settings
 from http_client_manager import close_all_http_clients
@@ -56,7 +57,7 @@ class BotOrchestrator:
 
         # Configuration
         settings = get_settings()
-        self.testnet = settings['testnet']
+        self.testnet = settings["testnet"]
 
         # Initialiser les composants spécialisés
         self._initializer = BotInitializer(self.testnet, self.logger)
@@ -83,6 +84,7 @@ class BotOrchestrator:
 
         # Stocker la référence au moniteur de métriques pour l'arrêt
         from metrics_monitor import metrics_monitor
+
         self.metrics_monitor = metrics_monitor
 
     def _initialize_components(self):
@@ -94,14 +96,14 @@ class BotOrchestrator:
 
         # Récupérer les managers depuis l'initialiseur
         managers = self._initializer.get_managers()
-        self.data_manager = managers['data_manager']
-        self.display_manager = managers['display_manager']
-        self.monitoring_manager = managers['monitoring_manager']
-        self.ws_manager = managers['ws_manager']
-        self.volatility_tracker = managers['volatility_tracker']
-        self.watchlist_manager = managers['watchlist_manager']
-        self.callback_manager = managers['callback_manager']
-        self.opportunity_manager = managers['opportunity_manager']
+        self.data_manager = managers["data_manager"]
+        self.display_manager = managers["display_manager"]
+        self.monitoring_manager = managers["monitoring_manager"]
+        self.ws_manager = managers["ws_manager"]
+        self.volatility_tracker = managers["volatility_tracker"]
+        self.watchlist_manager = managers["watchlist_manager"]
+        self.callback_manager = managers["callback_manager"]
+        self.opportunity_manager = managers["opportunity_manager"]
 
         # Configurer le gestionnaire global pour la compatibilité avec price_store.py
         set_global_data_manager(self.data_manager)
@@ -110,7 +112,9 @@ class BotOrchestrator:
         """Démarre le suivi des prix avec filtrage par funding."""
         try:
             # 1. Charger et valider la configuration
-            config = self._configurator.load_and_validate_config(self.watchlist_manager.config_manager)
+            config = self._configurator.load_and_validate_config(
+                self.watchlist_manager.config_manager
+            )
         except ValueError:
             return  # Arrêt propre sans sys.exit
 
@@ -123,24 +127,37 @@ class BotOrchestrator:
 
         # 3. Configurer les managers
         self._configurator.configure_managers(
-            config, perp_data, self.data_manager, self.volatility_tracker,
-            self.watchlist_manager, self.display_manager
+            config,
+            perp_data,
+            self.data_manager,
+            self.volatility_tracker,
+            self.watchlist_manager,
+            self.display_manager,
         )
 
         # 4. Charger les données de la watchlist
         if not self._data_loader.load_watchlist_data(
-            base_url, perp_data, self.watchlist_manager,
-            self.volatility_tracker
+            base_url,
+            perp_data,
+            self.watchlist_manager,
+            self.volatility_tracker,
         ):
             return
 
         # 5. Afficher le résumé de démarrage
-        self._starter.display_startup_summary(config, perp_data, self.data_manager)
+        self._starter.display_startup_summary(
+            config, perp_data, self.data_manager
+        )
 
         # 6. Démarrer tous les composants
         await self._starter.start_bot_components(
-            self.volatility_tracker, self.display_manager, self.ws_manager,
-            self.data_manager, self.monitoring_manager, base_url, perp_data
+            self.volatility_tracker,
+            self.display_manager,
+            self.ws_manager,
+            self.data_manager,
+            self.monitoring_manager,
+            base_url,
+            perp_data,
         )
 
         # 7. Maintenir le bot en vie avec une boucle d'attente
@@ -154,9 +171,13 @@ class BotOrchestrator:
             while self.running:
                 # Vérifier que tous les composants principaux sont toujours actifs
                 if not self._health_monitor.check_components_health(
-                    self.monitoring_manager, self.display_manager, self.volatility_tracker
+                    self.monitoring_manager,
+                    self.display_manager,
+                    self.volatility_tracker,
                 ):
-                    self.logger.warning("⚠️ Un composant critique s'est arrêté, redémarrage...")
+                    self.logger.warning(
+                        "⚠️ Un composant critique s'est arrêté, redémarrage..."
+                    )
                     # Optionnel: redémarrer les composants défaillants
 
                 # Monitoring mémoire périodique
@@ -181,13 +202,17 @@ class BotOrchestrator:
             Dictionnaire contenant le statut du bot
         """
         return {
-            'running': self.running,
-            'uptime_seconds': time.time() - self.start_time,
-            'testnet': self.testnet,
-            'health_status': self._health_monitor.get_health_status(
-                self.monitoring_manager, self.display_manager, self.volatility_tracker
+            "running": self.running,
+            "uptime_seconds": time.time() - self.start_time,
+            "testnet": self.testnet,
+            "health_status": self._health_monitor.get_health_status(
+                self.monitoring_manager,
+                self.display_manager,
+                self.volatility_tracker,
             ),
-            'startup_stats': self._starter.get_startup_stats(self.data_manager)
+            "startup_stats": self._starter.get_startup_stats(
+                self.data_manager
+            ),
         }
 
     def stop(self):
@@ -199,15 +224,17 @@ class BotOrchestrator:
         try:
             # Préparer le dictionnaire des managers pour ShutdownManager
             managers = {
-                'monitoring_manager': self.monitoring_manager,
-                'display_manager': self.display_manager,
-                'ws_manager': self.ws_manager,
-                'volatility_tracker': self.volatility_tracker,
-                'metrics_monitor': self.metrics_monitor
+                "monitoring_manager": self.monitoring_manager,
+                "display_manager": self.display_manager,
+                "ws_manager": self.ws_manager,
+                "volatility_tracker": self.volatility_tracker,
+                "metrics_monitor": self.metrics_monitor,
             }
 
             # Utiliser ShutdownManager pour l'arrêt asynchrone
-            asyncio.run(self._shutdown_manager.stop_all_managers_async(managers))
+            asyncio.run(
+                self._shutdown_manager.stop_all_managers_async(managers)
+            )
 
             self.logger.info("✅ Bot arrêté proprement via ShutdownManager")
 

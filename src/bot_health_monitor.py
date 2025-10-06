@@ -40,7 +40,7 @@ class BotHealthMonitor:
         self,
         monitoring_manager: UnifiedMonitoringManager,
         display_manager: DisplayManager,
-        volatility_tracker: VolatilityTracker
+        volatility_tracker: VolatilityTracker,
     ) -> bool:
         """
         Vérifie que tous les composants critiques sont actifs.
@@ -72,7 +72,9 @@ class BotHealthMonitor:
             return True
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur vérification santé composants: {e}")
+            self.logger.warning(
+                f"⚠️ Erreur vérification santé composants: {e}"
+            )
             return False
 
     def monitor_memory_usage(self) -> float:
@@ -91,16 +93,22 @@ class BotHealthMonitor:
 
             # Seuil d'alerte (500MB)
             if memory_mb > 500:
-                self.logger.warning(f"⚠️ Utilisation mémoire élevée: {memory_mb:.1f}MB")
+                self.logger.warning(
+                    f"⚠️ Utilisation mémoire élevée: {memory_mb:.1f}MB"
+                )
 
                 # Forcer le garbage collection
                 collected = gc.collect()
                 if collected > 0:
-                    self.logger.info(f"🧹 Garbage collection effectué: {collected} objets libérés")
+                    self.logger.info(
+                        f"🧹 Garbage collection effectué: {collected} objets libérés"
+                    )
 
                     # Vérifier l'utilisation après nettoyage
                     new_memory_mb = process.memory_info().rss / 1024 / 1024
-                    self.logger.info(f"📊 Mémoire après nettoyage: {new_memory_mb:.1f}MB")
+                    self.logger.info(
+                        f"📊 Mémoire après nettoyage: {new_memory_mb:.1f}MB"
+                    )
                     return new_memory_mb
 
             return memory_mb
@@ -108,9 +116,12 @@ class BotHealthMonitor:
         except ImportError:
             # psutil non disponible, utiliser une approche basique
             import sys
+
             memory_mb = sys.getsizeof(self) / 1024 / 1024
             if memory_mb > 100:  # Seuil plus bas sans psutil
-                self.logger.warning(f"⚠️ Utilisation mémoire estimée élevée: {memory_mb:.1f}MB")
+                self.logger.warning(
+                    f"⚠️ Utilisation mémoire estimée élevée: {memory_mb:.1f}MB"
+                )
             return memory_mb
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur monitoring mémoire: {e}")
@@ -133,7 +144,7 @@ class BotHealthMonitor:
         self,
         monitoring_manager: UnifiedMonitoringManager,
         display_manager: DisplayManager,
-        volatility_tracker: VolatilityTracker
+        volatility_tracker: VolatilityTracker,
     ) -> dict:
         """
         Retourne le statut de santé global du bot.
@@ -147,13 +158,13 @@ class BotHealthMonitor:
             Dictionnaire contenant le statut de santé
         """
         return {
-            'monitoring_running': monitoring_manager.is_running(),
-            'display_running': display_manager.is_running(),
-            'volatility_running': volatility_tracker.is_running(),
-            'memory_usage_mb': self.monitor_memory_usage(),
-            'overall_healthy': self.check_components_health(
+            "monitoring_running": monitoring_manager.is_running(),
+            "display_running": display_manager.is_running(),
+            "volatility_running": volatility_tracker.is_running(),
+            "memory_usage_mb": self.monitor_memory_usage(),
+            "overall_healthy": self.check_components_health(
                 monitoring_manager, display_manager, volatility_tracker
-            )
+            ),
         }
 
     def reset_memory_counter(self):
@@ -168,4 +179,6 @@ class BotHealthMonitor:
             interval: Intervalle en secondes
         """
         self._memory_check_interval = interval
-        self.logger.info(f"📊 Intervalle de vérification mémoire défini à {interval} secondes")
+        self.logger.info(
+            f"📊 Intervalle de vérification mémoire défini à {interval} secondes"
+        )

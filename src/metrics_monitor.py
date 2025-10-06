@@ -25,12 +25,16 @@ class MetricsMonitor:
     def start(self):
         """Démarre le monitoring des métriques."""
         if self.running:
-            self.logger.warning("⚠️ Le monitoring des métriques est déjà actif")
+            self.logger.warning(
+                "⚠️ Le monitoring des métriques est déjà actif"
+            )
             return
 
         self.running = True
         self._stop_event.clear()
-        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread = threading.Thread(
+            target=self._monitor_loop, daemon=True
+        )
         self.monitor_thread.start()
         # Monitoring des métriques démarré
 
@@ -48,7 +52,9 @@ class MetricsMonitor:
 
             # Si le thread ne s'est pas arrêté, forcer l'arrêt
             if self.monitor_thread.is_alive():
-                self.logger.warning("⚠️ Thread métriques n'a pas pu s'arrêter proprement, arrêt forcé")
+                self.logger.warning(
+                    "⚠️ Thread métriques n'a pas pu s'arrêter proprement, arrêt forcé"
+                )
                 # Marquer le thread comme daemon pour qu'il s'arrête avec le programme
                 self.monitor_thread.daemon = True
 
@@ -62,7 +68,9 @@ class MetricsMonitor:
             try:
                 self._log_metrics()
             except Exception as e:
-                self.logger.error(f"❌ Erreur lors du monitoring des métriques: {e}")
+                self.logger.error(
+                    f"❌ Erreur lors du monitoring des métriques: {e}"
+                )
 
             # Attendre l'intervalle ou jusqu'à l'arrêt
             if self._stop_event.wait(self.interval_seconds):
@@ -88,7 +96,9 @@ class MetricsMonitor:
         try:
             self._log_metrics()
         except Exception as e:
-            self.logger.error(f"❌ Erreur lors de l'affichage des métriques: {e}")
+            self.logger.error(
+                f"❌ Erreur lors de l'affichage des métriques: {e}"
+            )
 
 
 # Instance globale du moniteur

@@ -33,13 +33,16 @@ class MarketDataFetcher:
         Initialise le récupérateur de données de marché.
 
         Args:
-            testnet (bool): Utiliser le testnet (True) ou le marché réel (False)
+            testnet (bool): Utiliser le testnet (True) ou le marché réel
+            (False)
             logger: Logger pour les messages (optionnel)
         """
         self.testnet = testnet
         self.logger = logger or setup_logging()
 
-    def fetch_funding_map(self, base_url: str, category: str, timeout: int = 10) -> Dict[str, Dict]:
+    def fetch_funding_map(
+        self, base_url: str, category: str, timeout: int = 10
+    ) -> Dict[str, Dict]:
         """
         Récupère les taux de funding pour une catégorie donnée.
 
@@ -49,7 +52,8 @@ class MarketDataFetcher:
             timeout: Timeout pour les requêtes HTTP
 
         Returns:
-            Dict[str, Dict]: Dictionnaire {symbol: {funding, volume, next_funding_time}}
+            Dict[str, Dict]: Dictionnaire {symbol: {funding, volume,
+            next_funding_time}}
 
         Raises:
             RuntimeError: En cas d'erreur HTTP ou API
@@ -64,7 +68,7 @@ class MarketDataFetcher:
             url = f"{base_url}/v5/market/tickers"
             params = {
                 "category": category,
-                "limit": 1000  # Limite maximum supportée par l'API Bybit
+                "limit": 1000,  # Limite maximum supportée par l'API Bybit
             }
             if cursor:
                 params["cursor"] = cursor
@@ -79,10 +83,13 @@ class MarketDataFetcher:
                 # Vérifier le statut HTTP
                 if response.status_code >= 400:
                     raise RuntimeError(
-                        f"Erreur HTTP Bybit GET {url} | category={category} limit={params.get('limit')} "
-                        f"cursor={params.get('cursor', '-')} timeout={timeout}s page={page_index} "
-                        f"collected={len(funding_map)} | status={response.status_code} "
-                        f"detail=\"{response.text[:200]}\""
+                        f"Erreur HTTP Bybit GET {url} | category={category} "
+                        f"limit={params.get('limit')} "
+                        f"cursor={params.get('cursor', '-')} "
+                        f"timeout={timeout}s page={page_index} "
+                        f"collected={len(funding_map)} | "
+                        f"status={response.status_code} "
+                        f'detail="{response.text[:200]}"'
                     )
 
                 data = response.json()
@@ -92,9 +99,12 @@ class MarketDataFetcher:
                     ret_code = data.get("retCode")
                     ret_msg = data.get("retMsg", "")
                     raise RuntimeError(
-                        f"Erreur API Bybit GET {url} | category={category} limit={params.get('limit')} "
-                        f"cursor={params.get('cursor', '-')} timeout={timeout}s page={page_index} "
-                        f"collected={len(funding_map)} | retCode={ret_code} retMsg=\"{ret_msg}\""
+                        f"Erreur API Bybit GET {url} | category={category} "
+                        f"limit={params.get('limit')} "
+                        f"cursor={params.get('cursor', '-')} "
+                        f"timeout={timeout}s page={page_index} "
+                        f"collected={len(funding_map)} | "
+                        f'retCode={ret_code} retMsg="{ret_msg}"'
                     )
 
                 result = data.get("result", {})
@@ -111,11 +121,14 @@ class MarketDataFetcher:
                         try:
                             funding_map[symbol] = {
                                 "funding": float(funding_rate),
-                                "volume": float(volume_24h) if volume_24h is not None else 0.0,
-                                "next_funding_time": next_funding_time
+                                "volume": float(volume_24h)
+                                if volume_24h is not None
+                                else 0.0,
+                                "next_funding_time": next_funding_time,
                             }
                         except (ValueError, TypeError):
-                            # Ignorer si les données ne sont pas convertibles en float
+                            # Ignorer si les données ne sont pas convertibles
+                            # en float
                             pass
 
                 # Vérifier s'il y a une page suivante
@@ -126,25 +139,34 @@ class MarketDataFetcher:
 
             except httpx.RequestError as e:
                 raise RuntimeError(
-                    f"Erreur réseau Bybit GET {url} | category={category} limit={params.get('limit')} "
-                    f"cursor={params.get('cursor', '-')} timeout={timeout}s page={page_index} "
-                    f"collected={len(funding_map)} | error={e}"
+                    f"Erreur réseau Bybit GET {url} | category={category} "
+                    f"limit={params.get('limit')} "
+                    f"cursor={params.get('cursor', '-')} timeout={timeout}s "
+                    f"page={page_index} collected={len(funding_map)} | error={e}"
                 )
             except Exception as e:
                 if "Erreur" in str(e):
                     raise
                 else:
                     raise RuntimeError(
-                        f"Erreur inconnue Bybit GET {url} | category={category} limit={params.get('limit')} "
-                        f"cursor={params.get('cursor', '-')} timeout={timeout}s page={page_index} "
-                        f"collected={len(funding_map)} | error={e}"
+                        f"Erreur inconnue Bybit GET {url} | category={category} "
+                        f"limit={params.get('limit')} "
+                        f"cursor={params.get('cursor', '-')} timeout={timeout}s "
+                        f"page={page_index} collected={len(funding_map)} | error={e}"
                     )
 
         return funding_map
 
-    def fetch_spread_data(self, base_url: str, symbols: List[str], timeout: int = 10, category: str = "linear") -> Dict[str, float]:
+    def fetch_spread_data(
+        self,
+        base_url: str,
+        symbols: List[str],
+        timeout: int = 10,
+        category: str = "linear",
+    ) -> Dict[str, float]:
         """
-        Récupère les spreads via /v5/market/tickers paginé, puis filtre localement.
+        Récupère les spreads via /v5/market/tickers paginé, 
+        puis filtre localement.
 
         Args:
             base_url: URL de base de l'API Bybit
@@ -156,14 +178,20 @@ class MarketDataFetcher:
             Dict[str, float]: map {symbol: spread_pct}
         """
         # Récupération paginée des spreads
-        found = self._fetch_spreads_paginated(base_url, symbols, timeout, category)
+        found = self._fetch_spreads_paginated(
+            base_url, symbols, timeout, category
+        )
 
         # Fallback unitaire pour les symboles manquants
-        self._fetch_missing_spreads(base_url, symbols, found, timeout, category)
+        self._fetch_missing_spreads(
+            base_url, symbols, found, timeout, category
+        )
 
         return found
 
-    def _fetch_spreads_paginated(self, base_url: str, symbols: List[str], timeout: int, category: str) -> Dict[str, float]:
+    def _fetch_spreads_paginated(
+        self, base_url: str, symbols: List[str], timeout: int, category: str
+    ) -> Dict[str, float]:
         """
         Récupère les spreads via pagination de l'API.
 
@@ -192,7 +220,9 @@ class MarketDataFetcher:
 
             try:
                 # Effectuer la requête paginée
-                result = self._make_paginated_request(url, params, timeout, page_index, category, rate_limiter)
+                result = self._make_paginated_request(
+                    url, params, timeout, page_index, category, rate_limiter
+                )
                 tickers = result.get("list", [])
 
                 # Traiter les tickers de cette page
@@ -226,7 +256,15 @@ class MarketDataFetcher:
         else:
             params.pop("cursor", None)
 
-    def _make_paginated_request(self, url: str, params: dict, timeout: int, page_index: int, category: str, rate_limiter) -> dict:
+    def _make_paginated_request(
+        self,
+        url: str,
+        params: dict,
+        timeout: int,
+        page_index: int,
+        category: str,
+        rate_limiter,
+    ) -> dict:
         """
         Effectue une requête paginée et retourne le résultat complet.
 
@@ -251,21 +289,25 @@ class MarketDataFetcher:
         # Vérifier le statut HTTP
         if resp.status_code >= 400:
             raise RuntimeError(
-                f"Erreur HTTP Bybit GET {url} | category={category} page={page_index} "
-                f"limit={params.get('limit')} cursor={params.get('cursor','-')} status={resp.status_code} "
-                f"detail=\"{resp.text[:200]}\""
+                f"Erreur HTTP Bybit GET {url} | category={category} "
+                f"page={page_index} limit={params.get('limit')} "
+                f"cursor={params.get('cursor','-')} "
+                f"status={resp.status_code} detail=\"{resp.text[:200]}\""
             )
 
         data = resp.json()
         if data.get("retCode") != 0:
             raise RuntimeError(
-                f"Erreur API Bybit GET {url} | category={category} page={page_index} "
-                f"retCode={data.get('retCode')} retMsg=\"{data.get('retMsg','')}\""
+                f"Erreur API Bybit GET {url} | category={category} "
+                f"page={page_index} retCode={data.get('retCode')} "
+                f"retMsg=\"{data.get('retMsg', '')}\""
             )
 
         return data.get("result", {})
 
-    def _process_tickers_for_spreads(self, tickers: list, wanted: set, found: Dict[str, float]):
+    def _process_tickers_for_spreads(
+        self, tickers: list, wanted: set, found: Dict[str, float]
+    ):
         """
         Traite les tickers pour extraire les spreads.
 
@@ -308,7 +350,9 @@ class MarketDataFetcher:
 
         return None
 
-    def _should_continue_pagination(self, found: Dict[str, float], wanted: set, tickers: list) -> bool:
+    def _should_continue_pagination(
+        self, found: Dict[str, float], wanted: set, tickers: list
+    ) -> bool:
         """
         Détermine si la pagination doit continuer.
 
@@ -327,8 +371,9 @@ class MarketDataFetcher:
         # Continuer si on a des tickers
         return len(tickers) > 0
 
-
-    def _handle_pagination_error(self, error: Exception, page_index: int, category: str):
+    def _handle_pagination_error(
+        self, error: Exception, page_index: int, category: str
+    ):
         """
         Gère les erreurs de pagination.
 
@@ -337,20 +382,37 @@ class MarketDataFetcher:
             page_index: Index de la page
             category: Catégorie des instruments
         """
-        if isinstance(error, (httpx.RequestError, httpx.TimeoutException, httpx.HTTPStatusError)):
+        if isinstance(
+            error,
+            (
+                httpx.RequestError,
+                httpx.TimeoutException,
+                httpx.HTTPStatusError,
+            ),
+        ):
             self.logger.error(
-                f"Erreur réseau spread paginé page={page_index} category={category}: {type(error).__name__}: {error}"
+                f"Erreur réseau spread paginé page={page_index} "
+                f"category={category}: {type(error).__name__}: {error}"
             )
         elif isinstance(error, (ValueError, TypeError, KeyError)):
             self.logger.warning(
-                f"Erreur données spread paginé page={page_index} category={category}: {type(error).__name__}: {error}"
+                f"Erreur données spread paginé page={page_index} "
+                f"category={category}: {type(error).__name__}: {error}"
             )
         else:
             self.logger.error(
-                f"Erreur inattendue spread paginé page={page_index} category={category}: {type(error).__name__}: {error}"
+                f"Erreur inattendue spread paginé page={page_index} "
+                f"category={category}: {type(error).__name__}: {error}"
             )
 
-    def _fetch_missing_spreads(self, base_url: str, symbols: List[str], found: Dict[str, float], timeout: int, category: str):
+    def _fetch_missing_spreads(
+        self,
+        base_url: str,
+        symbols: List[str],
+        found: Dict[str, float],
+        timeout: int,
+        category: str,
+    ):
         """
         Récupère les spreads manquants via des requêtes unitaires.
 
@@ -368,10 +430,13 @@ class MarketDataFetcher:
                 if val is not None:
                     found[s] = val
             except (httpx.RequestError, ValueError, TypeError):
-                # Erreurs réseau ou conversion - ignorer silencieusement pour le fallback
+                # Erreurs réseau ou conversion - ignorer silencieusement pour
+                # le fallback
                 pass
 
-    def _fetch_single_spread(self, base_url: str, symbol: str, timeout: int, category: str) -> Optional[float]:
+    def _fetch_single_spread(
+        self, base_url: str, symbol: str, timeout: int, category: str
+    ) -> Optional[float]:
         """
         Récupère le spread pour un seul symbole.
 
@@ -395,8 +460,10 @@ class MarketDataFetcher:
 
             if response.status_code >= 400:
                 raise RuntimeError(
-                    f"Erreur HTTP Bybit GET {url} | category={category} symbol={symbol} "
-                    f"timeout={timeout}s status={response.status_code} detail=\"{response.text[:200]}\""
+                    f"Erreur HTTP Bybit GET {url} | category={category} "
+                    f"symbol={symbol} timeout={timeout}s "
+                    f"status={response.status_code} "
+                    f'detail="{response.text[:200]}"'
                 )
 
             data = response.json()
@@ -405,8 +472,9 @@ class MarketDataFetcher:
                 ret_code = data.get("retCode")
                 ret_msg = data.get("retMsg", "")
                 raise RuntimeError(
-                    f"Erreur API Bybit GET {url} | category={category} symbol={symbol} "
-                    f"timeout={timeout}s retCode={ret_code} retMsg=\"{ret_msg}\""
+                    f"Erreur API Bybit GET {url} | category={category} "
+                    f"symbol={symbol} timeout={timeout}s "
+                    f'retCode={ret_code} retMsg="{ret_msg}"'
                 )
 
             result = data.get("result", {})
@@ -435,7 +503,9 @@ class MarketDataFetcher:
         except Exception:
             return None
 
-    def fetch_funding_data_parallel(self, base_url: str, categories: List[str], timeout: int = 10) -> Dict[str, Dict]:
+    def fetch_funding_data_parallel(
+        self, base_url: str, categories: List[str], timeout: int = 10
+    ) -> Dict[str, Dict]:
         """
         Récupère les données de funding pour plusieurs catégories en parallèle.
 
@@ -453,10 +523,14 @@ class MarketDataFetcher:
         funding_map = {}
 
         # Paralléliser les requêtes
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS_THREADPOOL) as executor:
+        with ThreadPoolExecutor(
+            max_workers=MAX_WORKERS_THREADPOOL
+        ) as executor:
             # Lancer les requêtes en parallèle
             futures = {
-                executor.submit(self.fetch_funding_map, base_url, category, timeout): category
+                executor.submit(
+                    self.fetch_funding_map, base_url, category, timeout
+                ): category
                 for category in categories
             }
 
@@ -467,7 +541,9 @@ class MarketDataFetcher:
                     category_data = future.result()
                     funding_map.update(category_data)
                 except Exception as e:
-                    self.logger.error(f"Erreur récupération funding pour {category}: {e}")
+                    self.logger.error(
+                        f"Erreur récupération funding pour {category}: {e}"
+                    )
                     raise
 
         return funding_map

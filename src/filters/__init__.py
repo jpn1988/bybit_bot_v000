@@ -10,4 +10,4 @@ Ce package contient :
 from .base_filter import BaseFilter
 from .symbol_filter import SymbolFilter
 
-__all__ = ['BaseFilter', 'SymbolFilter']
+__all__ = ["BaseFilter", "SymbolFilter"]

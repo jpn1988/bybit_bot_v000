@@ -36,7 +36,9 @@ class CandidateSymbolDetector:
         """Définit le gestionnaire de watchlist."""
         self.watchlist_manager = watchlist_manager
 
-    def detect_candidates(self, base_url: str, perp_data: Dict) -> tuple[List[str], List[str]]:
+    def detect_candidates(
+        self, base_url: str, perp_data: Dict
+    ) -> tuple[List[str], List[str]]:
         """
         Détecte les symboles candidats et les sépare par catégorie.
 
@@ -52,7 +54,9 @@ class CandidateSymbolDetector:
                 return [], []
 
             # Détecter les candidats
-            candidate_symbols = self.watchlist_manager.find_candidate_symbols(base_url, perp_data)
+            candidate_symbols = self.watchlist_manager.find_candidate_symbols(
+                base_url, perp_data
+            )
 
             if not candidate_symbols:
                 return [], []
@@ -73,7 +77,9 @@ class CandidateSymbolDetector:
             return linear_candidates, inverse_candidates
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur configuration surveillance candidats: {e}")
+            self.logger.warning(
+                f"⚠️ Erreur configuration surveillance candidats: {e}"
+            )
             return [], []
 
 
@@ -99,7 +105,9 @@ class CandidateWebSocketManager:
         """Définit le callback pour les tickers des candidats."""
         self._on_candidate_ticker_callback = callback
 
-    def start_monitoring(self, linear_candidates: List[str], inverse_candidates: List[str]):
+    def start_monitoring(
+        self, linear_candidates: List[str], inverse_candidates: List[str]
+    ):
         """
         Démarre la surveillance WebSocket des candidats.
 
@@ -124,21 +132,26 @@ class CandidateWebSocketManager:
 
             # Créer la connexion WebSocket
             from ws_public import PublicWSClient
+
             self.candidate_ws_client = PublicWSClient(
                 category=category,
                 symbols=symbols_to_monitor,
                 testnet=self.testnet,
                 logger=self.logger,
-                on_ticker_callback=self._on_candidate_ticker
+                on_ticker_callback=self._on_candidate_ticker,
             )
 
             # Lancer la surveillance dans un thread séparé
-            self._candidate_ws_thread = threading.Thread(target=self._candidate_ws_runner)
+            self._candidate_ws_thread = threading.Thread(
+                target=self._candidate_ws_runner
+            )
             self._candidate_ws_thread.daemon = True
             self._candidate_ws_thread.start()
 
         except Exception as e:
-            self.logger.error(f"❌ Erreur démarrage surveillance candidats: {e}")
+            self.logger.error(
+                f"❌ Erreur démarrage surveillance candidats: {e}"
+            )
 
     def stop_monitoring(self):
         """Arrête la surveillance des candidats."""
@@ -146,14 +159,20 @@ class CandidateWebSocketManager:
             try:
                 self.candidate_ws_client.close()
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur fermeture WebSocket candidats: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur fermeture WebSocket candidats: {e}"
+                )
 
         # Attendre la fin du thread avec timeout amélioré
         if self._candidate_ws_thread and self._candidate_ws_thread.is_alive():
             try:
-                self._candidate_ws_thread.join(timeout=10)  # Augmenté de 3s à 10s
+                self._candidate_ws_thread.join(
+                    timeout=10
+                )  # Augmenté de 3s à 10s
                 if self._candidate_ws_thread.is_alive():
-                    self.logger.warning("⚠️ Thread candidats n'a pas pu être arrêté dans les temps")
+                    self.logger.warning(
+                        "⚠️ Thread candidats n'a pas pu être arrêté dans les temps"
+                    )
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur attente thread candidats: {e}")
 
@@ -220,8 +239,12 @@ class CandidateOpportunityDetector:
                 return
 
             # Vérifier si le candidat passe maintenant les filtres
-            if (self.watchlist_manager and
-                self.watchlist_manager.check_if_symbol_now_passes_filters(symbol, ticker_data)):
+            if (
+                self.watchlist_manager
+                and self.watchlist_manager.check_if_symbol_now_passes_filters(
+                    symbol, ticker_data
+                )
+            ):
                 # 🎯 NOUVELLE OPPORTUNITÉ DÉTECTÉE !
                 self.logger.info(f"🎯 Nouvelle opportunité détectée: {symbol}")
 
@@ -230,7 +253,9 @@ class CandidateOpportunityDetector:
                     try:
                         self._on_candidate_ticker_callback(symbol, ticker_data)
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Erreur callback candidat: {e}")
+                        self.logger.warning(
+                            f"⚠️ Erreur callback candidat: {e}"
+                        )
 
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur traitement candidat {symbol}: {e}")
@@ -238,7 +263,8 @@ class CandidateOpportunityDetector:
 
 class CandidateMonitor:
     """
-    Moniteur de symboles candidats pour détecter les nouvelles opportunités en temps réel.
+    Moniteur de symboles candidats pour détecter les nouvelles opportunités
+    en temps réel.
 
     Cette classe orchestre les composants spécialisés :
     - CandidateSymbolDetector : Détection des candidats
@@ -274,7 +300,9 @@ class CandidateMonitor:
 
     def set_on_candidate_ticker_callback(self, callback: Callable):
         """Définit le callback pour les tickers des candidats."""
-        self._ws_manager.set_on_candidate_ticker_callback(self._on_candidate_ticker)
+        self._ws_manager.set_on_candidate_ticker_callback(
+            self._on_candidate_ticker
+        )
         self._opportunity_detector.set_on_candidate_ticker_callback(callback)
 
     def setup_candidate_monitoring(self, base_url: str, perp_data: Dict):
@@ -286,15 +314,19 @@ class CandidateMonitor:
             perp_data: Données des perpétuels
         """
         # Détecter les candidats
-        linear_candidates, inverse_candidates = self._detector.detect_candidates(
-            base_url, perp_data)
+        (
+            linear_candidates,
+            inverse_candidates,
+        ) = self._detector.detect_candidates(base_url, perp_data)
 
         # Stocker les candidats
         self.candidate_symbols = linear_candidates + inverse_candidates
 
         # Démarrer la surveillance WebSocket si des candidats existent
         if linear_candidates or inverse_candidates:
-            self._ws_manager.start_monitoring(linear_candidates, inverse_candidates)
+            self._ws_manager.start_monitoring(
+                linear_candidates, inverse_candidates
+            )
 
     def stop_candidate_monitoring(self):
         """Arrête la surveillance des candidats."""
@@ -302,4 +334,6 @@ class CandidateMonitor:
 
     def _on_candidate_ticker(self, symbol: str, ticker_data: dict):
         """Callback interne pour traiter les tickers des candidats."""
-        self._opportunity_detector.process_candidate_ticker(symbol, ticker_data)
+        self._opportunity_detector.process_candidate_ticker(
+            symbol, ticker_data
+        )

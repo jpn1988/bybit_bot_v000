@@ -57,7 +57,10 @@ class BotConfigurator:
             return config
         except ValueError as e:
             self.logger.error(f"❌ Erreur de configuration : {e}")
-            self.logger.error("💡 Corrigez les paramètres dans src/parameters.yaml ou les variables d'environnement")
+            self.logger.error(
+                "💡 Corrigez les paramètres dans src/parameters.yaml "
+                "ou les variables d'environnement"
+            )
             raise
 
     def get_market_data(self) -> Tuple[str, Dict]:
@@ -91,7 +94,7 @@ class BotConfigurator:
         data_manager: UnifiedDataManager,
         volatility_tracker: VolatilityTracker,
         watchlist_manager: WatchlistManager,
-        display_manager: DisplayManager
+        display_manager: DisplayManager,
     ):
         """
         Configure les managers avec les paramètres.
@@ -117,7 +120,9 @@ class BotConfigurator:
         volatility_tracker.ttl_seconds = volatility_ttl_sec
 
         # Configurer l'intervalle d'affichage
-        display_interval = int(config.get("display_interval_seconds", 10) or 10)
+        display_interval = int(
+            config.get("display_interval_seconds", 10) or 10
+        )
         display_manager.set_display_interval(display_interval)
         display_manager.set_price_ttl(120)
 

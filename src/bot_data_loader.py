@@ -40,7 +40,7 @@ class BotDataLoader:
         perp_data: Dict,
         watchlist_manager: WatchlistManager,
         volatility_tracker: VolatilityTracker,
-        data_manager: DataManager
+        data_manager: DataManager,
     ) -> bool:
         """
         Charge les données de la watchlist.
@@ -59,7 +59,11 @@ class BotDataLoader:
 
         try:
             # Construire la watchlist
-            linear_symbols, inverse_symbols, funding_data = watchlist_manager.build_watchlist(
+            (
+                linear_symbols,
+                inverse_symbols,
+                funding_data,
+            ) = watchlist_manager.build_watchlist(
                 base_url, perp_data, volatility_tracker
             )
 
@@ -70,23 +74,34 @@ class BotDataLoader:
             self._update_funding_data(funding_data, data_manager)
 
             # Mettre à jour les données originales
-            original_funding_data = watchlist_manager.get_original_funding_data()
+            original_funding_data = (
+                watchlist_manager.get_original_funding_data()
+            )
             for symbol, next_funding_time in original_funding_data.items():
-                data_manager.update_original_funding_data(symbol, next_funding_time)
+                data_manager.update_original_funding_data(
+                    symbol, next_funding_time
+                )
 
-            self.logger.info(f"✅ Watchlist chargée: {len(linear_symbols)} linear, {len(inverse_symbols)} inverse")
+            self.logger.info(
+                f"✅ Watchlist chargée: {len(linear_symbols)} linear, "
+                f"{len(inverse_symbols)} inverse"
+            )
             return True
 
         except Exception as e:
             if "Aucun symbole" in str(e) or "Aucun funding" in str(e):
                 # Ne pas lever d'exception, continuer en mode surveillance
-                self.logger.info("ℹ️ Aucune opportunité initiale détectée, mode surveillance activé")
+                self.logger.info(
+                    "ℹ️ Aucune opportunité initiale détectée, mode surveillance activé"
+                )
                 return True
             else:
                 self.logger.error(f"❌ Erreur chargement watchlist: {e}")
                 raise
 
-    def _update_funding_data(self, funding_data: Dict, data_manager: DataManager):
+    def _update_funding_data(
+        self, funding_data: Dict, data_manager: DataManager
+    ):
         """
         Met à jour les données de funding dans le data manager.
 
@@ -102,23 +117,37 @@ class BotDataLoader:
                     funding, volume, funding_time, spread = data[:4]
                     volatility = data[4] if len(data) > 4 else None
                     data_manager.update_funding_data(
-                        symbol, funding, volume, funding_time, spread, volatility
+                        symbol,
+                        funding,
+                        volume,
+                        funding_time,
+                        spread,
+                        volatility,
                     )
                 elif isinstance(data, dict):
                     # Si c'est un dictionnaire, extraire les valeurs
-                    funding = data.get('funding', 0.0)
-                    volume = data.get('volume', 0.0)
-                    funding_time = data.get('funding_time_remaining', '-')
-                    spread = data.get('spread_pct', 0.0)
-                    volatility = data.get('volatility_pct', None)
+                    funding = data.get("funding", 0.0)
+                    volume = data.get("volume", 0.0)
+                    funding_time = data.get("funding_time_remaining", "-")
+                    spread = data.get("spread_pct", 0.0)
+                    volatility = data.get("volatility_pct", None)
                     data_manager.update_funding_data(
-                        symbol, funding, volume, funding_time, spread, volatility
+                        symbol,
+                        funding,
+                        volume,
+                        funding_time,
+                        spread,
+                        volatility,
                     )
                 else:
-                    self.logger.warning(f"⚠️ Format de données inattendu pour {symbol}: {type(data)}")
+                    self.logger.warning(
+                        f"⚠️ Format de données inattendu pour {symbol}: {type(data)}"
+                    )
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur mise à jour données {symbol}: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur mise à jour données {symbol}: {e}"
+                )
 
         self.logger.info("✅ Données de funding mises à jour")
 
@@ -154,10 +183,14 @@ class BotDataLoader:
 
             if funding_count != total_symbols:
                 self.logger.warning(
-                    f"⚠️ Incohérence: {total_symbols} symboles mais {funding_count} données de funding"
+                    f"⚠️ Incohérence: {total_symbols} symboles mais "
+                    f"{funding_count} données de funding"
                 )
 
-            self.logger.info(f"✅ Intégrité validée: {total_symbols} symboles, {funding_count} données de funding")
+            self.logger.info(
+                f"✅ Intégrité validée: {total_symbols} symboles, "
+                f"{funding_count} données de funding"
+            )
             return True
 
         except Exception as e:
@@ -179,10 +212,14 @@ class BotDataLoader:
         funding_data = data_manager.get_all_funding_data()
 
         return {
-            'linear_count': len(linear_symbols),
-            'inverse_count': len(inverse_symbols),
-            'total_symbols': len(linear_symbols) + len(inverse_symbols),
-            'funding_data_count': len(funding_data),
-            'linear_symbols': linear_symbols[:5],  # Premiers 5 pour l'affichage
-            'inverse_symbols': inverse_symbols[:5]  # Premiers 5 pour l'affichage
+            "linear_count": len(linear_symbols),
+            "inverse_count": len(inverse_symbols),
+            "total_symbols": len(linear_symbols) + len(inverse_symbols),
+            "funding_data_count": len(funding_data),
+            "linear_symbols": linear_symbols[
+                :5
+            ],  # Premiers 5 pour l'affichage
+            "inverse_symbols": inverse_symbols[
+                :5
+            ],  # Premiers 5 pour l'affichage
         }

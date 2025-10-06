@@ -142,7 +142,9 @@ class DisplayManager:
             return
 
         # Vérifier si toutes les données sont disponibles avant d'afficher
-        if not self._formatter.are_all_data_available(funding_data, self.data_manager):
+        if not self._formatter.are_all_data_available(
+            funding_data, self.data_manager
+        ):
             if self._first_display:
                 self.logger.info(
                     "⏳ En attente des données de volatilité et spread..."
@@ -161,8 +163,12 @@ class DisplayManager:
 
         # Afficher les données
         for symbol in funding_data.keys():
-            row_data = self._formatter.prepare_row_data(symbol, self.data_manager)
-            line = self._formatter.format_table_row(symbol, row_data, col_widths)
+            row_data = self._formatter.prepare_row_data(
+                symbol, self.data_manager
+            )
+            line = self._formatter.format_table_row(
+                symbol, row_data, col_widths
+            )
             print(line)
 
         print()  # Ligne vide après le tableau
@@ -174,5 +180,8 @@ class DisplayManager:
         Returns:
             True si en cours d'exécution
         """
-        return (self._running and self._display_task and
-                not self._display_task.done())
+        return (
+            self._running
+            and self._display_task
+            and not self._display_task.done()
+        )

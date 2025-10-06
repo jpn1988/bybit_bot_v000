@@ -39,7 +39,12 @@ class UnifiedMonitoringManager:
     - Coordination des callbacks
     """
 
-    def __init__(self, data_manager: UnifiedDataManager, testnet: bool = True, logger=None):
+    def __init__(
+        self,
+        data_manager: UnifiedDataManager,
+        testnet: bool = True,
+        logger=None,
+    ):
         """
         Initialise le gestionnaire de surveillance unifié.
 
@@ -123,7 +128,9 @@ class UnifiedMonitoringManager:
         """
         self._on_candidate_ticker_callback = callback
 
-    async def start_continuous_monitoring(self, base_url: str, perp_data: Dict):
+    async def start_continuous_monitoring(
+        self, base_url: str, perp_data: Dict
+    ):
         """
         Démarre la surveillance continue du marché.
 
@@ -167,7 +174,9 @@ class UnifiedMonitoringManager:
             return
 
         self._scan_running = True
-        self._scan_task = asyncio.create_task(self._scanning_loop(base_url, perp_data))
+        self._scan_task = asyncio.create_task(
+            self._scanning_loop(base_url, perp_data)
+        )
         self.logger.info("🔍 Surveillance continue démarrée")
 
     async def _stop_market_scanning(self):
@@ -184,7 +193,9 @@ class UnifiedMonitoringManager:
                 try:
                     await asyncio.wait_for(self._scan_task, timeout=3.0)
                 except asyncio.TimeoutError:
-                    self.logger.warning("⚠️ Tâche scan n'a pas pu être annulée dans les temps")
+                    self.logger.warning(
+                        "⚠️ Tâche scan n'a pas pu être annulée dans les temps"
+                    )
                 except asyncio.CancelledError:
                     pass  # Annulation normale
             except Exception as e:
@@ -199,7 +210,9 @@ class UnifiedMonitoringManager:
             try:
                 # Vérification immédiate pour arrêt rapide
                 if not self._scan_running:
-                    self.logger.info("🛑 Arrêt de la surveillance continue demandé")
+                    self.logger.info(
+                        "🛑 Arrêt de la surveillance continue demandé"
+                    )
                     break
 
                 current_time = time.time()
@@ -220,7 +233,9 @@ class UnifiedMonitoringManager:
                 self.logger.info("🛑 Surveillance continue annulée")
                 break
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur dans la boucle de surveillance continue: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur dans la boucle de surveillance continue: {e}"
+                )
                 if not self._scan_running:
                     break
                 # Attendre avant de continuer pour éviter une boucle d'erreur
@@ -229,7 +244,9 @@ class UnifiedMonitoringManager:
 
     def _should_perform_scan(self, current_time: float) -> bool:
         """Vérifie s'il est temps d'effectuer un nouveau scan."""
-        return self._scan_running and (current_time - self._last_scan_time >= self._scan_interval)
+        return self._scan_running and (
+            current_time - self._last_scan_time >= self._scan_interval
+        )
 
     async def _wait_with_interrupt_check(self, seconds: int):
         """Attend avec vérification d'interruption."""
@@ -239,18 +256,25 @@ class UnifiedMonitoringManager:
             await asyncio.sleep(1)
 
     async def _perform_market_scan(self, base_url: str, perp_data: Dict):
-        """Effectue un scan complet du marché pour détecter de nouvelles opportunités."""
+        """Effectue un scan complet du marché pour détecter de nouvelles
+        opportunités."""
         if not self._scan_running:
             return
 
         try:
             # Si le WebSocket est déjà actif, éviter le scan complet coûteux
-            if self.ws_manager and hasattr(self.ws_manager, 'running') and self.ws_manager.running:
+            if (
+                self.ws_manager
+                and hasattr(self.ws_manager, "running")
+                and self.ws_manager.running
+            ):
                 self.logger.info("🔄 Scan évité - WebSocket déjà actif")
                 return
 
             # Scanner les opportunités
-            new_opportunities = self._scan_for_opportunities(base_url, perp_data)
+            new_opportunities = self._scan_for_opportunities(
+                base_url, perp_data
+            )
 
             # Vérification après le scan qui peut être long
             if not self._scan_running:
@@ -265,7 +289,9 @@ class UnifiedMonitoringManager:
             if self._scan_running:
                 self.logger.warning(f"⚠️ Erreur lors du re-scan: {e}")
 
-    def _scan_for_opportunities(self, base_url: str, perp_data: Dict) -> Optional[Dict]:
+    def _scan_for_opportunities(
+        self, base_url: str, perp_data: Dict
+    ) -> Optional[Dict]:
         """
         Scanne le marché pour trouver de nouvelles opportunités.
 
@@ -285,7 +311,11 @@ class UnifiedMonitoringManager:
             if not self.watchlist_manager or not self.volatility_tracker:
                 return None
 
-            linear_symbols, inverse_symbols, funding_data = self.watchlist_manager.build_watchlist(
+            (
+                linear_symbols,
+                inverse_symbols,
+                funding_data,
+            ) = self.watchlist_manager.build_watchlist(
                 fresh_base_url, perp_data, self.volatility_tracker
             )
 
@@ -293,7 +323,7 @@ class UnifiedMonitoringManager:
                 return {
                     "linear": linear_symbols,
                     "inverse": inverse_symbols,
-                    "funding_data": funding_data
+                    "funding_data": funding_data,
                 }
 
         except Exception as e:
@@ -322,7 +352,12 @@ class UnifiedMonitoringManager:
 
         if new_linear or new_inverse:
             # Mettre à jour les listes de symboles
-            self._update_symbol_lists(linear_symbols, inverse_symbols, existing_linear, existing_inverse)
+            self._update_symbol_lists(
+                linear_symbols,
+                inverse_symbols,
+                existing_linear,
+                existing_inverse,
+            )
 
             # Mettre à jour les données de funding
             self._update_funding_data(funding_data)
@@ -330,12 +365,21 @@ class UnifiedMonitoringManager:
             # Notifier les nouvelles opportunités
             if self._on_new_opportunity_callback:
                 try:
-                    self._on_new_opportunity_callback(linear_symbols, inverse_symbols)
+                    self._on_new_opportunity_callback(
+                        linear_symbols, inverse_symbols
+                    )
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Erreur callback nouvelles opportunités: {e}")
+                    self.logger.warning(
+                        f"⚠️ Erreur callback nouvelles opportunités: {e}"
+                    )
 
-    def _update_symbol_lists(self, linear_symbols: List[str], inverse_symbols: List[str],
-                            existing_linear: set, existing_inverse: set):
+    def _update_symbol_lists(
+        self,
+        linear_symbols: List[str],
+        inverse_symbols: List[str],
+        existing_linear: set,
+        existing_inverse: set,
+    ):
         """Met à jour les listes de symboles avec les nouvelles opportunités."""
         # Fusionner les listes
         all_linear = list(existing_linear | set(linear_symbols))
@@ -351,24 +395,34 @@ class UnifiedMonitoringManager:
             if isinstance(data, (list, tuple)) and len(data) >= 4:
                 funding, volume, funding_time, spread = data[:4]
                 volatility = data[4] if len(data) > 4 else None
-                self.data_manager.update_funding_data(symbol, funding, volume, funding_time, spread, volatility)
+                self.data_manager.update_funding_data(
+                    symbol, funding, volume, funding_time, spread, volatility
+                )
             elif isinstance(data, dict):
                 # Si c'est un dictionnaire, extraire les valeurs
-                funding = data.get('funding', 0.0)
-                volume = data.get('volume', 0.0)
-                funding_time = data.get('funding_time_remaining', '-')
-                spread = data.get('spread_pct', 0.0)
-                volatility = data.get('volatility_pct', None)
-                self.data_manager.update_funding_data(symbol, funding, volume, funding_time, spread, volatility)
+                funding = data.get("funding", 0.0)
+                volume = data.get("volume", 0.0)
+                funding_time = data.get("funding_time_remaining", "-")
+                spread = data.get("spread_pct", 0.0)
+                volatility = data.get("volatility_pct", None)
+                self.data_manager.update_funding_data(
+                    symbol, funding, volume, funding_time, spread, volatility
+                )
 
         # Mettre à jour les données originales si disponible
         if self.watchlist_manager:
             try:
-                original_data = self.watchlist_manager.get_original_funding_data()
+                original_data = (
+                    self.watchlist_manager.get_original_funding_data()
+                )
                 for symbol, next_funding_time in original_data.items():
-                    self.data_manager.update_original_funding_data(symbol, next_funding_time)
+                    self.data_manager.update_original_funding_data(
+                        symbol, next_funding_time
+                    )
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur mise à jour données originales: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur mise à jour données originales: {e}"
+                )
 
     def _setup_candidate_monitoring(self, base_url: str, perp_data: Dict):
         """
@@ -379,16 +433,22 @@ class UnifiedMonitoringManager:
             perp_data: Données des perpétuels
         """
         # Détecter les candidats
-        linear_candidates, inverse_candidates = self._detect_candidates(base_url, perp_data)
+        linear_candidates, inverse_candidates = self._detect_candidates(
+            base_url, perp_data
+        )
 
         # Stocker les candidats
         self.candidate_symbols = linear_candidates + inverse_candidates
 
         # Démarrer la surveillance WebSocket si des candidats existent
         if linear_candidates or inverse_candidates:
-            self._start_candidate_monitoring(linear_candidates, inverse_candidates)
+            self._start_candidate_monitoring(
+                linear_candidates, inverse_candidates
+            )
 
-    def _detect_candidates(self, base_url: str, perp_data: Dict) -> tuple[List[str], List[str]]:
+    def _detect_candidates(
+        self, base_url: str, perp_data: Dict
+    ) -> tuple[List[str], List[str]]:
         """
         Détecte les symboles candidats et les sépare par catégorie.
 
@@ -404,7 +464,9 @@ class UnifiedMonitoringManager:
                 return [], []
 
             # Détecter les candidats
-            candidate_symbols = self.watchlist_manager.find_candidate_symbols(base_url, perp_data)
+            candidate_symbols = self.watchlist_manager.find_candidate_symbols(
+                base_url, perp_data
+            )
 
             if not candidate_symbols:
                 return [], []
@@ -425,10 +487,14 @@ class UnifiedMonitoringManager:
             return linear_candidates, inverse_candidates
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur configuration surveillance candidats: {e}")
+            self.logger.warning(
+                f"⚠️ Erreur configuration surveillance candidats: {e}"
+            )
             return [], []
 
-    def _start_candidate_monitoring(self, linear_candidates: List[str], inverse_candidates: List[str]):
+    def _start_candidate_monitoring(
+        self, linear_candidates: List[str], inverse_candidates: List[str]
+    ):
         """
         Démarre la surveillance WebSocket des candidats.
 
@@ -453,23 +519,28 @@ class UnifiedMonitoringManager:
 
             # Créer la connexion WebSocket
             from ws_public import PublicWSClient
+
             self.candidate_ws_client = PublicWSClient(
                 category=category,
                 symbols=symbols_to_monitor,
                 testnet=self.testnet,
                 logger=self.logger,
-                on_ticker_callback=self._on_candidate_ticker
+                on_ticker_callback=self._on_candidate_ticker,
             )
 
             # Lancer la surveillance dans un thread séparé
-            self._candidate_ws_thread = threading.Thread(target=self._candidate_ws_runner)
+            self._candidate_ws_thread = threading.Thread(
+                target=self._candidate_ws_runner
+            )
             self._candidate_ws_thread.daemon = True
             self._candidate_ws_thread.start()
 
             self._candidate_running = True
 
         except Exception as e:
-            self.logger.error(f"❌ Erreur démarrage surveillance candidats: {e}")
+            self.logger.error(
+                f"❌ Erreur démarrage surveillance candidats: {e}"
+            )
 
     def _stop_candidate_monitoring(self):
         """Arrête la surveillance des candidats."""
@@ -482,14 +553,20 @@ class UnifiedMonitoringManager:
             try:
                 self.candidate_ws_client.close()
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur fermeture WebSocket candidats: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur fermeture WebSocket candidats: {e}"
+                )
 
         # Attendre la fin du thread avec timeout amélioré
         if self._candidate_ws_thread and self._candidate_ws_thread.is_alive():
             try:
-                self._candidate_ws_thread.join(timeout=10)  # Augmenté de 3s à 10s
+                self._candidate_ws_thread.join(
+                    timeout=10
+                )  # Augmenté de 3s à 10s
                 if self._candidate_ws_thread.is_alive():
-                    self.logger.warning("⚠️ Thread candidats n'a pas pu être arrêté dans les temps")
+                    self.logger.warning(
+                        "⚠️ Thread candidats n'a pas pu être arrêté dans les temps"
+                    )
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur attente thread candidats: {e}")
 
@@ -509,8 +586,12 @@ class UnifiedMonitoringManager:
                 return
 
             # Vérifier si le candidat passe maintenant les filtres
-            if (self.watchlist_manager and
-                self.watchlist_manager.check_if_symbol_now_passes_filters(symbol, ticker_data)):
+            if (
+                self.watchlist_manager
+                and self.watchlist_manager.check_if_symbol_now_passes_filters(
+                    symbol, ticker_data
+                )
+            ):
                 # 🎯 NOUVELLE OPPORTUNITÉ DÉTECTÉE !
                 self.logger.info(f"🎯 Nouvelle opportunité détectée: {symbol}")
 
@@ -519,7 +600,9 @@ class UnifiedMonitoringManager:
                     try:
                         self._on_candidate_ticker_callback(symbol, ticker_data)
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Erreur callback candidat: {e}")
+                        self.logger.warning(
+                            f"⚠️ Erreur callback candidat: {e}"
+                        )
 
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur traitement candidat {symbol}: {e}")
@@ -541,4 +624,6 @@ class UnifiedMonitoringManager:
         Returns:
             True si en cours d'exécution
         """
-        return self._running and (self._scan_running or self._candidate_running)
+        return self._running and (
+            self._scan_running or self._candidate_running
+        )

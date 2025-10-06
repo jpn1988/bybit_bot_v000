@@ -10,6 +10,7 @@ Cette classe gère uniquement :
 
 import yaml
 from typing import Dict
+
 try:
     from .config import get_settings
 except ImportError:
@@ -87,12 +88,15 @@ class ConfigManager:
 
         # ÉTAPE 2: Charger depuis le fichier YAML (priorité moyenne)
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+            with open(self.config_path, "r", encoding="utf-8") as f:
                 file_config = yaml.safe_load(f)
             if file_config:
                 default_config.update(file_config)
         except FileNotFoundError:
-            self.logger.warning(f"⚠️ Fichier YAML non trouvé : {self.config_path} (utilisation des valeurs par défaut)")
+            self.logger.warning(
+                f"⚠️ Fichier YAML non trouvé : {self.config_path} "
+                f"(utilisation des valeurs par défaut)"
+            )
         except Exception as e:
             self.logger.error(f"❌ Erreur lors du chargement YAML : {e}")
 
@@ -143,7 +147,10 @@ class ConfigManager:
 
         if funding_min is not None and funding_max is not None:
             if funding_min > funding_max:
-                errors.append(f"funding_min ({funding_min}) ne peut pas être supérieur à funding_max ({funding_max})")
+                errors.append(
+                    f"funding_min ({funding_min}) ne peut pas être "
+                    f"supérieur à funding_max ({funding_max})"
+                )
 
         # Validation des bornes de volatilité
         volatility_min = config.get("volatility_min")
@@ -151,10 +158,18 @@ class ConfigManager:
 
         if volatility_min is not None and volatility_max is not None:
             if volatility_min > volatility_max:
-                errors.append(f"volatility_min ({volatility_min}) ne peut pas être supérieur à volatility_max ({volatility_max})")
+                errors.append(
+                    f"volatility_min ({volatility_min}) ne peut pas être "
+                    f"supérieur à volatility_max ({volatility_max})"
+                )
 
         # Validation des valeurs négatives
-        for param in ["funding_min", "funding_max", "volatility_min", "volatility_max"]:
+        for param in [
+            "funding_min",
+            "funding_max",
+            "volatility_min",
+            "volatility_max",
+        ]:
             value = config.get(param)
             if value is not None and value < 0:
                 errors.append(f"{param} ne peut pas être négatif ({value})")
@@ -163,7 +178,9 @@ class ConfigManager:
         spread_max = config.get("spread_max")
         if spread_max is not None:
             if spread_max < 0:
-                errors.append(f"spread_max ne peut pas être négatif ({spread_max})")
+                errors.append(
+                    f"spread_max ne peut pas être négatif ({spread_max})"
+                )
             if spread_max > MAX_SPREAD_PERCENTAGE:
                 errors.append(
                     f"spread_max trop élevé ({spread_max}), "
@@ -173,16 +190,23 @@ class ConfigManager:
         # Validation du volume
         volume_min_millions = config.get("volume_min_millions")
         if volume_min_millions is not None and volume_min_millions < 0:
-            errors.append(f"volume_min_millions ne peut pas être négatif ({volume_min_millions})")
+            errors.append(
+                f"volume_min_millions ne peut pas être négatif ({volume_min_millions})"
+            )
 
         # Validation des paramètres temporels de funding
         ft_min = config.get("funding_time_min_minutes")
         ft_max = config.get("funding_time_max_minutes")
 
-        for param, value in [("funding_time_min_minutes", ft_min), ("funding_time_max_minutes", ft_max)]:
+        for param, value in [
+            ("funding_time_min_minutes", ft_min),
+            ("funding_time_max_minutes", ft_max),
+        ]:
             if value is not None:
                 if value < 0:
-                    errors.append(f"{param} ne peut pas être négatif ({value})")
+                    errors.append(
+                        f"{param} ne peut pas être négatif ({value})"
+                    )
                 if value > MAX_FUNDING_TIME_MINUTES:
                     errors.append(
                         f"{param} trop élevé ({value}), "
@@ -191,12 +215,18 @@ class ConfigManager:
 
         if ft_min is not None and ft_max is not None:
             if ft_min > ft_max:
-                errors.append(f"funding_time_min_minutes ({ft_min}) ne peut pas être supérieur à funding_time_max_minutes ({ft_max})")
+                errors.append(
+                    f"funding_time_min_minutes ({ft_min}) ne peut pas être "
+                    f"supérieur à funding_time_max_minutes ({ft_max})"
+                )
 
         # Validation de la catégorie
         categorie = config.get("categorie")
         if categorie not in ["linear", "inverse", "both"]:
-            errors.append(f"categorie invalide ({categorie}), valeurs autorisées: linear, inverse, both")
+            errors.append(
+                f"categorie invalide ({categorie}), valeurs autorisées: "
+                f"linear, inverse, both"
+            )
 
         # Validation de la limite
         limite = config.get("limite")
@@ -239,7 +269,9 @@ class ConfigManager:
 
         # Lever une erreur si des problèmes ont été détectés
         if errors:
-            error_msg = "Configuration invalide détectée:\n" + "\n".join(f"  - {error}" for error in errors)
+            error_msg = "Configuration invalide détectée:\n" + "\n".join(
+                f"  - {error}" for error in errors
+            )
             raise ValueError(error_msg)
 
     def get_config(self) -> Dict:

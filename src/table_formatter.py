@@ -50,7 +50,9 @@ class TableFormatter:
         """
         all_symbols = list(funding_data.keys())
         if all_symbols:
-            max_symbol_len = max(len("Symbole"), max(len(s) for s in all_symbols))
+            max_symbol_len = max(
+                len("Symbole"), max(len(s) for s in all_symbols)
+            )
         else:
             max_symbol_len = len("Symbole")
 
@@ -60,7 +62,7 @@ class TableFormatter:
             "volume": 10,
             "spread": 10,
             "volatility": 12,
-            "funding_time": 15
+            "funding_time": 15,
         }
 
     def format_table_header(self, col_widths: Dict[str, int]) -> str:
@@ -100,8 +102,9 @@ class TableFormatter:
         )
         return sep
 
-    def format_table_row(self, symbol: str, row_data: Dict[str, Any],
-                        col_widths: Dict[str, int]) -> str:
+    def format_table_row(
+        self, symbol: str, row_data: Dict[str, Any], col_widths: Dict[str, int]
+    ) -> str:
         """
         Formate une ligne du tableau.
 
@@ -226,47 +229,52 @@ class TableFormatter:
         volume = self._get_volume_value(realtime_info, original_volume)
         spread_pct = self._get_spread_value(realtime_info, original_spread)
         volatility_pct = self._get_volatility_value(symbol)
-        funding_time = self._get_funding_time_value(symbol, realtime_info, data_manager)
+        funding_time = self._get_funding_time_value(
+            symbol, realtime_info, data_manager
+        )
 
         return {
             "funding": funding,
             "volume": volume,
             "spread_pct": spread_pct,
             "volatility_pct": volatility_pct,
-            "funding_time": funding_time
+            "funding_time": funding_time,
         }
 
-    def _get_funding_value(self, realtime_info: Optional[Dict],
-                          original: Optional[float]) -> Optional[float]:
+    def _get_funding_value(
+        self, realtime_info: Optional[Dict], original: Optional[float]
+    ) -> Optional[float]:
         """Récupère la valeur de funding avec fallback."""
         if not realtime_info:
             return original
 
-        funding_rate = realtime_info.get('funding_rate')
+        funding_rate = realtime_info.get("funding_rate")
         if funding_rate is not None:
             return float(funding_rate)
         return original
 
-    def _get_volume_value(self, realtime_info: Optional[Dict],
-                         original: Optional[float]) -> Optional[float]:
+    def _get_volume_value(
+        self, realtime_info: Optional[Dict], original: Optional[float]
+    ) -> Optional[float]:
         """Récupère la valeur de volume avec fallback."""
         if not realtime_info:
             return original
 
-        volume24h = realtime_info.get('volume24h')
+        volume24h = realtime_info.get("volume24h")
         if volume24h is not None:
             return float(volume24h)
         return original
 
-    def _get_spread_value(self, realtime_info: Optional[Dict],
-                         original: Optional[float]) -> Optional[float]:
+    def _get_spread_value(
+        self, realtime_info: Optional[Dict], original: Optional[float]
+    ) -> Optional[float]:
         """Récupère la valeur de spread avec fallback."""
         if not realtime_info:
             return original
 
         # Calculer le spread en temps réel si on a bid/ask
-        bid1_price = realtime_info.get('bid1_price')
-        ask1_price = realtime_info.get('ask1_price')
+        bid1_price = realtime_info.get("bid1_price")
+        ask1_price = realtime_info.get("ask1_price")
 
         if bid1_price and ask1_price:
             try:
@@ -290,12 +298,13 @@ class TableFormatter:
                 pass
         return None
 
-    def _get_funding_time_value(self, symbol: str, realtime_info: Optional[Dict],
-                               data_manager) -> str:
+    def _get_funding_time_value(
+        self, symbol: str, realtime_info: Optional[Dict], data_manager
+    ) -> str:
         """Récupère la valeur de temps de funding."""
         # Priorité aux données temps réel
-        if realtime_info and realtime_info.get('next_funding_time'):
-            next_funding = realtime_info['next_funding_time']
+        if realtime_info and realtime_info.get("next_funding_time"):
+            next_funding = realtime_info["next_funding_time"]
             return self._calculate_funding_time_remaining(next_funding)
 
         # Fallback aux données originales
@@ -319,10 +328,10 @@ class TableFormatter:
             # Convertir le timestamp en secondes si nécessaire
             if isinstance(next_funding_time, str):
                 # Format ISO ou timestamp
-                if 'T' in next_funding_time:
+                if "T" in next_funding_time:
                     # Format ISO
                     dt = datetime.fromisoformat(
-                        next_funding_time.replace('Z', '+00:00')
+                        next_funding_time.replace("Z", "+00:00")
                     )
                     funding_ts = dt.timestamp()
                 else:

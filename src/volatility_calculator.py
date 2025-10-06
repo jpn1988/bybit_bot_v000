@@ -52,7 +52,9 @@ class VolatilityCalculator:
         """
         self._symbol_categories = symbol_categories
 
-    async def compute_volatility_batch(self, symbols: List[str]) -> Dict[str, Optional[float]]:
+    async def compute_volatility_batch(
+        self, symbols: List[str]
+    ) -> Dict[str, Optional[float]]:
         """
         Calcule la volatilité pour une liste de symboles en batch.
 
@@ -68,9 +70,13 @@ class VolatilityCalculator:
         # Initialiser le client si nécessaire
         if not self._client:
             try:
-                self._client = BybitPublicClient(testnet=self.testnet, timeout=self.timeout)
+                self._client = BybitPublicClient(
+                    testnet=self.testnet, timeout=self.timeout
+                )
             except Exception as e:
-                self.logger.error(f"⚠️ Impossible d'initialiser le client pour la volatilité: {e}")
+                self.logger.error(
+                    f"⚠️ Impossible d'initialiser le client pour la volatilité: {e}"
+                )
                 return {symbol: None for symbol in symbols}
 
         try:
@@ -78,13 +84,15 @@ class VolatilityCalculator:
                 self._client,
                 symbols,
                 timeout=self.timeout,
-                symbol_categories=self._symbol_categories
+                symbol_categories=self._symbol_categories,
             )
         except Exception as e:
             self.logger.error(f"⚠️ Erreur calcul volatilité batch: {e}")
             return {symbol: None for symbol in symbols}
 
-    def compute_volatility_batch_sync(self, symbols: List[str]) -> Dict[str, Optional[float]]:
+    def compute_volatility_batch_sync(
+        self, symbols: List[str]
+    ) -> Dict[str, Optional[float]]:
         """
         Version synchrone du calcul de volatilité en batch.
 
@@ -103,12 +111,16 @@ class VolatilityCalculator:
                 return asyncio.run(self.compute_volatility_batch(symbols))
 
             # Utiliser un ThreadPoolExecutor avec timeout pour éviter les blocages
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=1
+            ) as executor:
                 future = executor.submit(run_in_new_loop)
                 return future.result(timeout=30)  # Timeout de 30 secondes
 
         except concurrent.futures.TimeoutError:
-            self.logger.warning(f"⚠️ Timeout calcul volatilité synchrone pour {len(symbols)} symboles")
+            self.logger.warning(
+                f"⚠️ Timeout calcul volatilité synchrone pour {len(symbols)} symboles"
+            )
             return {symbol: None for symbol in symbols}
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur calcul volatilité synchrone: {e}")
@@ -118,18 +130,20 @@ class VolatilityCalculator:
         self,
         symbols_data: List[Tuple[str, float, float, str, float]],
         volatility_min: Optional[float],
-        volatility_max: Optional[float]
+        volatility_max: Optional[float],
     ) -> List[Tuple[str, float, float, str, float, Optional[float]]]:
         """
         Filtre les symboles par volatilité avec calcul automatique.
 
         Args:
-            symbols_data: Liste des (symbol, funding, volume, funding_time_remaining, spread_pct)
+            symbols_data: Liste des (symbol, funding, volume,
+                funding_time_remaining, spread_pct)
             volatility_min: Volatilité minimum ou None
             volatility_max: Volatilité maximum ou None
 
         Returns:
-            Liste des (symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct)
+            Liste des (symbol, funding, volume, funding_time_remaining,
+            spread_pct, volatility_pct)
         """
         # Préparer les volatilités (cache + calcul)
         all_volatilities = await self._prepare_volatility_data(symbols_data)
@@ -141,7 +155,9 @@ class VolatilityCalculator:
 
         return filtered_symbols
 
-    async def _prepare_volatility_data(self, symbols_data: List[Tuple[str, float, float, str, float]]) -> Dict[str, Optional[float]]:
+    async def _prepare_volatility_data(
+        self, symbols_data: List[Tuple[str, float, float, str, float]]
+    ) -> Dict[str, Optional[float]]:
         """
         Prépare les données de volatilité en utilisant le cache et les calculs.
 
@@ -163,7 +179,7 @@ class VolatilityCalculator:
         symbols_data: List[Tuple[str, float, float, str, float]],
         all_volatilities: Dict[str, Optional[float]],
         volatility_min: Optional[float],
-        volatility_max: Optional[float]
+        volatility_max: Optional[float],
     ) -> List[Tuple[str, float, float, str, float, Optional[float]]]:
         """
         Applique les filtres de volatilité aux symboles.
@@ -180,20 +196,42 @@ class VolatilityCalculator:
         filtered_symbols = []
         rejected_count = 0
 
-        for symbol, funding, volume, funding_time_remaining, spread_pct in symbols_data:
+        for (
+            symbol,
+            funding,
+            volume,
+            funding_time_remaining,
+            spread_pct,
+        ) in symbols_data:
             vol_pct = all_volatilities.get(symbol)
 
             # Vérifier si le symbole passe les filtres
-            if self._should_reject_symbol(vol_pct, volatility_min, volatility_max):
+            if self._should_reject_symbol(
+                vol_pct, volatility_min, volatility_max
+            ):
                 rejected_count += 1
                 continue
 
             # Ajouter le symbole avec sa volatilité
-            filtered_symbols.append((symbol, funding, volume, funding_time_remaining, spread_pct, vol_pct))
+            filtered_symbols.append(
+                (
+                    symbol,
+                    funding,
+                    volume,
+                    funding_time_remaining,
+                    spread_pct,
+                    vol_pct,
+                )
+            )
 
         return filtered_symbols
 
-    def _should_reject_symbol(self, vol_pct: Optional[float], volatility_min: Optional[float], volatility_max: Optional[float]) -> bool:
+    def _should_reject_symbol(
+        self,
+        vol_pct: Optional[float],
+        volatility_min: Optional[float],
+        volatility_max: Optional[float],
+    ) -> bool:
         """
         Détermine si un symbole doit être rejeté selon les critères de volatilité.
 
@@ -226,7 +264,7 @@ class VolatilityCalculator:
         self,
         symbols_data: List[Tuple[str, float, float, str, float]],
         volatility_min: Optional[float],
-        volatility_max: Optional[float]
+        volatility_max: Optional[float],
     ) -> List[Tuple[str, float, float, str, float, Optional[float]]]:
         """
         Version synchrone du filtrage par volatilité.
@@ -245,17 +283,23 @@ class VolatilityCalculator:
 
             # Créer un nouveau event loop dans un thread séparé pour éviter les conflits
             def run_in_new_loop():
-                return asyncio.run(self.filter_by_volatility_async(
-                    symbols_data, volatility_min, volatility_max
-                ))
+                return asyncio.run(
+                    self.filter_by_volatility_async(
+                        symbols_data, volatility_min, volatility_max
+                    )
+                )
 
             # Utiliser un ThreadPoolExecutor avec timeout pour éviter les blocages
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=1
+            ) as executor:
                 future = executor.submit(run_in_new_loop)
                 return future.result(timeout=30)  # Timeout de 30 secondes
 
         except concurrent.futures.TimeoutError:
-            self.logger.warning(f"⚠️ Timeout filtrage volatilité pour {len(symbols_data)} symboles")
+            self.logger.warning(
+                f"⚠️ Timeout filtrage volatilité pour {len(symbols_data)} symboles"
+            )
             return []
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur filtrage volatilité: {e}")

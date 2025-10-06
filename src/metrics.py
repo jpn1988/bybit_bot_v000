@@ -11,6 +11,7 @@ import statistics
 @dataclass
 class MetricsData:
     """Structure pour stocker les métriques."""
+
     # Compteurs
     api_calls_total: int = 0
     api_errors_total: int = 0
@@ -24,7 +25,9 @@ class MetricsData:
     last_update: float = field(default_factory=time.time)
 
     # Métriques par filtre
-    filter_stats: Dict[str, Dict[str, int]] = field(default_factory=lambda: defaultdict(lambda: {"kept": 0, "rejected": 0}))
+    filter_stats: Dict[str, Dict[str, int]] = field(
+        default_factory=lambda: defaultdict(lambda: {"kept": 0, "rejected": 0})
+    )
 
     # Métriques WebSocket
     ws_connections: int = 0
@@ -86,13 +89,19 @@ class MetricsCollector:
             # Calculer le taux d'erreur API
             error_rate = 0.0
             if self._data.api_calls_total > 0:
-                error_rate = (self._data.api_errors_total / self._data.api_calls_total) * 100
+                error_rate = (
+                    self._data.api_errors_total / self._data.api_calls_total
+                ) * 100
 
             # Calculer le taux de réussite des filtres
-            total_pairs_processed = self._data.pairs_kept_total + self._data.pairs_rejected_total
+            total_pairs_processed = (
+                self._data.pairs_kept_total + self._data.pairs_rejected_total
+            )
             filter_success_rate = 0.0
             if total_pairs_processed > 0:
-                filter_success_rate = (self._data.pairs_kept_total / total_pairs_processed) * 100
+                filter_success_rate = (
+                    self._data.pairs_kept_total / total_pairs_processed
+                ) * 100
 
             return {
                 "uptime_seconds": round(uptime, 2),
@@ -107,7 +116,7 @@ class MetricsCollector:
                 "ws_reconnects": self._data.ws_reconnects,
                 "ws_errors": self._data.ws_errors,
                 "last_update": self._data.last_update,
-                "filter_stats": dict(self._data.filter_stats)
+                "filter_stats": dict(self._data.filter_stats),
             }
 
     def reset(self):

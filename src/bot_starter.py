@@ -47,7 +47,7 @@ class BotStarter:
         data_manager: UnifiedDataManager,
         monitoring_manager: UnifiedMonitoringManager,
         base_url: str,
-        perp_data: Dict
+        perp_data: Dict,
     ):
         """
         Démarre tous les composants du bot.
@@ -72,10 +72,14 @@ class BotStarter:
             await self._start_websocket_connections(ws_manager, data_manager)
 
             # Configurer la surveillance des candidats
-            self._setup_candidate_monitoring(monitoring_manager, base_url, perp_data)
+            self._setup_candidate_monitoring(
+                monitoring_manager, base_url, perp_data
+            )
 
             # Démarrer le mode surveillance continue
-            await self._start_continuous_monitoring(monitoring_manager, base_url, perp_data)
+            await self._start_continuous_monitoring(
+                monitoring_manager, base_url, perp_data
+            )
 
         except Exception as e:
             self.logger.error(f"❌ Erreur démarrage composants: {e}")
@@ -90,9 +94,7 @@ class BotStarter:
         await display_manager.start_display_loop()
 
     async def _start_websocket_connections(
-        self,
-        ws_manager: WebSocketManager,
-        data_manager: UnifiedDataManager
+        self, ws_manager: WebSocketManager, data_manager: UnifiedDataManager
     ):
         """Démarre les connexions WebSocket."""
         linear_symbols = data_manager.get_linear_symbols()
@@ -105,25 +107,25 @@ class BotStarter:
         self,
         monitoring_manager: UnifiedMonitoringManager,
         base_url: str,
-        perp_data: Dict
+        perp_data: Dict,
     ):
-        """Configure la surveillance des candidats - délégation directe à UnifiedMonitoringManager."""
+        """Configure la surveillance des candidats - délégation directe à 
+        UnifiedMonitoringManager."""
         monitoring_manager.setup_candidate_monitoring(base_url, perp_data)
 
     async def _start_continuous_monitoring(
         self,
         monitoring_manager: UnifiedMonitoringManager,
         base_url: str,
-        perp_data: Dict
+        perp_data: Dict,
     ):
         """Démarre la surveillance continue."""
-        await monitoring_manager.start_continuous_monitoring(base_url, perp_data)
+        await monitoring_manager.start_continuous_monitoring(
+            base_url, perp_data
+        )
 
     def display_startup_summary(
-        self,
-        config: Dict,
-        perp_data: Dict,
-        data_manager: UnifiedDataManager
+        self, config: Dict, perp_data: Dict, data_manager: UnifiedDataManager
     ):
         """
         Affiche le résumé de démarrage structuré.
@@ -135,42 +137,46 @@ class BotStarter:
         """
         # Informations du bot
         bot_info = {
-            'name': 'BYBIT BOT',
-            'version': '0.9.0',
-            'environment': 'Testnet' if self.testnet else 'Mainnet',
-            'mode': 'Funding Sniping'
+            "name": "BYBIT BOT",
+            "version": "0.9.0",
+            "environment": "Testnet" if self.testnet else "Mainnet",
+            "mode": "Funding Sniping",
         }
 
         # Statistiques de filtrage
-        total_symbols = perp_data.get('total', 0)
+        total_symbols = perp_data.get("total", 0)
         linear_count = len(data_manager.get_linear_symbols())
         inverse_count = len(data_manager.get_inverse_symbols())
         final_count = linear_count + inverse_count
 
         filter_results = {
-            'stats': {
-                'total_symbols': total_symbols,
-                'after_funding_volume': final_count,
-                'after_spread': final_count,
-                'after_volatility': final_count,
-                'final_count': final_count
+            "stats": {
+                "total_symbols": total_symbols,
+                "after_funding_volume": final_count,
+                "after_spread": final_count,
+                "after_volatility": final_count,
+                "final_count": final_count,
             }
         }
 
         # Statut WebSocket
         ws_status = {
-            'connected': bool(linear_count or inverse_count),
-            'symbols_count': final_count,
-            'category': config.get('categorie', 'linear')
+            "connected": bool(linear_count or inverse_count),
+            "symbols_count": final_count,
+            "category": config.get("categorie", "linear"),
         }
 
         # Ajouter l'intervalle de métriques à la config
-        config['metrics_interval'] = 5
+        config["metrics_interval"] = 5
 
         # Afficher le résumé structuré
-        log_startup_summary(self.logger, bot_info, config, filter_results, ws_status)
+        log_startup_summary(
+            self.logger, bot_info, config, filter_results, ws_status
+        )
 
-    def get_startup_stats(self, data_manager: UnifiedDataManager) -> Dict[str, Any]:
+    def get_startup_stats(
+        self, data_manager: UnifiedDataManager
+    ) -> Dict[str, Any]:
         """
         Retourne les statistiques de démarrage.
 
@@ -184,8 +190,8 @@ class BotStarter:
         inverse_symbols = data_manager.get_inverse_symbols()
 
         return {
-            'linear_count': len(linear_symbols),
-            'inverse_count': len(inverse_symbols),
-            'total_symbols': len(linear_symbols) + len(inverse_symbols),
-            'startup_time': time.time()
+            "linear_count": len(linear_symbols),
+            "inverse_count": len(inverse_symbols),
+            "total_symbols": len(linear_symbols) + len(inverse_symbols),
+            "startup_time": time.time(),
         }

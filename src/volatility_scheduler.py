@@ -26,7 +26,12 @@ class VolatilityScheduler:
     - Coordination des cycles de rafraîchissement
     """
 
-    def __init__(self, calculator: VolatilityCalculator, cache: VolatilityCache, logger=None):
+    def __init__(
+        self,
+        calculator: VolatilityCalculator,
+        cache: VolatilityCache,
+        logger=None,
+    ):
         """
         Initialise le planificateur de volatilité.
 
@@ -44,7 +49,9 @@ class VolatilityScheduler:
         self._running = False
 
         # Callback pour obtenir la liste des symboles actifs
-        self._get_active_symbols_callback: Optional[Callable[[], List[str]]] = None
+        self._get_active_symbols_callback: Optional[
+            Callable[[], List[str]]
+        ] = None
 
     def set_active_symbols_callback(self, callback: Callable[[], List[str]]):
         """
@@ -79,8 +86,12 @@ class VolatilityScheduler:
 
                 # Si le thread ne s'est pas arrêté, forcer l'arrêt
                 if self._refresh_thread.is_alive():
-                    self.logger.warning("⚠️ Thread volatilité n'a pas pu s'arrêter proprement, arrêt forcé")
-                    # Marquer le thread comme daemon pour qu'il s'arrête avec le programme
+                    self.logger.warning(
+                        "⚠️ Thread volatilité n'a pas pu s'arrêter "
+                        "proprement, arrêt forcé"
+                    )
+                    # Marquer le thread comme daemon pour qu'il s'arrête
+                    # avec le programme
                     self._refresh_thread.daemon = True
 
             except Exception as e:
@@ -120,7 +131,9 @@ class VolatilityScheduler:
         Returns:
             Intervalle en secondes (entre 30 et 60s)
         """
-        return max(20, min(40, self.cache.ttl_seconds - 10))  # Intervalle plus court : 20-40s
+        return max(
+            20, min(40, self.cache.ttl_seconds - 10)
+        )  # Intervalle plus court : 20-40s
 
     def _get_symbols_to_refresh(self) -> List[str]:
         """
@@ -150,9 +163,13 @@ class VolatilityScheduler:
 
         # Mettre à jour le cache avec les résultats
         now_ts = time.time()
-        ok_count, fail_count = self.cache.update_cache_with_results(results, now_ts)
+        ok_count, fail_count = self.cache.update_cache_with_results(
+            results, now_ts
+        )
 
-        self.logger.info(f"✅ Refresh volatilité terminé: ok={ok_count} | fail={fail_count}")
+        self.logger.info(
+            f"✅ Refresh volatilité terminé: ok={ok_count} | fail={fail_count}"
+        )
 
         # Retry pour les symboles en échec
         failed_symbols = [s for s, v in results.items() if v is None]
@@ -162,7 +179,9 @@ class VolatilityScheduler:
         # Nettoyer le cache des symboles non suivis
         self.cache.clear_stale_cache(symbols)
 
-    def _run_async_volatility_batch(self, symbols: List[str]) -> Dict[str, Optional[float]]:
+    def _run_async_volatility_batch(
+        self, symbols: List[str]
+    ) -> Dict[str, Optional[float]]:
         """
         Exécute le calcul de volatilité en batch de manière synchrone.
         Utilise une approche simplifiée pour éviter les conflits d'event loops.
@@ -184,28 +203,37 @@ class VolatilityScheduler:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
-                        return loop.run_until_complete(self.calculator.compute_volatility_batch(symbols))
+                        return loop.run_until_complete(
+                            self.calculator.compute_volatility_batch(symbols)
+                        )
                     finally:
                         loop.close()
                         asyncio.set_event_loop(None)
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Erreur dans le thread de volatilité: {e}")
+                    self.logger.warning(
+                        f"⚠️ Erreur dans le thread de volatilité: {e}"
+                    )
                     return {symbol: None for symbol in symbols}
 
             # Utiliser un ThreadPoolExecutor avec timeout
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=1
+            ) as executor:
                 future = executor.submit(run_volatility_in_thread)
                 return future.result(timeout=45)  # Timeout de 45s
 
         except concurrent.futures.TimeoutError:
-            self.logger.warning(f"⚠️ Timeout calcul volatilité pour {len(symbols)} symboles")
+            self.logger.warning(
+                f"⚠️ Timeout calcul volatilité pour {len(symbols)} symboles"
+            )
             return {symbol: None for symbol in symbols}
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur calcul volatilité: {e}")
             return {symbol: None for symbol in symbols}
 
-
-    def _retry_failed_symbols(self, failed_symbols: List[str], timestamp: float):
+    def _retry_failed_symbols(
+        self, failed_symbols: List[str], timestamp: float
+    ):
         """
         Effectue un retry pour les symboles en échec.
 
@@ -213,7 +241,9 @@ class VolatilityScheduler:
             failed_symbols: Liste des symboles à retry
             timestamp: Timestamp pour le cache
         """
-        self.logger.info(f"🔁 Retry volatilité pour {len(failed_symbols)} symboles…")
+        self.logger.info(
+            f"🔁 Retry volatilité pour {len(failed_symbols)} symboles…"
+        )
         time.sleep(5)
 
         # Retry du calcul
@@ -226,7 +256,9 @@ class VolatilityScheduler:
                 self.cache.set_cached_volatility(symbol, vol_pct)
                 retry_ok += 1
 
-        self.logger.info(f"🔁 Retry volatilité terminé: récupérés={retry_ok}/{len(failed_symbols)}")
+        self.logger.info(
+            f"🔁 Retry volatilité terminé: récupérés={retry_ok}/{len(failed_symbols)}"
+        )
 
     def _wait_for_next_cycle(self, interval: int):
         """
@@ -236,7 +268,9 @@ class VolatilityScheduler:
             interval: Intervalle en secondes
         """
         # Vérification très fréquente pour un arrêt plus réactif
-        for _ in range(interval * 10):  # Vérifier 10 fois par seconde (plus efficace)
+        for _ in range(
+            interval * 10
+        ):  # Vérifier 10 fois par seconde (plus efficace)
             if not self._running:
                 break
             time.sleep(0.1)  # Attendre 100ms entre chaque vérification
@@ -248,6 +282,8 @@ class VolatilityScheduler:
         Returns:
             True si le rafraîchissement est actif
         """
-        return (self._running and
-                self._refresh_thread and
-                self._refresh_thread.is_alive())
+        return (
+            self._running
+            and self._refresh_thread
+            and self._refresh_thread.is_alive()
+        )

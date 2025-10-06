@@ -44,14 +44,28 @@ def get_settings() -> Dict:
     """
     # Liste des variables d'environnement valides pour la configuration
     valid_env_vars = {
-        "BYBIT_API_KEY", "BYBIT_API_SECRET", "TESTNET", "TIMEOUT", "LOG_LEVEL",
-        "SPREAD_MAX", "VOLUME_MIN_MILLIONS", "VOLATILITY_MIN", "VOLATILITY_MAX",
-        "FUNDING_MIN", "FUNDING_MAX", "CATEGORY", "LIMIT", "VOLATILITY_TTL_SEC",
-        "FUNDING_TIME_MIN_MINUTES", "FUNDING_TIME_MAX_MINUTES", "WS_PRIV_CHANNELS",
+        "BYBIT_API_KEY",
+        "BYBIT_API_SECRET",
+        "TESTNET",
+        "TIMEOUT",
+        "LOG_LEVEL",
+        "SPREAD_MAX",
+        "VOLUME_MIN_MILLIONS",
+        "VOLATILITY_MIN",
+        "VOLATILITY_MAX",
+        "FUNDING_MIN",
+        "FUNDING_MAX",
+        "CATEGORY",
+        "LIMIT",
+        "VOLATILITY_TTL_SEC",
+        "FUNDING_TIME_MIN_MINUTES",
+        "FUNDING_TIME_MAX_MINUTES",
+        "WS_PRIV_CHANNELS",
         "DISPLAY_INTERVAL_SECONDS",
         # Variables de rate limiting public
         # (utilisées par volatility.get_async_rate_limiter)
-        "PUBLIC_HTTP_MAX_CALLS_PER_SEC", "PUBLIC_HTTP_WINDOW_SECONDS",
+        "PUBLIC_HTTP_MAX_CALLS_PER_SEC",
+        "PUBLIC_HTTP_WINDOW_SECONDS",
     }
 
     # Variables d'environnement à ignorer complètement (faux positifs)
@@ -69,22 +83,78 @@ def get_settings() -> Dict:
     for var in unknown_vars:
         # Ignorer les variables système Windows/Python et les variables
         # non liées au bot
-        if not any(prefix in var.upper() for prefix in [
-            "PATH", "PYTHON", "WINDOWS", "USER", "HOME", "TEMP", "TMP",
-            "PROGRAM", "SYSTEM", "ALLUSER", "APPDATA", "LOCALAPPDATA",
-            "COMPUTERNAME", "USERNAME", "USERPROFILE", "WINDIR", "COMSPEC",
-            "PATHEXT", "PROCESSOR", "NUMBER_OF_PROCESSORS", "OS", "DRIVE",
-            "VIRTUAL_ENV", "CONDA", "PIP", "NODE", "NPM", "GIT", "SSH",
-            "DOCKER", "KUBERNETES", "AWS", "AZURE", "GOOGLE", "JAVA",
-            "MAVEN", "GRADLE", "NODEJS", "NPM", "YARN", "BOWER", "FPS",
-            "BROWSER", "APP", "PROFILE", "STRING"
-        ]):
+        if not any(
+            prefix in var.upper()
+            for prefix in [
+                "PATH",
+                "PYTHON",
+                "WINDOWS",
+                "USER",
+                "HOME",
+                "TEMP",
+                "TMP",
+                "PROGRAM",
+                "SYSTEM",
+                "ALLUSER",
+                "APPDATA",
+                "LOCALAPPDATA",
+                "COMPUTERNAME",
+                "USERNAME",
+                "USERPROFILE",
+                "WINDIR",
+                "COMSPEC",
+                "PATHEXT",
+                "PROCESSOR",
+                "NUMBER_OF_PROCESSORS",
+                "OS",
+                "DRIVE",
+                "VIRTUAL_ENV",
+                "CONDA",
+                "PIP",
+                "NODE",
+                "NPM",
+                "GIT",
+                "SSH",
+                "DOCKER",
+                "KUBERNETES",
+                "AWS",
+                "AZURE",
+                "GOOGLE",
+                "JAVA",
+                "MAVEN",
+                "GRADLE",
+                "NODEJS",
+                "NPM",
+                "YARN",
+                "BOWER",
+                "FPS",
+                "BROWSER",
+                "APP",
+                "PROFILE",
+                "STRING",
+            ]
+        ):
             # Vérifier si la variable semble liée au bot
             # (contient des mots-clés)
-            if any(keyword in var.upper() for keyword in [
-                "BYBIT", "FUNDING", "VOLATILITY", "SPREAD", "VOLUME", "CATEGORY",
-                "LIMIT", "TTL", "TIME", "MIN", "MAX", "CHANNELS", "WS", "PRIV"
-            ]):
+            if any(
+                keyword in var.upper()
+                for keyword in [
+                    "BYBIT",
+                    "FUNDING",
+                    "VOLATILITY",
+                    "SPREAD",
+                    "VOLUME",
+                    "CATEGORY",
+                    "LIMIT",
+                    "TTL",
+                    "TIME",
+                    "MIN",
+                    "MAX",
+                    "CHANNELS",
+                    "WS",
+                    "PRIV",
+                ]
+            ):
                 bot_related_unknown.append(var)
 
     # Logger les variables inconnues liées au bot
@@ -92,23 +162,25 @@ def get_settings() -> Dict:
         # Afficher directement sur stderr pour être sûr que le message
         # soit visible
         import sys
+
         for var in bot_related_unknown:
             print(
                 f"⚠️ Variable d'environnement inconnue ignorée: {var}",
-                file=sys.stderr
+                file=sys.stderr,
             )
-            valid_vars_str = ', '.join(sorted(valid_env_vars))
+            valid_vars_str = ", ".join(sorted(valid_env_vars))
             print(f"💡 Variables valides: {valid_vars_str}", file=sys.stderr)
 
         # Essayer aussi avec le logger si disponible
         try:
             import logging
+
             logger = logging.getLogger(__name__)
             for var in bot_related_unknown:
                 logger.warning(
                     f"⚠️ Variable d'environnement inconnue ignorée: {var}"
                 )
-                valid_vars_str = ', '.join(sorted(valid_env_vars))
+                valid_vars_str = ", ".join(sorted(valid_env_vars))
                 logger.warning(f"💡 Variables valides: {valid_vars_str}")
         except Exception:
             pass  # Le message a déjà été affiché sur stderr
@@ -189,7 +261,8 @@ class UnifiedConfigManager:
     Gestionnaire de configuration unifié pour le bot Bybit.
 
     Responsabilités :
-    - Chargement de la configuration depuis fichier YAML et variables d'environnement
+    - Chargement de la configuration depuis fichier YAML et variables 
+      d'environnement
     - Validation des paramètres de configuration
     - Fourniture des valeurs par défaut
     """
@@ -248,12 +321,15 @@ class UnifiedConfigManager:
 
         # ÉTAPE 2: Charger depuis le fichier YAML (priorité moyenne)
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+            with open(self.config_path, "r", encoding="utf-8") as f:
                 file_config = yaml.safe_load(f)
             if file_config:
                 default_config.update(file_config)
         except FileNotFoundError:
-            self.logger.warning(f"⚠️ Fichier YAML non trouvé : {self.config_path} (utilisation des valeurs par défaut)")
+            self.logger.warning(
+                f"⚠️ Fichier YAML non trouvé : {self.config_path} "
+                f"(utilisation des valeurs par défaut)"
+            )
         except Exception as e:
             self.logger.error(f"❌ Erreur lors du chargement YAML : {e}")
 
@@ -304,7 +380,10 @@ class UnifiedConfigManager:
 
         if funding_min is not None and funding_max is not None:
             if funding_min > funding_max:
-                errors.append(f"funding_min ({funding_min}) ne peut pas être supérieur à funding_max ({funding_max})")
+                errors.append(
+                    f"funding_min ({funding_min}) ne peut pas être "
+                    f"supérieur à funding_max ({funding_max})"
+                )
 
         # Validation des bornes de volatilité
         volatility_min = config.get("volatility_min")
@@ -312,10 +391,18 @@ class UnifiedConfigManager:
 
         if volatility_min is not None and volatility_max is not None:
             if volatility_min > volatility_max:
-                errors.append(f"volatility_min ({volatility_min}) ne peut pas être supérieur à volatility_max ({volatility_max})")
+                errors.append(
+                    f"volatility_min ({volatility_min}) ne peut pas être "
+                    f"supérieur à volatility_max ({volatility_max})"
+                )
 
         # Validation des valeurs négatives
-        for param in ["funding_min", "funding_max", "volatility_min", "volatility_max"]:
+        for param in [
+            "funding_min",
+            "funding_max",
+            "volatility_min",
+            "volatility_max",
+        ]:
             value = config.get(param)
             if value is not None and value < 0:
                 errors.append(f"{param} ne peut pas être négatif ({value})")
@@ -324,7 +411,9 @@ class UnifiedConfigManager:
         spread_max = config.get("spread_max")
         if spread_max is not None:
             if spread_max < 0:
-                errors.append(f"spread_max ne peut pas être négatif ({spread_max})")
+                errors.append(
+                    f"spread_max ne peut pas être négatif ({spread_max})"
+                )
             if spread_max > MAX_SPREAD_PERCENTAGE:
                 errors.append(
                     f"spread_max trop élevé ({spread_max}), "
@@ -334,16 +423,24 @@ class UnifiedConfigManager:
         # Validation du volume
         volume_min_millions = config.get("volume_min_millions")
         if volume_min_millions is not None and volume_min_millions < 0:
-            errors.append(f"volume_min_millions ne peut pas être négatif ({volume_min_millions})")
+            errors.append(
+                f"volume_min_millions ne peut pas être négatif "
+                f"({volume_min_millions})"
+            )
 
         # Validation des paramètres temporels de funding
         ft_min = config.get("funding_time_min_minutes")
         ft_max = config.get("funding_time_max_minutes")
 
-        for param, value in [("funding_time_min_minutes", ft_min), ("funding_time_max_minutes", ft_max)]:
+        for param, value in [
+            ("funding_time_min_minutes", ft_min),
+            ("funding_time_max_minutes", ft_max),
+        ]:
             if value is not None:
                 if value < 0:
-                    errors.append(f"{param} ne peut pas être négatif ({value})")
+                    errors.append(
+                        f"{param} ne peut pas être négatif ({value})"
+                    )
                 if value > MAX_FUNDING_TIME_MINUTES:
                     errors.append(
                         f"{param} trop élevé ({value}), "
@@ -352,12 +449,18 @@ class UnifiedConfigManager:
 
         if ft_min is not None and ft_max is not None:
             if ft_min > ft_max:
-                errors.append(f"funding_time_min_minutes ({ft_min}) ne peut pas être supérieur à funding_time_max_minutes ({ft_max})")
+                errors.append(
+                    f"funding_time_min_minutes ({ft_min}) ne peut pas être "
+                    f"supérieur à funding_time_max_minutes ({ft_max})"
+                )
 
         # Validation de la catégorie
         categorie = config.get("categorie")
         if categorie not in ["linear", "inverse", "both"]:
-            errors.append(f"categorie invalide ({categorie}), valeurs autorisées: linear, inverse, both")
+            errors.append(
+                f"categorie invalide ({categorie}), valeurs autorisées: "
+                f"linear, inverse, both"
+            )
 
         # Validation de la limite
         limite = config.get("limite")
@@ -389,18 +492,22 @@ class UnifiedConfigManager:
         if display_interval is not None:
             if display_interval < MIN_DISPLAY_INTERVAL_SECONDS:
                 errors.append(
-                    f"display_interval_seconds trop faible ({display_interval}), "
+                    f"display_interval_seconds trop faible "
+                    f"({display_interval}), "
                     f"minimum: {MIN_DISPLAY_INTERVAL_SECONDS} seconde"
                 )
             if display_interval > MAX_DISPLAY_INTERVAL_SECONDS:
                 errors.append(
-                    f"display_interval_seconds trop élevé ({display_interval}), "
+                    f"display_interval_seconds trop élevé "
+                    f"({display_interval}), "
                     f"maximum: {MAX_DISPLAY_INTERVAL_SECONDS} secondes (5min)"
                 )
 
         # Lever une erreur si des problèmes ont été détectés
         if errors:
-            error_msg = "Configuration invalide détectée:\n" + "\n".join(f"  - {error}" for error in errors)
+            error_msg = "Configuration invalide détectée:\n" + "\n".join(
+                f"  - {error}" for error in errors
+            )
             raise ValueError(error_msg)
 
     def get_config(self) -> Dict:

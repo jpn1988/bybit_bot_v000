@@ -61,31 +61,33 @@ class BotInitializer:
         nécessaires au fonctionnement du bot.
         """
         # Initialiser le gestionnaire de données
-        self.data_manager = UnifiedDataManager(testnet=self.testnet, logger=self.logger)
+        self.data_manager = UnifiedDataManager(
+            testnet=self.testnet, logger=self.logger
+        )
 
         # Initialiser le gestionnaire d'affichage
-        self.display_manager = DisplayManager(self.data_manager, logger=self.logger)
+        self.display_manager = DisplayManager(
+            self.data_manager, logger=self.logger
+        )
 
         # Initialiser le gestionnaire de surveillance unifié
         self.monitoring_manager = UnifiedMonitoringManager(
-            self.data_manager,
-            testnet=self.testnet,
-            logger=self.logger
+            self.data_manager, testnet=self.testnet, logger=self.logger
         )
 
         # Gestionnaire WebSocket dédié
-        self.ws_manager = WebSocketManager(testnet=self.testnet, logger=self.logger)
+        self.ws_manager = WebSocketManager(
+            testnet=self.testnet, logger=self.logger
+        )
 
         # Gestionnaire de volatilité dédié
         self.volatility_tracker = VolatilityTracker(
-            testnet=self.testnet,
-            logger=self.logger
+            testnet=self.testnet, logger=self.logger
         )
 
         # Gestionnaire de watchlist dédié
         self.watchlist_manager = WatchlistManager(
-            testnet=self.testnet,
-            logger=self.logger
+            testnet=self.testnet, logger=self.logger
         )
 
     def initialize_specialized_managers(self):
@@ -100,8 +102,7 @@ class BotInitializer:
 
         # Gestionnaire d'opportunités
         self.opportunity_manager = OpportunityManager(
-            self.data_manager,
-            logger=self.logger
+            self.data_manager, logger=self.logger
         )
 
     def setup_manager_callbacks(self):
@@ -111,12 +112,20 @@ class BotInitializer:
         Cette méthode délègue entièrement à CallbackManager pour centraliser
         toute la logique de configuration des callbacks.
         """
-        if not all([
-            self.callback_manager, self.display_manager,
-            self.monitoring_manager, self.volatility_tracker,
-            self.ws_manager, self.data_manager
-        ]):
-            raise RuntimeError("Tous les managers doivent être initialisés avant la configuration des callbacks")
+        if not all(
+            [
+                self.callback_manager,
+                self.display_manager,
+                self.monitoring_manager,
+                self.volatility_tracker,
+                self.ws_manager,
+                self.data_manager,
+            ]
+        ):
+            raise RuntimeError(
+                "Tous les managers doivent être initialisés avant "
+                "la configuration des callbacks"
+            )
 
         # Délégation complète à CallbackManager pour centraliser la logique
         self.callback_manager.setup_all_callbacks(
@@ -126,7 +135,7 @@ class BotInitializer:
             self.ws_manager,
             self.data_manager,
             self.watchlist_manager,
-            self.opportunity_manager
+            self.opportunity_manager,
         )
 
     def get_managers(self):
@@ -137,12 +146,12 @@ class BotInitializer:
             dict: Dictionnaire contenant tous les managers
         """
         return {
-            'data_manager': self.data_manager,
-            'display_manager': self.display_manager,
-            'monitoring_manager': self.monitoring_manager,
-            'ws_manager': self.ws_manager,
-            'volatility_tracker': self.volatility_tracker,
-            'watchlist_manager': self.watchlist_manager,
-            'callback_manager': self.callback_manager,
-            'opportunity_manager': self.opportunity_manager
+            "data_manager": self.data_manager,
+            "display_manager": self.display_manager,
+            "monitoring_manager": self.monitoring_manager,
+            "ws_manager": self.ws_manager,
+            "volatility_tracker": self.volatility_tracker,
+            "watchlist_manager": self.watchlist_manager,
+            "callback_manager": self.callback_manager,
+            "opportunity_manager": self.opportunity_manager,
         }

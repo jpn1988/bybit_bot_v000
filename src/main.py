@@ -2,6 +2,7 @@
 
 import sys
 import atexit
+
 try:
     from .config import get_settings
     from .logging_setup import setup_logging
@@ -28,13 +29,15 @@ def main():
     # Étape 2: Chargement de la configuration
     settings = get_settings()
     logger.info(
-        f"📂 Configuration chargée (testnet={settings['testnet']}, timeout={settings['timeout']})"
+        f"📂 Configuration chargée (testnet={settings['testnet']}, "
+        f"timeout={settings['timeout']})"
     )
 
     # Étape 3: Vérification des clés API
-    if not settings['api_key'] or not settings['api_secret']:
+    if not settings["api_key"] or not settings["api_secret"]:
         logger.error(
-            "⛔ Clés API manquantes : ajoute BYBIT_API_KEY et BYBIT_API_SECRET dans .env"
+            "⛔ Clés API manquantes : ajoute BYBIT_API_KEY et "
+            "BYBIT_API_SECRET dans .env"
         )
         sys.exit(1)
 
@@ -42,10 +45,10 @@ def main():
         # Étape 4: Initialisation du client Bybit
         logger.info("🔐 Initialisation de la connexion privée Bybit…")
         client = BybitClient(
-            testnet=settings['testnet'],
-            timeout=settings['timeout'],
-            api_key=settings['api_key'],
-            api_secret=settings['api_secret']
+            testnet=settings["testnet"],
+            timeout=settings["timeout"],
+            api_key=settings["api_key"],
+            api_secret=settings["api_secret"],
         )
 
         # Étape 5: Lecture du solde
@@ -56,12 +59,16 @@ def main():
         accounts = data.get("list", [])
         acct = accounts[0] if accounts else {}
         coin_list = acct.get("coin", [])
-        usdt = next((c for c in coin_list if str(c.get("coin")).upper() == "USDT"), None)
+        usdt = next(
+            (c for c in coin_list if str(c.get("coin")).upper() == "USDT"),
+            None,
+        )
 
         # Afficher les totaux du compte si disponibles
         if acct.get("totalEquity") or acct.get("totalWalletBalance"):
             logger.info(
-                f"ℹ️ Totaux compte UNIFIED | totalEquity={acct.get('totalEquity')} | "
+                f"ℹ️ Totaux compte UNIFIED | "
+                f"totalEquity={acct.get('totalEquity')} | "
                 f"totalWalletBalance={acct.get('totalWalletBalance')}"
             )
 
@@ -73,7 +80,8 @@ def main():
             avail = float(usdt.get("availableToWithdraw", 0) or 0)
 
             logger.info(
-                f"✅ Solde USDT | equity={equity:.4f} | walletBalance={wallet:.4f} | "
+                f"✅ Solde USDT | equity={equity:.4f} | "
+                f"walletBalance={wallet:.4f} | "
                 f"availableToWithdraw={avail:.4f}"
             )
 

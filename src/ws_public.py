@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""WebSocket publique Bybit v5 - Client réutilisable avec reconnexion automatique."""
+"""WebSocket publique Bybit v5 - Client réutilisable avec reconnexion 
+automatique."""
 
 import json
 import time
@@ -22,7 +23,7 @@ class PublicWSClient:
         symbols: List[str],
         testnet: bool,
         logger,
-        on_ticker_callback: Callable[[dict], None]
+        on_ticker_callback: Callable[[dict], None],
     ):
         """
         Initialise le client WebSocket publique.
@@ -32,7 +33,8 @@ class PublicWSClient:
             symbols (List[str]): Liste des symboles à suivre
             testnet (bool): Utiliser le testnet (True) ou le mainnet (False)
             logger: Instance du logger pour les messages
-            on_ticker_callback (Callable): Fonction appelée pour chaque ticker reçu
+            on_ticker_callback (Callable): Fonction appelée pour chaque 
+            ticker reçu
         """
         self.category = category
         self.symbols = symbols
@@ -55,12 +57,14 @@ class PublicWSClient:
         """Construit l'URL WebSocket selon la catégorie et l'environnement."""
         if self.category == "linear":
             return (
-                "wss://stream-testnet.bybit.com/v5/public/linear" if self.testnet
+                "wss://stream-testnet.bybit.com/v5/public/linear"
+                if self.testnet
                 else "wss://stream.bybit.com/v5/public/linear"
             )
         else:
             return (
-                "wss://stream-testnet.bybit.com/v5/public/inverse" if self.testnet
+                "wss://stream-testnet.bybit.com/v5/public/inverse"
+                if self.testnet
                 else "wss://stream.bybit.com/v5/public/inverse"
             )
 
@@ -71,28 +75,35 @@ class PublicWSClient:
         # Enregistrer la connexion WebSocket
         record_ws_connection(connected=True)
 
-        # Réinitialiser l'index de délai de reconnexion après une connexion réussie
+        # Réinitialiser l'index de délai de reconnexion après une 
+        # connexion réussie
         self.current_delay_index = 0
 
         # S'abonner aux tickers pour tous les symboles
         if self.symbols:
             subscribe_message = {
                 "op": "subscribe",
-                "args": [f"tickers.{symbol}" for symbol in self.symbols]
+                "args": [f"tickers.{symbol}" for symbol in self.symbols],
             }
             try:
                 ws.send(json.dumps(subscribe_message))
                 self.logger.info(
-                    f"# Souscription tickers → {len(self.symbols)} symboles ({self.category})"
+                    f"# Souscription tickers → {len(self.symbols)} symboles "
+                    f"({self.category})"
                 )
             except (json.JSONEncodeError, ConnectionError, OSError) as e:
                 self.logger.error(
-                    f"Erreur souscription WebSocket {self.category}: {type(e).__name__}: {e}"
+                    f"Erreur souscription WebSocket {self.category}: "
+                    f"{type(e).__name__}: {e}"
                 )
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur souscription {self.category}: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur souscription {self.category}: {e}"
+                )
         else:
-            self.logger.warning(f"⚠️ Aucun symbole à suivre pour {self.category}")
+            self.logger.warning(
+                f"⚠️ Aucun symbole à suivre pour {self.category}"
+            )
 
         # Appeler le callback externe si défini
         if self.on_open_callback:
@@ -113,7 +124,8 @@ class PublicWSClient:
             self.logger.warning(f"⚠️ Erreur JSON ({self.category}): {e}")
         except (KeyError, TypeError, AttributeError) as e:
             self.logger.warning(
-                f"⚠️ Erreur parsing données ({self.category}): {type(e).__name__}: {e}"
+                f"⚠️ Erreur parsing données ({self.category}): "
+                f"{type(e).__name__}: {e}"
             )
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur parsing ({self.category}): {e}")
@@ -135,7 +147,8 @@ class PublicWSClient:
         """Callback interne appelé à la fermeture."""
         if self.running:
             self.logger.info(
-                f"🔌 WS fermée ({self.category}) (code={close_status_code}, reason={close_msg})"
+                f"🔌 WS fermée ({self.category}) "
+                f"(code={close_status_code}, reason={close_msg})"
             )
 
             # Appeler le callback externe si défini
@@ -163,16 +176,19 @@ class PublicWSClient:
                     on_open=self._on_open,
                     on_message=self._on_message,
                     on_error=self._on_error,
-                    on_close=self._on_close
+                    on_close=self._on_close,
                 )
 
-                self.ws.run_forever(ping_interval=20, ping_timeout=15)  # Timeout ping augmenté de 10s à 15s
+                self.ws.run_forever(
+                    ping_interval=20, ping_timeout=15
+                )  # Timeout ping augmenté de 10s à 15s
 
             except (ConnectionError, OSError, TimeoutError) as e:
                 if self.running:
                     try:
                         self.logger.error(
-                            f"Erreur connexion réseau WS publique ({self.category}): "
+                            f"Erreur connexion réseau WS publique "
+                            f"({self.category}): "
                             f"{type(e).__name__}: {e}"
                         )
                     except Exception:
@@ -180,31 +196,42 @@ class PublicWSClient:
             except Exception as e:
                 if self.running:
                     try:
-                        self.logger.error(f"Erreur connexion WS publique ({self.category}): {e}")
+                        self.logger.error(
+                            f"Erreur connexion WS publique "
+                            f"({self.category}): {e}"
+                        )
                     except Exception:
                         pass
 
             # Reconnexion avec backoff progressif
             if self.running:
                 delay = self.reconnect_delays[
-                    min(self.current_delay_index, len(self.reconnect_delays) - 1)
+                    min(
+                        self.current_delay_index,
+                        len(self.reconnect_delays) - 1,
+                    )
                 ]
                 try:
                     self.logger.warning(
-                        f"🔁 WS publique ({self.category}) déconnectée → reconnexion dans {delay}s"
+                        f"🔁 WS publique ({self.category}) déconnectée "
+                        f"→ reconnexion dans {delay}s"
                     )
-                    record_ws_connection(connected=False)  # Enregistrer la reconnexion
+                    record_ws_connection(
+                        connected=False
+                    )  # Enregistrer la reconnexion
                 except Exception:
                     pass
 
                 # Attendre le délai avec vérification périodique de l'arrêt
-                # Utiliser time.sleep mais avec vérification plus fréquente pour éviter les blocages
+                # Utiliser time.sleep mais avec vérification plus fréquente
+                # pour éviter les blocages
                 for _ in range(delay * 10):  # 10 vérifications par seconde
                     if not self.running:
                         break
                     time.sleep(0.1)  # Vérification très fréquente (100ms)
 
-                # Augmenter l'index de délai pour le prochain backoff (jusqu'à la limite)
+                # Augmenter l'index de délai pour le prochain backoff
+                # (jusqu'à la limite)
                 if self.current_delay_index < len(self.reconnect_delays) - 1:
                     self.current_delay_index += 1
             else:
@@ -221,13 +248,14 @@ class PublicWSClient:
                 self.ws.close()
                 # Attendre très peu pour que la fermeture se propage
                 import time
+
                 time.sleep(0.1)  # Augmenté pour permettre la fermeture
             except Exception:
                 pass
             finally:
                 # Forcer la fermeture si nécessaire
                 try:
-                    if hasattr(self.ws, 'sock') and self.ws.sock:
+                    if hasattr(self.ws, "sock") and self.ws.sock:
                         self.ws.sock.close()
                 except Exception:
                     pass
@@ -243,7 +271,7 @@ class PublicWSClient:
         self,
         on_open: Optional[Callable] = None,
         on_close: Optional[Callable] = None,
-        on_error: Optional[Callable] = None
+        on_error: Optional[Callable] = None,
     ):
         """
         Définit des callbacks optionnels pour les événements de connexion.

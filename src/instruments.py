@@ -2,12 +2,15 @@
 
 import httpx
 from http_utils import get_rate_limiter
+
 _rate_limiter = get_rate_limiter()
 from http_client_manager import get_http_client
 from typing import Dict, List
 
 
-def fetch_instruments_info(base_url: str, category: str, timeout: int = 10) -> List[Dict]:
+def fetch_instruments_info(
+    base_url: str, category: str, timeout: int = 10
+) -> List[Dict]:
     """
     Récupère la liste des instruments via l'API Bybit.
 
@@ -28,10 +31,7 @@ def fetch_instruments_info(base_url: str, category: str, timeout: int = 10) -> L
     while True:
         # Construire l'URL avec pagination
         url = f"{base_url}/v5/market/instruments-info"
-        params = {
-            "category": category,
-            "limit": 1000
-        }
+        params = {"category": category, "limit": 1000}
         if cursor:
             params["cursor"] = cursor
 
@@ -42,7 +42,10 @@ def fetch_instruments_info(base_url: str, category: str, timeout: int = 10) -> L
 
             # Vérifier le statut HTTP
             if response.status_code >= 400:
-                raise RuntimeError(f"Erreur HTTP Bybit: status={response.status_code} detail=\"{response.text[:100]}\"")
+                raise RuntimeError(
+                    f'Erreur HTTP Bybit: status={response.status_code} '
+                    f'detail="{response.text[:100]}"'
+                )
 
             data = response.json()
 
@@ -50,7 +53,9 @@ def fetch_instruments_info(base_url: str, category: str, timeout: int = 10) -> L
             if data.get("retCode") != 0:
                 ret_code = data.get("retCode")
                 ret_msg = data.get("retMsg", "")
-                raise RuntimeError(f"Erreur API Bybit: retCode={ret_code} retMsg=\"{ret_msg}\"")
+                raise RuntimeError(
+                    f'Erreur API Bybit: retCode={ret_code} retMsg="{ret_msg}"'
+                )
 
             result = data.get("result", {})
             instruments = result.get("list", [])
@@ -145,23 +150,32 @@ def get_perp_symbols(base_url: str, timeout: int = 10) -> Dict:
         "linear": linear_symbols,
         "inverse": inverse_symbols,
         "total": len(linear_symbols) + len(inverse_symbols),
-        "categories": categories,  # mapping officiel symbole -> catégorie ('linear'|'inverse')
+        "categories": categories,  # mapping officiel symbole -> catégorie
+        # ('linear'|'inverse')
     }
 
 
-def category_of_symbol(symbol: str, categories: Dict[str, str] | None = None) -> str:
+def category_of_symbol(
+    symbol: str, categories: Dict[str, str] | None = None
+) -> str:
     """
-    Retourne la catégorie officielle d'un symbole si connue, sinon une heuristique sûre.
+    Retourne la catégorie officielle d'un symbole si connue, sinon une 
+    heuristique sûre.
 
     Args:
         symbol (str): Symbole Bybit
-        categories (Dict[str, str] | None): Mapping officiel symbole->catégorie ('linear'|'inverse')
+        categories (Dict[str, str] | None): Mapping officiel symbole->catégorie
+        ('linear'|'inverse')
 
     Returns:
         str: 'linear' ou 'inverse'
     """
     try:
-        if categories and symbol in categories and categories[symbol] in ("linear", "inverse"):
+        if (
+            categories
+            and symbol in categories
+            and categories[symbol] in ("linear", "inverse")
+        ):
             return categories[symbol]
         # Heuristique conservatrice: USDT => linear, sinon inverse
         return "linear" if "USDT" in symbol else "inverse"

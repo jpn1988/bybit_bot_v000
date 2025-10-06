@@ -24,7 +24,10 @@ class RateLimiter:
             now = time.time()
             with self._lock:
                 # Retirer les timestamps hors fenêtre
-                while self._timestamps and now - self._timestamps[0] > self.window_seconds:
+                while (
+                    self._timestamps
+                    and now - self._timestamps[0] > self.window_seconds
+                ):
                     self._timestamps.popleft()
                 if len(self._timestamps) < self.max_calls:
                     self._timestamps.append(now)

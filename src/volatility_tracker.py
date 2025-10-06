@@ -25,7 +25,13 @@ class VolatilityTracker:
     - VolatilityScheduler : Rafraîchissement périodique
     """
 
-    def __init__(self, testnet: bool = True, ttl_seconds: int = 120, max_cache_size: int = 1000, logger=None):
+    def __init__(
+        self,
+        testnet: bool = True,
+        ttl_seconds: int = 120,
+        max_cache_size: int = 1000,
+        logger=None,
+    ):
         """
         Initialise le gestionnaire de volatilité.
 
@@ -41,12 +47,22 @@ class VolatilityTracker:
         self.logger = logger or setup_logging()
 
         # Initialiser les composants spécialisés
-        self.calculator = VolatilityCalculator(testnet=testnet, logger=self.logger)
-        self.cache = VolatilityCache(ttl_seconds=ttl_seconds, max_cache_size=max_cache_size, logger=self.logger)
-        self.scheduler = VolatilityScheduler(self.calculator, self.cache, logger=self.logger)
+        self.calculator = VolatilityCalculator(
+            testnet=testnet, logger=self.logger
+        )
+        self.cache = VolatilityCache(
+            ttl_seconds=ttl_seconds,
+            max_cache_size=max_cache_size,
+            logger=self.logger,
+        )
+        self.scheduler = VolatilityScheduler(
+            self.calculator, self.cache, logger=self.logger
+        )
 
         # Callback pour obtenir la liste des symboles actifs
-        self._get_active_symbols_callback: Optional[Callable[[], List[str]]] = None
+        self._get_active_symbols_callback: Optional[
+            Callable[[], List[str]]
+        ] = None
 
     def set_symbol_categories(self, symbol_categories: Dict[str, str]):
         """
@@ -106,7 +122,9 @@ class VolatilityTracker:
         """
         self.cache.clear_stale_cache(active_symbols)
 
-    async def compute_volatility_batch(self, symbols: List[str]) -> Dict[str, Optional[float]]:
+    async def compute_volatility_batch(
+        self, symbols: List[str]
+    ) -> Dict[str, Optional[float]]:
         """
         Calcule la volatilité pour une liste de symboles en batch.
 
@@ -122,18 +140,20 @@ class VolatilityTracker:
         self,
         symbols_data: List[Tuple[str, float, float, str, float]],
         volatility_min: Optional[float],
-        volatility_max: Optional[float]
+        volatility_max: Optional[float],
     ) -> List[Tuple[str, float, float, str, float, Optional[float]]]:
         """
         Filtre les symboles par volatilité avec calcul automatique.
 
         Args:
-            symbols_data: Liste des (symbol, funding, volume, funding_time_remaining, spread_pct)
+            symbols_data: Liste des (symbol, funding, volume,
+                funding_time_remaining, spread_pct)
             volatility_min: Volatilité minimum ou None
             volatility_max: Volatilité maximum ou None
 
         Returns:
-            Liste des (symbol, funding, volume, funding_time_remaining, spread_pct, volatility_pct)
+            Liste des (symbol, funding, volume, funding_time_remaining,
+            spread_pct, volatility_pct)
         """
         return await self.calculator.filter_by_volatility_async(
             symbols_data, volatility_min, volatility_max
@@ -143,7 +163,7 @@ class VolatilityTracker:
         self,
         symbols_data: List[Tuple[str, float, float, str, float]],
         volatility_min: Optional[float],
-        volatility_max: Optional[float]
+        volatility_max: Optional[float],
     ) -> List[Tuple[str, float, float, str, float, Optional[float]]]:
         """
         Version synchrone du filtrage par volatilité.

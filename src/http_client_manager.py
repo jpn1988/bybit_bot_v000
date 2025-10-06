@@ -16,10 +16,10 @@ class HTTPClientManager:
     des connexions TLS à chaque requête.
     """
 
-    _instance: Optional['HTTPClientManager'] = None
+    _instance: Optional["HTTPClientManager"] = None
     _initialized: bool = False
 
-    def __new__(cls) -> 'HTTPClientManager':
+    def __new__(cls) -> "HTTPClientManager":
         """Pattern Singleton pour garantir une seule instance."""
         if cls._instance is None:
             cls._instance = super(HTTPClientManager, cls).__new__(cls)
@@ -57,10 +57,12 @@ class HTTPClientManager:
                 limits=httpx.Limits(
                     max_keepalive_connections=20,
                     max_connections=100,
-                    keepalive_expiry=30.0
-                )
+                    keepalive_expiry=30.0,
+                ),
             )
-            self.logger.debug(f"🔗 Client HTTP synchrone créé (timeout={timeout}s)")
+            self.logger.debug(
+                f"🔗 Client HTTP synchrone créé (timeout={timeout}s)"
+            )
 
         return self._sync_client
 
@@ -80,14 +82,18 @@ class HTTPClientManager:
                 limits=httpx.Limits(
                     max_keepalive_connections=20,
                     max_connections=100,
-                    keepalive_expiry=30.0
-                )
+                    keepalive_expiry=30.0,
+                ),
             )
-            self.logger.debug(f"🔗 Client HTTP asynchrone créé (timeout={timeout}s)")
+            self.logger.debug(
+                f"🔗 Client HTTP asynchrone créé (timeout={timeout}s)"
+            )
 
         return self._async_client
 
-    async def get_aiohttp_session(self, timeout: int = 10) -> aiohttp.ClientSession:
+    async def get_aiohttp_session(
+        self, timeout: int = 10
+    ) -> aiohttp.ClientSession:
         """
         Retourne la session aiohttp persistante.
 
@@ -103,11 +109,10 @@ class HTTPClientManager:
                 limit=100,
                 limit_per_host=20,
                 keepalive_timeout=30.0,
-                enable_cleanup_closed=True
+                enable_cleanup_closed=True,
             )
             self._aiohttp_session = aiohttp.ClientSession(
-                timeout=timeout_config,
-                connector=connector
+                timeout=timeout_config, connector=connector
             )
             self.logger.debug(f"🔗 Session aiohttp créée (timeout={timeout}s)")
 
@@ -127,7 +132,10 @@ class HTTPClientManager:
 
     async def close_aiohttp_session(self):
         """Ferme la session aiohttp."""
-        if self._aiohttp_session is not None and not self._aiohttp_session.closed:
+        if (
+            self._aiohttp_session is not None
+            and not self._aiohttp_session.closed
+        ):
             await self._aiohttp_session.close()
             self.logger.debug("🔌 Session aiohttp fermée")
 
@@ -145,9 +153,15 @@ class HTTPClientManager:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # Si la boucle tourne, programmer la fermeture
-                    if self._async_client is not None and not self._async_client.is_closed:
+                    if (
+                        self._async_client is not None
+                        and not self._async_client.is_closed
+                    ):
                         loop.create_task(self.close_async_client())
-                    if self._aiohttp_session is not None and not self._aiohttp_session.closed:
+                    if (
+                        self._aiohttp_session is not None
+                        and not self._aiohttp_session.closed
+                    ):
                         loop.create_task(self.close_aiohttp_session())
                 else:
                     # Si la boucle ne tourne pas, l'exécuter pour fermer
@@ -157,12 +171,16 @@ class HTTPClientManager:
                 try:
                     asyncio.run(self._close_async_clients())
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Erreur fermeture clients async: {e}")
+                    self.logger.warning(
+                        f"⚠️ Erreur fermeture clients async: {e}"
+                    )
 
             # Tous les clients HTTP fermés
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur lors de la fermeture des clients HTTP: {e}")
+            self.logger.warning(
+                f"⚠️ Erreur lors de la fermeture des clients HTTP: {e}"
+            )
 
     async def _close_async_clients(self):
         """Ferme les clients asynchrones."""
@@ -171,7 +189,10 @@ class HTTPClientManager:
         if self._async_client is not None and not self._async_client.is_closed:
             tasks.append(self.close_async_client())
 
-        if self._aiohttp_session is not None and not self._aiohttp_session.closed:
+        if (
+            self._aiohttp_session is not None
+            and not self._aiohttp_session.closed
+        ):
             tasks.append(self.close_aiohttp_session())
 
         if tasks:
@@ -193,8 +214,6 @@ def get_http_client(timeout: int = 10) -> httpx.Client:
         httpx.Client: Client HTTP synchrone réutilisable
     """
     return _http_manager.get_sync_client(timeout)
-
-
 
 
 def close_all_http_clients():

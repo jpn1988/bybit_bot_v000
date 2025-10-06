@@ -1,10 +1,12 @@
-"""Client Bybit pour les opérations synchrones avec authentification privée."""
+"""Client Bybit pour les opérations synchrones avec authentification 
+privée."""
 
 import time
 import hashlib
 import hmac
 import httpx
 import random
+
 try:
     from .metrics import record_api_call
     from .http_client_manager import get_http_client
@@ -21,13 +23,14 @@ class BybitClient:
         testnet: bool = True,
         timeout: int = 15,  # Timeout augmenté de 10s à 15s
         api_key: str | None = None,
-        api_secret: str | None = None
+        api_secret: str | None = None,
     ):
         """
         Initialise le client Bybit.
 
         Args:
-            testnet (bool): Utiliser le testnet (True) ou le marché réel (False)
+            testnet (bool): Utiliser le testnet (True) ou le marché réel 
+            (False)
             timeout (int): Timeout pour les requêtes HTTP en secondes
             api_key (str | None): Clé API Bybit
             api_secret (str | None): Secret API Bybit
@@ -88,10 +91,14 @@ class BybitClient:
         recv_window_ms = 10000
 
         # Créer la query string triée
-        query_string = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
+        query_string = "&".join(
+            [f"{k}={v}" for k, v in sorted(params.items())]
+        )
 
         # Générer la signature
-        signature = self._generate_signature(timestamp, recv_window_ms, query_string)
+        signature = self._generate_signature(
+            timestamp, recv_window_ms, query_string
+        )
 
         # Construire les headers
         headers = {
@@ -100,12 +107,14 @@ class BybitClient:
             "X-BAPI-SIGN-TYPE": "2",
             "X-BAPI-TIMESTAMP": str(timestamp),
             "X-BAPI-RECV-WINDOW": str(recv_window_ms),
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         return headers, query_string
 
-    def _generate_signature(self, timestamp: int, recv_window_ms: int, query_string: str) -> str:
+    def _generate_signature(
+        self, timestamp: int, recv_window_ms: int, query_string: str
+    ) -> str:
         """
         Génère la signature HMAC-SHA256 pour l'authentification.
 
@@ -119,9 +128,9 @@ class BybitClient:
         """
         payload = f"{timestamp}{self.api_key}{recv_window_ms}{query_string}"
         return hmac.new(
-            self.api_secret.encode('utf-8'),
-            payload.encode('utf-8'),
-            hashlib.sha256
+            self.api_secret.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
         ).hexdigest()
 
     def _build_request_url(self, path: str, query_string: str) -> str:
@@ -159,7 +168,9 @@ class BybitClient:
         start_time = time.time()
 
         # Exécuter la boucle de retry
-        result = self._handle_retry_loop(url, headers, max_attempts, backoff_base, start_time)
+        result = self._handle_retry_loop(
+            url, headers, max_attempts, backoff_base, start_time
+        )
 
         if result is not None:
             return result
@@ -167,18 +178,34 @@ class BybitClient:
         # Échec après tous les retries
         self._handle_final_failure(start_time)
 
-    def _handle_retry_loop(self, url: str, headers: dict, max_attempts: int,
-                          backoff_base: float, start_time: float) -> dict | None:
+    def _handle_retry_loop(
+        self,
+        url: str,
+        headers: dict,
+        max_attempts: int,
+        backoff_base: float,
+        start_time: float,
+    ) -> dict | None:
         """Gère la boucle de retry pour les requêtes HTTP."""
         last_error: Exception | None = None
 
         for attempt in range(1, max_attempts + 1):
             try:
                 # Effectuer la requête et traiter la réponse
-                return self._process_successful_request(url, headers, attempt,
-                                                      max_attempts, backoff_base, start_time)
+                return self._process_successful_request(
+                    url,
+                    headers,
+                    attempt,
+                    max_attempts,
+                    backoff_base,
+                    start_time,
+                )
 
-            except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+            except (
+                httpx.TimeoutException,
+                httpx.ReadTimeout,
+                httpx.ConnectTimeout,
+            ) as e:
                 last_error = e
                 if not self._should_retry(attempt, max_attempts):
                     break
@@ -206,19 +233,30 @@ class BybitClient:
         self._prepare_final_error(last_error)
         return None
 
-    def _process_successful_request(self, url: str, headers: dict, attempt: int,
-                                  max_attempts: int, backoff_base: float, start_time: float) -> dict:
+    def _process_successful_request(
+        self,
+        url: str,
+        headers: dict,
+        attempt: int,
+        max_attempts: int,
+        backoff_base: float,
+        start_time: float,
+    ) -> dict:
         """Traite une requête HTTP réussie."""
         # Effectuer la requête
         client = get_http_client(timeout=self.timeout)
         response = client.get(url, headers=headers)
 
         # Gérer la réponse HTTP
-        self._handle_http_response(response, attempt, max_attempts, backoff_base)
+        self._handle_http_response(
+            response, attempt, max_attempts, backoff_base
+        )
 
         # Décoder et valider la réponse API
         data = response.json()
-        self._handle_api_response(data, response, attempt, max_attempts, backoff_base)
+        self._handle_api_response(
+            data, response, attempt, max_attempts, backoff_base
+        )
 
         # Succès - enregistrer les métriques
         latency = time.time() - start_time
@@ -245,10 +283,18 @@ class BybitClient:
         latency = time.time() - start_time
         record_api_call(latency, success=False)
 
-        raise RuntimeError(f"Erreur réseau/HTTP Bybit : {getattr(self, '_last_error', 'Erreur inconnue')}")
+        raise RuntimeError(
+            f"Erreur réseau/HTTP Bybit : "
+            f"{getattr(self, '_last_error', 'Erreur inconnue')}"
+        )
 
-    def _handle_http_response(self, response: httpx.Response, attempt: int,
-                              max_attempts: int, backoff_base: float):
+    def _handle_http_response(
+        self,
+        response: httpx.Response,
+        attempt: int,
+        max_attempts: int,
+        backoff_base: float,
+    ):
         """
         Gère les erreurs HTTP et rate limiting.
 
@@ -270,7 +316,9 @@ class BybitClient:
 
         # Rate limiting (429) - retry avec backoff
         if response.status_code == 429:
-            delay = self._get_retry_after_delay(response, attempt, backoff_base)
+            delay = self._get_retry_after_delay(
+                response, attempt, backoff_base
+            )
             time.sleep(delay)
             raise httpx.HTTPStatusError(
                 "Rate limited", request=None, response=response
@@ -280,11 +328,18 @@ class BybitClient:
         if response.status_code >= 400:
             detail = response.text[:100]
             raise RuntimeError(
-                f"Erreur HTTP Bybit: status={response.status_code} detail=\"{detail}\""
+                f'Erreur HTTP Bybit: status={response.status_code} '
+                f'detail="{detail}"'
             )
 
-    def _handle_api_response(self, data: dict, response: httpx.Response,
-                            attempt: int, max_attempts: int, backoff_base: float):
+    def _handle_api_response(
+        self,
+        data: dict,
+        response: httpx.Response,
+        attempt: int,
+        max_attempts: int,
+        backoff_base: float,
+    ):
         """
         Gère les codes de retour de l'API Bybit.
 
@@ -307,24 +362,29 @@ class BybitClient:
         # Erreurs d'authentification
         if ret_code in [10005, 10006]:
             raise RuntimeError(
-                "Authentification échouée : clé/secret invalides ou signature incorrecte"
+                "Authentification échouée : clé/secret invalides ou "
+                "signature incorrecte"
             )
 
         # Erreur d'IP non autorisée
         if ret_code == 10018:
             raise RuntimeError(
-                "Accès refusé : IP non autorisée (whitelist requise dans Bybit)"
+                "Accès refusé : IP non autorisée "
+                "(whitelist requise dans Bybit)"
             )
 
         # Erreur de timestamp
         if ret_code == 10017:
             raise RuntimeError(
-                "Horodatage invalide : horloge locale désynchronisée (corrige l'heure système)"
+                "Horodatage invalide : horloge locale désynchronisée "
+                "(corrige l'heure système)"
             )
 
         # Rate limit API - retry
         if ret_code == 10016:
-            delay = self._get_retry_after_delay(response, attempt, backoff_base)
+            delay = self._get_retry_after_delay(
+                response, attempt, backoff_base
+            )
             time.sleep(delay)
             if attempt < max_attempts:
                 raise httpx.HTTPStatusError(
@@ -336,11 +396,12 @@ class BybitClient:
 
         # Autre erreur API
         raise RuntimeError(
-            f"Erreur API Bybit : retCode={ret_code} retMsg=\"{ret_msg}\""
+            f'Erreur API Bybit : retCode={ret_code} retMsg="{ret_msg}"'
         )
 
-    def _get_retry_after_delay(self, response: httpx.Response,
-                               attempt: int, backoff_base: float) -> float:
+    def _get_retry_after_delay(
+        self, response: httpx.Response, attempt: int, backoff_base: float
+    ) -> float:
         """
         Calcule le délai à attendre avant de retry en respectant Retry-After.
 
@@ -362,7 +423,9 @@ class BybitClient:
         delay += random.uniform(0, 0.25)
         return delay
 
-    def _calculate_retry_delay(self, attempt: int, backoff_base: float) -> float:
+    def _calculate_retry_delay(
+        self, attempt: int, backoff_base: float
+    ) -> float:
         """
         Calcule le délai de retry avec backoff exponentiel et jitter.
 
@@ -379,7 +442,8 @@ class BybitClient:
 
     def public_base_url(self) -> str:
         """
-        Retourne l'URL de base publique pour les endpoints sans authentification.
+        Retourne l'URL de base publique pour les endpoints sans 
+        authentification.
 
         Returns:
             str: URL de base publique (testnet ou mainnet)
@@ -399,7 +463,9 @@ class BybitClient:
         Returns:
             dict: Données brutes du solde
         """
-        return self._get_private("/v5/account/wallet-balance", {"accountType": account_type})
+        return self._get_private(
+            "/v5/account/wallet-balance", {"accountType": account_type}
+        )
 
 
 class BybitPublicClient:

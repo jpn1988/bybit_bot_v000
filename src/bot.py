@@ -16,6 +16,7 @@ class AsyncBotRunner:
     """
     Lance le BotOrchestrator dans un event loop asyncio.
     """
+
     def __init__(self):
         self.logger = setup_logging()
         self.orchestrator = BotOrchestrator()
@@ -29,16 +30,23 @@ class AsyncBotRunner:
             try:
                 loop = asyncio.get_running_loop()
                 for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.add_signal_handler(sig, lambda: asyncio.create_task(self.stop()))
+                    loop.add_signal_handler(
+                        sig, lambda: asyncio.create_task(self.stop())
+                    )
             except NotImplementedError:
                 # Sur Windows, les signal handlers ne sont pas supportés
-                self.logger.debug("Signal handlers non supportés sur cette plateforme")
+                self.logger.debug(
+                    "Signal handlers non supportés sur cette plateforme"
+                )
 
             await self.orchestrator.start()
         except asyncio.CancelledError:
             self.logger.info("Bot arrêté par annulation de tâche.")
         except Exception as e:
-            self.logger.error(f"Erreur critique dans le runner asynchrone: {e}", exc_info=True)
+            self.logger.error(
+                f"Erreur critique dans le runner asynchrone: {e}",
+                exc_info=True,
+            )
         finally:
             self.logger.info("Bot Bybit arrêté.")
 
@@ -50,7 +58,11 @@ class AsyncBotRunner:
             # Utiliser la nouvelle méthode stop() du orchestrateur refactorisé
             self.orchestrator.stop()
             # Annuler toutes les tâches restantes pour permettre l'arrêt de l'event loop
-            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            tasks = [
+                t
+                for t in asyncio.all_tasks()
+                if t is not asyncio.current_task()
+            ]
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

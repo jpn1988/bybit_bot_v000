@@ -27,7 +27,9 @@ class MonitoringManager:
     - Coordination des callbacks
     """
 
-    def __init__(self, data_manager: DataManager, testnet: bool = True, logger=None):
+    def __init__(
+        self, data_manager: DataManager, testnet: bool = True, logger=None
+    ):
         """
         Initialise le gestionnaire de surveillance.
 
@@ -45,15 +47,11 @@ class MonitoringManager:
 
         # Composants de surveillance
         self._market_scanner = ContinuousMarketScanner(
-            data_manager=data_manager,
-            testnet=testnet,
-            logger=self.logger
+            data_manager=data_manager, testnet=testnet, logger=self.logger
         )
 
         self._candidate_monitor = CandidateMonitor(
-            data_manager=data_manager,
-            testnet=testnet,
-            logger=self.logger
+            data_manager=data_manager, testnet=testnet, logger=self.logger
         )
 
         # Gestionnaires
@@ -116,7 +114,9 @@ class MonitoringManager:
         self._on_candidate_ticker_callback = callback
         self._candidate_monitor.set_on_candidate_ticker_callback(callback)
 
-    async def start_continuous_monitoring(self, base_url: str, perp_data: Dict):
+    async def start_continuous_monitoring(
+        self, base_url: str, perp_data: Dict
+    ):
         """
         Démarre la surveillance continue du marché.
 

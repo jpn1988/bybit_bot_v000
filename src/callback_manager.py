@@ -44,7 +44,7 @@ class CallbackManager:
         ws_manager: WebSocketManager,
         data_manager: UnifiedDataManager,
         watchlist_manager=None,
-        opportunity_manager=None
+        opportunity_manager=None,
     ):
         """
         Configure TOUS les callbacks entre les différents managers.
@@ -59,7 +59,9 @@ class CallbackManager:
             opportunity_manager: Gestionnaire d'opportunités (optionnel)
         """
         # Callback pour la volatilité dans le display manager
-        display_manager.set_volatility_callback(volatility_tracker.get_cached_volatility)
+        display_manager.set_volatility_callback(
+            volatility_tracker.get_cached_volatility
+        )
 
         # Callbacks pour le monitoring manager
         if watchlist_manager:
@@ -89,7 +91,7 @@ class CallbackManager:
         ws_manager: WebSocketManager,
         data_manager: UnifiedDataManager,
         watchlist_manager=None,
-        opportunity_manager=None
+        opportunity_manager=None,
     ):
         """
         Configure TOUS les callbacks en une seule méthode.
@@ -108,8 +110,13 @@ class CallbackManager:
         """
         # Configurer les callbacks principaux
         self.setup_manager_callbacks(
-            display_manager, monitoring_manager, volatility_tracker,
-            ws_manager, data_manager, watchlist_manager, opportunity_manager
+            display_manager,
+            monitoring_manager,
+            volatility_tracker,
+            ws_manager,
+            data_manager,
+            watchlist_manager,
+            opportunity_manager,
         )
 
         # Configurer les callbacks WebSocket
@@ -119,9 +126,7 @@ class CallbackManager:
         self.setup_volatility_callbacks(volatility_tracker, data_manager)
 
     def setup_ws_callbacks(
-        self,
-        ws_manager: WebSocketManager,
-        data_manager: UnifiedDataManager
+        self, ws_manager: WebSocketManager, data_manager: UnifiedDataManager
     ):
         """
         Configure les callbacks WebSocket.
@@ -131,12 +136,14 @@ class CallbackManager:
             data_manager: Gestionnaire de données
         """
         # Callback pour les données ticker
-        ws_manager.set_ticker_callback(self._create_ticker_callback(data_manager))
+        ws_manager.set_ticker_callback(
+            self._create_ticker_callback(data_manager)
+        )
 
     def setup_volatility_callbacks(
         self,
         volatility_tracker: VolatilityTracker,
-        data_manager: UnifiedDataManager
+        data_manager: UnifiedDataManager,
     ):
         """
         Configure les callbacks de volatilité.
@@ -146,9 +153,13 @@ class CallbackManager:
             data_manager: Gestionnaire de données
         """
         # Callback pour obtenir les symboles actifs
-        volatility_tracker.set_active_symbols_callback(self._create_active_symbols_callback(data_manager))
+        volatility_tracker.set_active_symbols_callback(
+            self._create_active_symbols_callback(data_manager)
+        )
 
-    def _create_ticker_callback(self, data_manager: UnifiedDataManager) -> Callable:
+    def _create_ticker_callback(
+        self, data_manager: UnifiedDataManager
+    ) -> Callable:
         """
         Crée le callback pour les données ticker.
 
@@ -158,6 +169,7 @@ class CallbackManager:
         Returns:
             Fonction callback pour les tickers
         """
+
         def ticker_callback(ticker_data: dict):
             """
             Met à jour les données en temps réel à partir des données ticker WebSocket.
@@ -175,7 +187,9 @@ class CallbackManager:
 
         return ticker_callback
 
-    def _create_active_symbols_callback(self, data_manager: UnifiedDataManager) -> Callable:
+    def _create_active_symbols_callback(
+        self, data_manager: UnifiedDataManager
+    ) -> Callable:
         """
         Crée le callback pour obtenir les symboles actifs.
 
@@ -185,6 +199,7 @@ class CallbackManager:
         Returns:
             Fonction callback pour les symboles actifs
         """
+
         def active_symbols_callback() -> List[str]:
             """
             Retourne la liste des symboles actuellement actifs.

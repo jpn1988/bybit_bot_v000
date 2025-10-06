@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Gestionnaire WebSocket dédié pour les connexions publiques Bybit - Version asynchrone.
+Gestionnaire WebSocket dédié pour les connexions publiques Bybit - 
+Version asynchrone.
 
 Cette classe gère uniquement :
 - La connexion WS publique
@@ -18,7 +19,8 @@ from unified_data_manager import update
 
 class WebSocketManager:
     """
-    Gestionnaire WebSocket pour les connexions publiques Bybit - Version asynchrone.
+    Gestionnaire WebSocket pour les connexions publiques Bybit - 
+    Version asynchrone.
 
     Responsabilités :
     - Gestion des connexions WebSocket publiques (linear/inverse)
@@ -32,7 +34,8 @@ class WebSocketManager:
         Initialise le gestionnaire WebSocket.
 
         Args:
-            testnet (bool): Utiliser le testnet (True) ou le marché réel (False)
+            testnet (bool): Utiliser le testnet (True) ou le marché réel 
+            (False)
             logger: Logger pour les messages (optionnel)
         """
         self.testnet = testnet
@@ -59,7 +62,9 @@ class WebSocketManager:
         """
         self._ticker_callback = callback
 
-    async def start_connections(self, linear_symbols: List[str], inverse_symbols: List[str]):
+    async def start_connections(
+        self, linear_symbols: List[str], inverse_symbols: List[str]
+    ):
         """
         Démarre les connexions WebSocket pour les symboles donnés.
 
@@ -68,7 +73,9 @@ class WebSocketManager:
             inverse_symbols: Liste des symboles inverse à suivre
         """
         if self.running:
-            self.logger.warning("⚠️ WebSocketManager déjà en cours d'exécution")
+            self.logger.warning(
+                "⚠️ WebSocketManager déjà en cours d'exécution"
+            )
             return
 
         self.linear_symbols = linear_symbols or []
@@ -84,9 +91,13 @@ class WebSocketManager:
             await self._start_single_connection("linear", self.linear_symbols)
         elif self.inverse_symbols:
             # Démarrage de la connexion WebSocket inverse
-            await self._start_single_connection("inverse", self.inverse_symbols)
+            await self._start_single_connection(
+                "inverse", self.inverse_symbols
+            )
         else:
-            self.logger.warning("⚠️ Aucun symbole fourni pour les connexions WebSocket")
+            self.logger.warning(
+                "⚠️ Aucun symbole fourni pour les connexions WebSocket"
+            )
 
     def _handle_ticker(self, ticker_data: dict):
         """
@@ -114,7 +125,9 @@ class WebSocketManager:
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur traitement ticker WebSocket: {e}")
 
-    async def _start_single_connection(self, category: str, symbols: List[str]):
+    async def _start_single_connection(
+        self, category: str, symbols: List[str]
+    ):
         """
         Démarre une connexion WebSocket pour une seule catégorie.
 
@@ -127,7 +140,7 @@ class WebSocketManager:
             symbols=symbols,
             testnet=self.testnet,
             logger=self.logger,
-            on_ticker_callback=self._handle_ticker
+            on_ticker_callback=self._handle_ticker,
         )
         self._ws_conns = [conn]
 
@@ -145,21 +158,25 @@ class WebSocketManager:
             symbols=self.linear_symbols,
             testnet=self.testnet,
             logger=self.logger,
-            on_ticker_callback=self._handle_ticker
+            on_ticker_callback=self._handle_ticker,
         )
         inverse_conn = PublicWSClient(
             category="inverse",
             symbols=self.inverse_symbols,
             testnet=self.testnet,
             logger=self.logger,
-            on_ticker_callback=self._handle_ticker
+            on_ticker_callback=self._handle_ticker,
         )
 
         self._ws_conns = [linear_conn, inverse_conn]
 
         # Lancer en parallèle dans des tâches asynchrones
-        linear_task = asyncio.create_task(self._run_websocket_connection(linear_conn))
-        inverse_task = asyncio.create_task(self._run_websocket_connection(inverse_conn))
+        linear_task = asyncio.create_task(
+            self._run_websocket_connection(linear_conn)
+        )
+        inverse_task = asyncio.create_task(
+            self._run_websocket_connection(inverse_conn)
+        )
 
         self._ws_tasks = [linear_task, inverse_task]
 
@@ -171,7 +188,8 @@ class WebSocketManager:
             conn: Connexion WebSocket à exécuter
         """
         try:
-            # Exécuter la connexion dans un thread séparé pour éviter de bloquer l'event loop
+            # Exécuter la connexion dans un thread séparé pour éviter de 
+            # bloquer l'event loop
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, conn.run)
         except Exception as e:
@@ -197,9 +215,12 @@ class WebSocketManager:
                 conn.close()
                 # Attendre un peu pour que la fermeture se propage
                 import time
+
                 time.sleep(0.1)
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur fermeture connexion WebSocket: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur fermeture connexion WebSocket: {e}"
+                )
 
         # Annuler toutes les tâches asynchrones avec timeout plus court
         for i, task in enumerate(self._ws_tasks):
@@ -208,19 +229,26 @@ class WebSocketManager:
                     task.cancel()
                     # Attendre l'annulation avec timeout plus court
                     try:
-                        await asyncio.wait_for(task, timeout=3.0)  # Timeout réduit à 3s
+                        await asyncio.wait_for(
+                            task, timeout=3.0
+                        )  # Timeout réduit à 3s
                     except asyncio.TimeoutError:
-                        self.logger.warning(f"⚠️ Tâche WebSocket {i} n'a pas pu être annulée dans les temps")
+                        self.logger.warning(
+                            f"⚠️ Tâche WebSocket {i} n'a pas pu être "
+                            f"annulée dans les temps"
+                        )
                     except asyncio.CancelledError:
                         pass  # Annulation normale
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Erreur annulation tâche WebSocket {i}: {e}")
+                    self.logger.warning(
+                        f"⚠️ Erreur annulation tâche WebSocket {i}: {e}"
+                    )
 
         # Nettoyer les listes et références de manière plus robuste
         try:
             # Nettoyer les connexions WebSocket
             for conn in self._ws_conns:
-                if hasattr(conn, 'close'):
+                if hasattr(conn, "close"):
                     try:
                         conn.close()
                     except Exception:
@@ -258,9 +286,12 @@ class WebSocketManager:
             try:
                 conn.close()
                 import time
+
                 time.sleep(0.1)
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur fermeture connexion WebSocket: {e}")
+                self.logger.warning(
+                    f"⚠️ Erreur fermeture connexion WebSocket: {e}"
+                )
 
         # Nettoyer les références
         self._ws_conns.clear()
@@ -286,5 +317,5 @@ class WebSocketManager:
         """
         return {
             "linear": self.linear_symbols.copy(),
-            "inverse": self.inverse_symbols.copy()
+            "inverse": self.inverse_symbols.copy(),
         }

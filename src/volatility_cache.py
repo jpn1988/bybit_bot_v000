@@ -24,7 +24,9 @@ class VolatilityCache:
     - Nettoyage automatique du cache
     """
 
-    def __init__(self, ttl_seconds: int = 120, max_cache_size: int = 1000, logger=None):
+    def __init__(
+        self, ttl_seconds: int = 120, max_cache_size: int = 1000, logger=None
+    ):
         """
         Initialise le cache de volatilité.
 
@@ -61,7 +63,9 @@ class VolatilityCache:
         cache_key = get_volatility_cache_key(symbol)
         cached_data = self.volatility_cache.get(cache_key)
 
-        if cached_data and is_cache_valid(cached_data[0], ttl_seconds=self.ttl_seconds):
+        if cached_data and is_cache_valid(
+            cached_data[0], ttl_seconds=self.ttl_seconds
+        ):
             return cached_data[1]
 
         return None
@@ -102,7 +106,9 @@ class VolatilityCache:
                 self.volatility_cache.pop(key, None)
 
             if stale_keys:
-                self.logger.debug(f"🧹 Cache volatilité nettoyé: {len(stale_keys)} entrées supprimées")
+                self.logger.debug(
+                    f"🧹 Cache volatilité nettoyé: {len(stale_keys)} entrées supprimées"
+                )
 
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur nettoyage cache volatilité: {e}")
@@ -114,20 +120,28 @@ class VolatilityCache:
                 return
 
             # Trier par timestamp et garder les plus récents
-            sorted_items = sorted(self.volatility_cache.items(), key=lambda x: x[1][0], reverse=True)
-            items_to_keep = sorted_items[:self.max_cache_size]
+            sorted_items = sorted(
+                self.volatility_cache.items(),
+                key=lambda x: x[1][0],
+                reverse=True,
+            )
+            items_to_keep = sorted_items[: self.max_cache_size]
 
             # Reconstruire le cache
             self.volatility_cache = dict(items_to_keep)
 
             removed_count = len(sorted_items) - len(items_to_keep)
             if removed_count > 0:
-                self.logger.debug(f"🧹 Cache volatilité nettoyé: {removed_count} entrées supprimées")
+                self.logger.debug(
+                    f"🧹 Cache volatilité nettoyé: {removed_count} entrées supprimées"
+                )
 
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur nettoyage cache volatilité: {e}")
 
-    def update_cache_with_results(self, results: Dict[str, Optional[float]], timestamp: float) -> Tuple[int, int]:
+    def update_cache_with_results(
+        self, results: Dict[str, Optional[float]], timestamp: float
+    ) -> Tuple[int, int]:
         """
         Met à jour le cache de volatilité avec les résultats.
 
@@ -159,15 +173,14 @@ class VolatilityCache:
         """
         time.time()
         total = len(self.volatility_cache)
-        valid = sum(1 for timestamp, _ in self.volatility_cache.values()
-                   if is_cache_valid(timestamp, self.ttl_seconds))
+        valid = sum(
+            1
+            for timestamp, _ in self.volatility_cache.values()
+            if is_cache_valid(timestamp, self.ttl_seconds)
+        )
         expired = total - valid
 
-        return {
-            "total": total,
-            "valid": valid,
-            "expired": expired
-        }
+        return {"total": total, "valid": valid, "expired": expired}
 
     def clear_all_cache(self):
         """Vide complètement le cache."""
@@ -203,10 +216,15 @@ class VolatilityCache:
                 self.volatility_cache.pop(key, None)
 
             if expired_keys:
-                self.logger.debug(f"🧹 Cache volatilité nettoyé automatiquement: {len(expired_keys)} entrées expirées supprimées")
+                self.logger.debug(
+                    f"🧹 Cache volatilité nettoyé automatiquement: "
+                    f"{len(expired_keys)} entrées expirées supprimées"
+                )
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur nettoyage automatique cache volatilité: {e}")
+            self.logger.warning(
+                f"⚠️ Erreur nettoyage automatique cache volatilité: {e}"
+            )
 
     def enable_auto_cleanup(self, enabled: bool = True):
         """

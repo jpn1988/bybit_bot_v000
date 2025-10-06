@@ -9,7 +9,9 @@ _price_data: Dict[str, Dict[str, float]] = {}
 _price_lock = threading.Lock()
 
 
-def update(symbol: str, mark_price: float, last_price: float, timestamp: float) -> None:
+def update(
+    symbol: str, mark_price: float, last_price: float, timestamp: float
+) -> None:
     """
     Met à jour les prix pour un symbole donné.
 
@@ -23,5 +25,5 @@ def update(symbol: str, mark_price: float, last_price: float, timestamp: float) 
         _price_data[symbol] = {
             "mark_price": mark_price,
             "last_price": last_price,
-            "timestamp": timestamp
+            "timestamp": timestamp,
         }

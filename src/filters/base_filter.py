@@ -31,7 +31,9 @@ class BaseFilter(ABC):
         self.logger = logger or logging.getLogger(__name__)
 
     @abstractmethod
-    def apply(self, symbols_data: List[Any], config: Dict[str, Any]) -> List[Any]:
+    def apply(
+        self, symbols_data: List[Any], config: Dict[str, Any]
+    ) -> List[Any]:
         """
         Applique le filtre aux données de symboles.
 
@@ -45,7 +47,9 @@ class BaseFilter(ABC):
         Raises:
             NotImplementedError: Si la méthode n'est pas implémentée
         """
-        raise NotImplementedError("La méthode apply() doit être implémentée par les classes dérivées")
+        raise NotImplementedError(
+            "La méthode apply() doit être implémentée par les classes dérivées"
+        )
 
     @abstractmethod
     def get_name(self) -> str:
@@ -58,7 +62,9 @@ class BaseFilter(ABC):
         Raises:
             NotImplementedError: Si la méthode n'est pas implémentée
         """
-        raise NotImplementedError("La méthode get_name() doit être implémentée par les classes dérivées")
+        raise NotImplementedError(
+            "La méthode get_name() doit être implémentée par les classes dérivées"
+        )
 
     def get_description(self) -> str:
         """
@@ -84,11 +90,16 @@ class BaseFilter(ABC):
             pour ajouter une validation spécifique.
         """
         if not isinstance(config, dict):
-            self.logger.warning(f"Configuration invalide pour {self.get_name()}: doit être un dictionnaire")
+            self.logger.warning(
+                f"Configuration invalide pour {self.get_name()}: "
+                f"doit être un dictionnaire"
+            )
             return False
         return True
 
-    def log_filter_result(self, input_count: int, output_count: int, config: Dict[str, Any]):
+    def log_filter_result(
+        self, input_count: int, output_count: int, config: Dict[str, Any]
+    ):
         """
         Log le résultat de l'application du filtre.
 
@@ -109,4 +120,5 @@ class BaseFilter(ABC):
 
     def __repr__(self) -> str:
         """Représentation détaillée du filtre."""
-        return f"{self.__class__.__name__}(name='{self.get_name()}', logger={self.logger})"
+        return (f"{self.__class__.__name__}(name='{self.get_name()}', "
+                f"logger={self.logger})")

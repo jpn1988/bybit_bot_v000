@@ -41,7 +41,7 @@ class OpportunityManager:
         linear_symbols: List[str],
         inverse_symbols: List[str],
         ws_manager,
-        watchlist_manager: WatchlistManager
+        watchlist_manager: WatchlistManager,
     ):
         """
         Callback appelé lors de nouvelles opportunités détectées.
@@ -67,9 +67,12 @@ class OpportunityManager:
                 # Démarrer les connexions WebSocket pour les nouvelles
                 # opportunités
                 import asyncio
+
                 try:
                     asyncio.run(
-                        ws_manager.start_connections(linear_symbols, inverse_symbols)
+                        ws_manager.start_connections(
+                            linear_symbols, inverse_symbols
+                        )
                     )
                 except RuntimeError:
                     # Si une boucle est déjà en cours, utiliser une approche alternative
@@ -77,13 +80,17 @@ class OpportunityManager:
                     if loop.is_running():
                         # Créer une tâche dans la boucle existante et l'attendre
                         task = loop.create_task(
-                            ws_manager.start_connections(linear_symbols, inverse_symbols)
+                            ws_manager.start_connections(
+                                linear_symbols, inverse_symbols
+                            )
                         )
                         # Attendre la tâche de manière non-bloquante
                         asyncio.ensure_future(task)
                     else:
                         loop.run_until_complete(
-                            ws_manager.start_connections(linear_symbols, inverse_symbols)
+                            ws_manager.start_connections(
+                                linear_symbols, inverse_symbols
+                            )
                         )
                 self.logger.info(
                     f"🎯 Nouvelles opportunités intégrées: "
@@ -98,7 +105,7 @@ class OpportunityManager:
         self,
         symbol: str,
         ticker_data: dict,
-        watchlist_manager: WatchlistManager
+        watchlist_manager: WatchlistManager,
     ):
         """
         Callback appelé pour les tickers des candidats.
@@ -110,7 +117,9 @@ class OpportunityManager:
         """
         try:
             # Ajouter le symbole à la watchlist principale
-            self._add_symbol_to_main_watchlist(symbol, ticker_data, watchlist_manager)
+            self._add_symbol_to_main_watchlist(
+                symbol, ticker_data, watchlist_manager
+            )
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur traitement candidat {symbol}: {e}")
 
@@ -118,7 +127,7 @@ class OpportunityManager:
         self,
         symbol: str,
         ticker_data: dict,
-        watchlist_manager: WatchlistManager
+        watchlist_manager: WatchlistManager,
     ):
         """
         Ajoute un symbole à la watchlist principale.
@@ -141,7 +150,11 @@ class OpportunityManager:
             if funding_rate is not None:
                 funding = float(funding_rate)
                 volume = float(volume24h) if volume24h is not None else 0.0
-                funding_time_remaining = watchlist_manager.calculate_funding_time_remaining(next_funding_time)
+                funding_time_remaining = (
+                    watchlist_manager.calculate_funding_time_remaining(
+                        next_funding_time
+                    )
+                )
 
                 # Calculer le spread si disponible
                 spread_pct = 0.0
@@ -159,17 +172,30 @@ class OpportunityManager:
                         pass
 
                 # Ajouter à la watchlist via le DataManager
-                self.data_manager.update_funding_data(symbol, funding, volume, funding_time_remaining, spread_pct, None)
+                self.data_manager.update_funding_data(
+                    symbol,
+                    funding,
+                    volume,
+                    funding_time_remaining,
+                    spread_pct,
+                    None,
+                )
 
                 # Ajouter aux listes par catégorie
-                category = category_of_symbol(symbol, self.data_manager.symbol_categories)
+                category = category_of_symbol(
+                    symbol, self.data_manager.symbol_categories
+                )
                 self.data_manager.add_symbol_to_category(symbol, category)
 
                 # Mettre à jour les données originales
                 if next_funding_time:
-                    self.data_manager.update_original_funding_data(symbol, next_funding_time)
+                    self.data_manager.update_original_funding_data(
+                        symbol, next_funding_time
+                    )
 
-                self.logger.info(f"✅ Symbole {symbol} ajouté à la watchlist principale")
+                self.logger.info(
+                    f"✅ Symbole {symbol} ajouté à la watchlist principale"
+                )
 
         except Exception as e:
             self.logger.error(f"❌ Erreur ajout symbole {symbol}: {e}")

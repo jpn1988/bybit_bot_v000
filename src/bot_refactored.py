@@ -2,7 +2,8 @@
 """
 🚀 Orchestrateur du bot (filters + WebSocket prix) - VERSION REFACTORISÉE
 
-Script pour filtrer les contrats perpétuels par funding ET suivre leurs prix en temps réel.
+Script pour filtrer les contrats perpétuels par funding ET suivre leurs prix
+en temps réel.
 
 Architecture modulaire :
 - WatchlistManager : Gestion des filtres et sélection de symboles
@@ -21,7 +22,11 @@ import time
 import signal
 import atexit
 from typing import List, Dict
-from logging_setup import setup_logging, log_startup_summary, log_shutdown_summary
+from logging_setup import (
+    setup_logging,
+    log_startup_summary,
+    log_shutdown_summary,
+)
 from config import get_settings
 from bybit_client import BybitPublicClient
 from instruments import get_perp_symbols, category_of_symbol
@@ -33,6 +38,7 @@ from display_manager import DisplayManager
 from monitoring_manager import MonitoringManager
 from metrics_monitor import start_metrics_monitoring
 from http_client_manager import close_all_http_clients
+
 # cleaned: removed unused imports (os, threading, price_store, errors)
 
 
@@ -58,27 +64,41 @@ class PriceTracker:
 
         # Configuration
         settings = get_settings()
-        self.testnet = settings['testnet']
+        self.testnet = settings["testnet"]
 
         # Initialiser le gestionnaire de données
         self.data_manager = DataManager(logger=self.logger)
 
         # Initialiser le gestionnaire d'affichage
-        self.display_manager = DisplayManager(self.data_manager, logger=self.logger)
+        self.display_manager = DisplayManager(
+            self.data_manager, logger=self.logger
+        )
 
         # Initialiser le gestionnaire de surveillance
-        self.monitoring_manager = MonitoringManager(self.data_manager, testnet=self.testnet, logger=self.logger)
+        self.monitoring_manager = MonitoringManager(
+            self.data_manager, testnet=self.testnet, logger=self.logger
+        )
 
         # Gestionnaire WebSocket dédié
-        self.ws_manager = WebSocketManager(testnet=self.testnet, logger=self.logger)
-        self.ws_manager.set_ticker_callback(self._update_realtime_data_from_ticker)
+        self.ws_manager = WebSocketManager(
+            testnet=self.testnet, logger=self.logger
+        )
+        self.ws_manager.set_ticker_callback(
+            self._update_realtime_data_from_ticker
+        )
 
         # Gestionnaire de volatilité dédié
-        self.volatility_tracker = VolatilityTracker(testnet=self.testnet, logger=self.logger)
-        self.volatility_tracker.set_active_symbols_callback(self._get_active_symbols)
+        self.volatility_tracker = VolatilityTracker(
+            testnet=self.testnet, logger=self.logger
+        )
+        self.volatility_tracker.set_active_symbols_callback(
+            self._get_active_symbols
+        )
 
         # Gestionnaire de watchlist dédié
-        self.watchlist_manager = WatchlistManager(testnet=self.testnet, logger=self.logger)
+        self.watchlist_manager = WatchlistManager(
+            testnet=self.testnet, logger=self.logger
+        )
 
         # Configurer les callbacks entre managers
         self._setup_manager_callbacks()
@@ -95,13 +115,19 @@ class PriceTracker:
     def _setup_manager_callbacks(self):
         """Configure les callbacks entre les différents managers."""
         # Callback pour la volatilité dans le display manager
-        self.display_manager.set_volatility_callback(self.volatility_tracker.get_cached_volatility)
+        self.display_manager.set_volatility_callback(
+            self.volatility_tracker.get_cached_volatility
+        )
 
         # Callbacks pour le monitoring manager
         self.monitoring_manager.set_watchlist_manager(self.watchlist_manager)
         self.monitoring_manager.set_volatility_tracker(self.volatility_tracker)
-        self.monitoring_manager.set_on_new_opportunity_callback(self._on_new_opportunity)
-        self.monitoring_manager.set_on_candidate_ticker_callback(self._on_candidate_ticker)
+        self.monitoring_manager.set_on_new_opportunity_callback(
+            self._on_new_opportunity
+        )
+        self.monitoring_manager.set_on_candidate_ticker_callback(
+            self._on_candidate_ticker
+        )
 
     def _signal_handler(self, signum, frame):
         """Gestionnaire de signal pour Ctrl+C."""
@@ -154,7 +180,9 @@ class PriceTracker:
         # Déléguer au DataManager
         self.data_manager.update_realtime_data(symbol, ticker_data)
 
-    def _on_new_opportunity(self, linear_symbols: List[str], inverse_symbols: List[str]):
+    def _on_new_opportunity(
+        self, linear_symbols: List[str], inverse_symbols: List[str]
+    ):
         """
         Callback appelé lors de nouvelles opportunités détectées.
 
@@ -165,9 +193,14 @@ class PriceTracker:
         try:
             # Démarrer les connexions WebSocket pour les nouvelles opportunités
             self.ws_manager.start_connections(linear_symbols, inverse_symbols)
-            self.logger.info(f"🎯 Nouvelles opportunités intégrées: {len(linear_symbols)} linear, {len(inverse_symbols)} inverse")
+            self.logger.info(
+                f"🎯 Nouvelles opportunités intégrées: {len(linear_symbols)} linear, "
+                f"{len(inverse_symbols)} inverse"
+            )
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur intégration nouvelles opportunités: {e}")
+            self.logger.warning(
+                f"⚠️ Erreur intégration nouvelles opportunités: {e}"
+            )
 
     def _on_candidate_ticker(self, symbol: str, ticker_data: dict):
         """
@@ -204,7 +237,11 @@ class PriceTracker:
             if funding_rate is not None:
                 funding = float(funding_rate)
                 volume = float(volume24h) if volume24h is not None else 0.0
-                funding_time_remaining = self.watchlist_manager.calculate_funding_time_remaining(next_funding_time)
+                funding_time_remaining = (
+                    self.watchlist_manager.calculate_funding_time_remaining(
+                        next_funding_time
+                    )
+                )
 
                 # Calculer le spread si disponible
                 spread_pct = 0.0
@@ -222,17 +259,30 @@ class PriceTracker:
                         pass
 
                 # Ajouter à la watchlist via le DataManager
-                self.data_manager.update_funding_data(symbol, funding, volume, funding_time_remaining, spread_pct, None)
+                self.data_manager.update_funding_data(
+                    symbol,
+                    funding,
+                    volume,
+                    funding_time_remaining,
+                    spread_pct,
+                    None,
+                )
 
                 # Ajouter aux listes par catégorie
-                category = category_of_symbol(symbol, self.data_manager.symbol_categories)
+                category = category_of_symbol(
+                    symbol, self.data_manager.symbol_categories
+                )
                 self.data_manager.add_symbol_to_category(symbol, category)
 
                 # Mettre à jour les données originales
                 if next_funding_time:
-                    self.data_manager.update_original_funding_data(symbol, next_funding_time)
+                    self.data_manager.update_original_funding_data(
+                        symbol, next_funding_time
+                    )
 
-                self.logger.info(f"✅ Symbole {symbol} ajouté à la watchlist principale")
+                self.logger.info(
+                    f"✅ Symbole {symbol} ajouté à la watchlist principale"
+                )
 
         except Exception as e:
             self.logger.error(f"❌ Erreur ajout symbole {symbol}: {e}")
@@ -244,7 +294,10 @@ class PriceTracker:
             config = self.watchlist_manager.load_and_validate_config()
         except ValueError as e:
             self.logger.error(f"❌ Erreur de configuration : {e}")
-            self.logger.error("💡 Corrigez les paramètres dans src/parameters.yaml ou les variables d'environnement")
+            self.logger.error(
+                "💡 Corrigez les paramètres dans src/parameters.yaml "
+                "ou les variables d'environnement"
+            )
             return  # Arrêt propre sans sys.exit
 
         # Créer un client PUBLIC pour récupérer l'URL publique (aucune clé requise)
@@ -267,13 +320,19 @@ class PriceTracker:
         self.volatility_tracker.ttl_seconds = volatility_ttl_sec
 
         # Configurer l'intervalle d'affichage
-        display_interval = int(config.get("display_interval_seconds", 10) or 10)
+        display_interval = int(
+            config.get("display_interval_seconds", 10) or 10
+        )
         self.display_manager.set_display_interval(display_interval)
         self.display_manager.set_price_ttl(120)
 
         # Construire la watchlist via le gestionnaire dédié
         try:
-            linear_symbols, inverse_symbols, funding_data = self.watchlist_manager.build_watchlist(
+            (
+                linear_symbols,
+                inverse_symbols,
+                funding_data,
+            ) = self.watchlist_manager.build_watchlist(
                 base_url, perp_data, self.volatility_tracker
             )
 
@@ -285,17 +344,30 @@ class PriceTracker:
                 if len(data) >= 4:
                     funding, volume, funding_time, spread = data[:4]
                     volatility = data[4] if len(data) > 4 else None
-                    self.data_manager.update_funding_data(symbol, funding, volume, funding_time, spread, volatility)
+                    self.data_manager.update_funding_data(
+                        symbol,
+                        funding,
+                        volume,
+                        funding_time,
+                        spread,
+                        volatility,
+                    )
 
             # Mettre à jour les données originales
-            original_funding_data = self.watchlist_manager.get_original_funding_data()
+            original_funding_data = (
+                self.watchlist_manager.get_original_funding_data()
+            )
             for symbol, next_funding_time in original_funding_data.items():
-                self.data_manager.update_original_funding_data(symbol, next_funding_time)
+                self.data_manager.update_original_funding_data(
+                    symbol, next_funding_time
+                )
 
         except Exception as e:
             if "Aucun symbole" in str(e) or "Aucun funding" in str(e):
                 # Ne pas lever d'exception, continuer en mode surveillance
-                self.logger.info("ℹ️ Aucune opportunité initiale détectée, mode surveillance activé")
+                self.logger.info(
+                    "ℹ️ Aucune opportunité initiale détectée, mode surveillance activé"
+                )
             else:
                 raise
 
@@ -318,7 +390,9 @@ class PriceTracker:
         self.monitoring_manager.setup_candidate_monitoring(base_url, perp_data)
 
         # Démarrer le mode surveillance continue
-        self.monitoring_manager.start_continuous_monitoring(base_url, perp_data)
+        self.monitoring_manager.start_continuous_monitoring(
+            base_url, perp_data
+        )
 
     def _get_active_symbols(self) -> List[str]:
         """Retourne la liste des symboles actuellement actifs."""
@@ -328,40 +402,42 @@ class PriceTracker:
         """Affiche le résumé de démarrage structuré."""
         # Informations du bot
         bot_info = {
-            'name': 'BYBIT BOT',
-            'version': '0.9.0',
-            'environment': 'Testnet' if self.testnet else 'Mainnet',
-            'mode': 'Funding Sniping'
+            "name": "BYBIT BOT",
+            "version": "0.9.0",
+            "environment": "Testnet" if self.testnet else "Mainnet",
+            "mode": "Funding Sniping",
         }
 
         # Statistiques de filtrage
-        total_symbols = perp_data.get('total', 0)
+        total_symbols = perp_data.get("total", 0)
         linear_count = len(self.data_manager.get_linear_symbols())
         inverse_count = len(self.data_manager.get_inverse_symbols())
         final_count = linear_count + inverse_count
 
         filter_results = {
-            'stats': {
-                'total_symbols': total_symbols,
-                'after_funding_volume': final_count,
-                'after_spread': final_count,
-                'after_volatility': final_count,
-                'final_count': final_count
+            "stats": {
+                "total_symbols": total_symbols,
+                "after_funding_volume": final_count,
+                "after_spread": final_count,
+                "after_volatility": final_count,
+                "final_count": final_count,
             }
         }
 
         # Statut WebSocket
         ws_status = {
-            'connected': bool(linear_count or inverse_count),
-            'symbols_count': final_count,
-            'category': config.get('categorie', 'linear')
+            "connected": bool(linear_count or inverse_count),
+            "symbols_count": final_count,
+            "category": config.get("categorie", "linear"),
         }
 
         # Ajouter l'intervalle de métriques à la config
-        config['metrics_interval'] = 5
+        config["metrics_interval"] = 5
 
         # Afficher le résumé structuré
-        log_startup_summary(self.logger, bot_info, config, filter_results, ws_status)
+        log_startup_summary(
+            self.logger, bot_info, config, filter_results, ws_status
+        )
 
 
 def main():
