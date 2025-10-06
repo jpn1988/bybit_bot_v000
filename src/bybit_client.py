@@ -6,11 +6,11 @@ import hmac
 import httpx
 import random
 try:
-    from .config import get_settings
+    from .config_unified import get_settings
     from .metrics import record_api_call
     from .http_client_manager import get_http_client
 except ImportError:
-    from config import get_settings
+    from config_unified import get_settings
     from metrics import record_api_call
     from http_client_manager import get_http_client
 

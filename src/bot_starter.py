@@ -108,7 +108,7 @@ class BotStarter:
         base_url: str, 
         perp_data: Dict
     ):
-        """Configure la surveillance des candidats."""
+        """Configure la surveillance des candidats - délégation directe à UnifiedMonitoringManager."""
         monitoring_manager.setup_candidate_monitoring(base_url, perp_data)
     
     async def _start_continuous_monitoring(

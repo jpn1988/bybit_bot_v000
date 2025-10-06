@@ -18,7 +18,7 @@ import atexit
 from typing import Dict, Any
 from logging_setup import setup_logging
 # cleaned: removed unused imports (log_startup_summary, log_shutdown_summary)
-from config import get_settings
+from config_unified import get_settings
 from http_client_manager import close_all_http_clients
 from metrics_monitor import start_metrics_monitoring
 
@@ -110,7 +110,7 @@ class BotOrchestrator:
         """Démarre le suivi des prix avec filtrage par funding."""
         try:
             # 1. Charger et valider la configuration
-            config = self._configurator.load_and_validate_config(self.watchlist_manager)
+            config = self._configurator.load_and_validate_config(self.watchlist_manager.config_manager)
         except ValueError:
             return  # Arrêt propre sans sys.exit
         
@@ -191,33 +191,25 @@ class BotOrchestrator:
         }
     
     def stop(self):
-        """Arrête le bot de manière propre."""
+        """Arrête le bot de manière propre via ShutdownManager."""
         self.logger.info("🛑 Arrêt du bot...")
         self.running = False
         
-        # Arrêter les composants
+        # Utiliser ShutdownManager pour l'arrêt centralisé
         try:
-            # Arrêter le monitoring
-            if hasattr(self.monitoring_manager, 'stop_continuous_monitoring'):
-                asyncio.run(self.monitoring_manager.stop_continuous_monitoring())
+            # Préparer le dictionnaire des managers pour ShutdownManager
+            managers = {
+                'monitoring_manager': self.monitoring_manager,
+                'display_manager': self.display_manager,
+                'ws_manager': self.ws_manager,
+                'volatility_tracker': self.volatility_tracker,
+                'metrics_monitor': self.metrics_monitor
+            }
             
-            # Arrêter l'affichage
-            if hasattr(self.display_manager, 'stop_display_loop'):
-                asyncio.run(self.display_manager.stop_display_loop())
+            # Utiliser ShutdownManager pour l'arrêt asynchrone
+            asyncio.run(self._shutdown_manager.stop_all_managers_async(managers))
             
-            # Arrêter les WebSockets
-            if hasattr(self.ws_manager, 'stop'):
-                asyncio.run(self.ws_manager.stop())
-            
-            # Arrêter le tracker de volatilité
-            if hasattr(self.volatility_tracker, 'stop'):
-                self.volatility_tracker.stop()
-            
-            # Arrêter le monitoring des métriques
-            if hasattr(self.metrics_monitor, 'stop'):
-                self.metrics_monitor.stop()
-            
-            self.logger.info("✅ Bot arrêté proprement")
+            self.logger.info("✅ Bot arrêté proprement via ShutdownManager")
             
         except Exception as e:
             self.logger.error(f"❌ Erreur lors de l'arrêt: {e}")

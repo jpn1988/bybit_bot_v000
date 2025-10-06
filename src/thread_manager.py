@@ -419,31 +419,32 @@ class ThreadManager:
     
     def stop_all_managers(self, managers: dict):
         """
-        Arrête tous les managers avec timeout.
+        DEPRECATED: Cette méthode est dépréciée.
+        Utilisez ShutdownManager.stop_all_managers_async() à la place.
         
         Args:
             managers: Dictionnaire des managers
         """
-        managers_to_stop = [
-            ("WebSocket", lambda: managers.get('ws_manager').stop() if managers.get('ws_manager') else None),
-            ("Display", lambda: managers.get('display_manager').stop_display_loop() if managers.get('display_manager') else None),
-            ("Monitoring", lambda: managers.get('monitoring_manager').stop_continuous_monitoring() if managers.get('monitoring_manager') else None),
-            ("Volatility", lambda: managers.get('volatility_tracker').stop_refresh_task() if managers.get('volatility_tracker') else None)
-        ]
+        self.logger.warning("⚠️ ThreadManager.stop_all_managers() est dépréciée. Utilisez ShutdownManager à la place.")
         
-        for name, stop_func in managers_to_stop:
-            try:
-                if stop_func():
-                    stop_func()
-                    self.logger.debug(f"✅ {name} manager arrêté")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Erreur arrêt {name} manager: {e}")
-        
-        # Attendre que les threads se terminent
-        for thread in threading.enumerate():
-            if thread != threading.current_thread() and thread.is_alive():
-                if hasattr(thread, 'daemon') and thread.daemon:
-                    thread.join(timeout=1)
+        # Arrêt simple sans nettoyage complexe - délégation à ShutdownManager
+        try:
+            # Juste marquer les managers comme arrêtés (logique simplifiée)
+            if managers.get('ws_manager'):
+                managers['ws_manager'].running = False
+            if managers.get('display_manager'):
+                managers['display_manager']._running = False
+            if managers.get('monitoring_manager'):
+                managers['monitoring_manager']._running = False
+            if managers.get('volatility_tracker'):
+                managers['volatility_tracker']._running = False
+            if managers.get('metrics_monitor'):
+                managers['metrics_monitor'].running = False
+                
+            self.logger.debug("✅ Managers marqués comme arrêtés (délégation à ShutdownManager)")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur arrêt managers simplifié: {e}")
         
         # Attendre un peu pour que les threads se terminent
         time.sleep(0.5)

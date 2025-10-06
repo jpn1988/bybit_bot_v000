@@ -3,7 +3,7 @@
 import pytest
 import os
 from unittest.mock import patch
-from config import get_settings
+from config_unified import get_settings
 
 
 class TestConfig:

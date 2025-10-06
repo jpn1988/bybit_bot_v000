@@ -28,7 +28,7 @@ from logging_setup import setup_logging
 from volatility_tracker import VolatilityTracker
 from http_utils import get_rate_limiter
 from http_client_manager import get_http_client
-from config import MAX_WORKERS_THREADPOOL
+from config_unified import MAX_WORKERS_THREADPOOL
 
 
 class UnifiedDataManager:

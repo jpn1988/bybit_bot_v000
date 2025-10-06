@@ -39,12 +39,12 @@ class BotConfigurator:
         self.testnet = testnet
         self.logger = logger or setup_logging()
     
-    def load_and_validate_config(self, watchlist_manager: WatchlistManager) -> Dict:
+    def load_and_validate_config(self, config_manager) -> Dict:
         """
-        Charge et valide la configuration.
+        Charge et valide la configuration via ConfigManager.
         
         Args:
-            watchlist_manager: Gestionnaire de watchlist
+            config_manager: Instance de ConfigManager
             
         Returns:
             Configuration validée
@@ -53,7 +53,7 @@ class BotConfigurator:
             ValueError: Si la configuration est invalide
         """
         try:
-            config = watchlist_manager.load_and_validate_config()
+            config = config_manager.load_and_validate_config()
             return config
         except ValueError as e:
             self.logger.error(f"❌ Erreur de configuration : {e}")

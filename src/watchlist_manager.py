@@ -18,7 +18,7 @@ Responsabilités principales :
 
 from typing import List, Tuple, Dict, Optional
 from logging_setup import setup_logging
-from config import UnifiedConfigManager
+from config_unified import UnifiedConfigManager
 from unified_data_manager import UnifiedDataManager
 from filters.symbol_filter import SymbolFilter
 from volatility_tracker import VolatilityTracker
@@ -58,7 +58,7 @@ class WatchlistManager:
         self.symbol_filter = SymbolFilter(logger=self.logger)
 
         # Configuration et données
-        self.config = {}
+        self.config = self.config_manager.load_and_validate_config()
         self.symbol_categories = {}
 
         # Données de la watchlist
@@ -66,14 +66,13 @@ class WatchlistManager:
         self.funding_data = {}
         self.original_funding_data = {}
 
-    def load_and_validate_config(self) -> Dict:
+    def get_config(self) -> Dict:
         """
-        Charge et valide la configuration.
+        Retourne la configuration actuelle.
 
         Returns:
-            Dict: Configuration validée
+            Dict: Configuration actuelle
         """
-        self.config = self.config_manager.load_and_validate_config()
         return self.config
 
     def set_symbol_categories(self, symbol_categories: Dict[str, str]):

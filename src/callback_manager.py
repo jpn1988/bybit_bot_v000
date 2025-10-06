@@ -42,10 +42,12 @@ class CallbackManager:
         monitoring_manager: UnifiedMonitoringManager,
         volatility_tracker: VolatilityTracker,
         ws_manager: WebSocketManager,
-        data_manager: UnifiedDataManager
+        data_manager: UnifiedDataManager,
+        watchlist_manager=None,
+        opportunity_manager=None
     ):
         """
-        Configure les callbacks entre les différents managers.
+        Configure TOUS les callbacks entre les différents managers.
         
         Args:
             display_manager: Gestionnaire d'affichage
@@ -53,13 +55,68 @@ class CallbackManager:
             volatility_tracker: Tracker de volatilité
             ws_manager: Gestionnaire WebSocket
             data_manager: Gestionnaire de données
+            watchlist_manager: Gestionnaire de watchlist (optionnel)
+            opportunity_manager: Gestionnaire d'opportunités (optionnel)
         """
         # Callback pour la volatilité dans le display manager
         display_manager.set_volatility_callback(volatility_tracker.get_cached_volatility)
         
         # Callbacks pour le monitoring manager
-        monitoring_manager.set_watchlist_manager(None)  # Sera défini plus tard
+        if watchlist_manager:
+            monitoring_manager.set_watchlist_manager(watchlist_manager)
         monitoring_manager.set_volatility_tracker(volatility_tracker)
+        monitoring_manager.set_ws_manager(ws_manager)
+        
+        # Callbacks d'opportunités (si opportunity_manager fourni)
+        if opportunity_manager and watchlist_manager:
+            monitoring_manager.set_on_new_opportunity_callback(
+                lambda linear, inverse: opportunity_manager.on_new_opportunity(
+                    linear, inverse, ws_manager, watchlist_manager
+                )
+            )
+            
+            monitoring_manager.set_on_candidate_ticker_callback(
+                lambda symbol, ticker_data: opportunity_manager.on_candidate_ticker(
+                    symbol, ticker_data, watchlist_manager
+                )
+            )
+    
+    def setup_all_callbacks(
+        self,
+        display_manager: DisplayManager,
+        monitoring_manager: UnifiedMonitoringManager,
+        volatility_tracker: VolatilityTracker,
+        ws_manager: WebSocketManager,
+        data_manager: UnifiedDataManager,
+        watchlist_manager=None,
+        opportunity_manager=None
+    ):
+        """
+        Configure TOUS les callbacks en une seule méthode.
+        
+        Cette méthode centralise la configuration de tous les callbacks
+        pour éviter la duplication de code dans BotInitializer.
+        
+        Args:
+            display_manager: Gestionnaire d'affichage
+            monitoring_manager: Gestionnaire de surveillance
+            volatility_tracker: Tracker de volatilité
+            ws_manager: Gestionnaire WebSocket
+            data_manager: Gestionnaire de données
+            watchlist_manager: Gestionnaire de watchlist (optionnel)
+            opportunity_manager: Gestionnaire d'opportunités (optionnel)
+        """
+        # Configurer les callbacks principaux
+        self.setup_manager_callbacks(
+            display_manager, monitoring_manager, volatility_tracker,
+            ws_manager, data_manager, watchlist_manager, opportunity_manager
+        )
+        
+        # Configurer les callbacks WebSocket
+        self.setup_ws_callbacks(ws_manager, data_manager)
+        
+        # Configurer les callbacks de volatilité
+        self.setup_volatility_callbacks(volatility_tracker, data_manager)
     
     def setup_ws_callbacks(
         self,

@@ -108,8 +108,8 @@ class BotInitializer:
         """
         Configure les callbacks entre les différents managers.
         
-        Cette méthode établit les connexions entre les différents
-        composants du bot pour permettre la communication.
+        Cette méthode délègue entièrement à CallbackManager pour centraliser
+        toute la logique de configuration des callbacks.
         """
         if not all([
             self.callback_manager, self.display_manager, 
@@ -118,41 +118,15 @@ class BotInitializer:
         ]):
             raise RuntimeError("Tous les managers doivent être initialisés avant la configuration des callbacks")
         
-        # Configurer les callbacks via le callback manager
-        self.callback_manager.setup_manager_callbacks(
+        # Délégation complète à CallbackManager pour centraliser la logique
+        self.callback_manager.setup_all_callbacks(
             self.display_manager,
             self.monitoring_manager,
             self.volatility_tracker,
             self.ws_manager,
-            self.data_manager
-        )
-        
-        # Configurer les callbacks WebSocket
-        self.callback_manager.setup_ws_callbacks(self.ws_manager, self.data_manager)
-        
-        # Configurer les callbacks de volatilité
-        self.callback_manager.setup_volatility_callbacks(
-            self.volatility_tracker, 
-            self.data_manager
-        )
-        
-        # Callbacks pour le monitoring manager
-        self.monitoring_manager.set_watchlist_manager(self.watchlist_manager)
-        self.monitoring_manager.set_volatility_tracker(self.volatility_tracker)
-        self.monitoring_manager.set_ws_manager(self.ws_manager)
-        
-        # Callbacks d'opportunités
-        self.monitoring_manager.set_on_new_opportunity_callback(
-            lambda linear, inverse: self.opportunity_manager.on_new_opportunity(
-                linear, inverse, self.ws_manager, self.watchlist_manager
-            )
-        )
-        
-        # Callbacks de candidats
-        self.monitoring_manager.set_on_candidate_ticker_callback(
-            lambda symbol, ticker_data: self.opportunity_manager.on_candidate_ticker(
-                symbol, ticker_data, self.watchlist_manager
-            )
+            self.data_manager,
+            self.watchlist_manager,
+            self.opportunity_manager
         )
     
     def get_managers(self):
