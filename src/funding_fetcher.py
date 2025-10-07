@@ -120,7 +120,9 @@ class FundingFetcher:
                         funding_map.update(category_data)
                         self.logger.debug(f"✅ Funding {category}: {len(category_data)} symboles")
                     except Exception as e:
-                        self._error_handler.log_error(e, f"fetch_funding_data_parallel category={category}")
+                        self._error_handler.log_error(
+                            e, f"fetch_funding_data_parallel category={category}"
+                        )
                         raise
 
             self.logger.info(f"✅ Funding parallèle terminé: {len(funding_map)} symboles total")
@@ -245,7 +247,9 @@ class FundingFetcher:
                 if self._validate_single_funding_entry(symbol, data):
                     valid_count += 1
 
-            self.logger.debug(f"📊 Validation funding: {valid_count}/{len(funding_data)} entrées valides")
+            self.logger.debug(
+                f"📊 Validation funding: {valid_count}/{len(funding_data)} entrées valides"
+            )
             return valid_count > 0
 
         except Exception as e:

@@ -65,7 +65,9 @@ class SpreadFetcher:
             Dict[str, float]: map {symbol: spread_pct}
         """
         try:
-            self.logger.debug(f"📊 Récupération spreads pour {len(symbols)} symboles ({category})...")
+            self.logger.debug(
+                f"📊 Récupération spreads pour {len(symbols)} symboles ({category})..."
+            )
             
             # Récupération paginée des spreads
             found = self._fetch_spreads_paginated(base_url, symbols, timeout, category)
@@ -296,7 +298,9 @@ class SpreadFetcher:
                 if self._validate_single_spread_entry(symbol, spread):
                     valid_count += 1
 
-            self.logger.debug(f"📊 Validation spread: {valid_count}/{len(spread_data)} entrées valides")
+            self.logger.debug(
+                f"📊 Validation spread: {valid_count}/{len(spread_data)} entrées valides"
+            )
             return valid_count > 0
 
         except Exception as e:

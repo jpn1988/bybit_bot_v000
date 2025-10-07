@@ -97,7 +97,9 @@ class PaginationHandler:
                 self.logger.error(f"❌ Erreur pagination page {page_index + 1}: {e}")
                 raise
 
-        self.logger.debug(f"📄 Pagination terminée: {page_index + 1} pages, {len(all_data)} éléments")
+        self.logger.debug(
+            f"📄 Pagination terminée: {page_index + 1} pages, {len(all_data)} éléments"
+        )
         return all_data
 
     def _prepare_page_params(self, base_params: Dict[str, Any], cursor: str) -> Dict[str, Any]:
@@ -188,7 +190,9 @@ class PaginationHandler:
         )
         raise RuntimeError(error_msg)
 
-    def should_continue_pagination(self, current_data: List, found_items: int, target_items: int) -> bool:
+    def should_continue_pagination(
+        self, current_data: List, found_items: int, target_items: int
+    ) -> bool:
         """
         Détermine si la pagination doit continuer.
 

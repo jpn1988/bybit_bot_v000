@@ -242,7 +242,10 @@ class DataFetcher:
                 "spread_valid": spread_valid,
             }
             
-            self.logger.info(f"✅ Données de marché récupérées: {len(funding_data)} funding, {len(spread_data)} spreads")
+            self.logger.info(
+                f"✅ Données de marché récupérées: {len(funding_data)} funding, "
+                f"{len(spread_data)} spreads"
+            )
             return result
             
         except Exception as e:
