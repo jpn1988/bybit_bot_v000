@@ -9,10 +9,7 @@ Cette classe consolide toutes les fonctionnalités de surveillance :
 - Gestion WebSocket pour les candidats
 - Coordination des callbacks
 
-Cette version unifiée remplace :
-- MonitoringManager (monitoring_manager.py)
-- CandidateMonitor (candidate_monitor.py)
-- ContinuousMarketScanner (market_scanner.py)
+Cette version unifiée remplace les anciens composants de surveillance.
 """
 
 import asyncio

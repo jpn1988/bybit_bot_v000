@@ -2,7 +2,7 @@
 """
 Gestionnaire de données unifié pour le bot Bybit.
 
-Cette classe consolide toutes les fonctionnalités de récupération et 
+Cette classe consolide toutes les fonctionnalités de récupération et
 gestion de données :
 - Récupération des données de marché (funding, spreads)
 - Chargement et validation des données
@@ -10,10 +10,7 @@ gestion de données :
 - Gestion des erreurs et métriques
 - Interface pour la construction de watchlist (via WatchlistBuilder)
 
-Cette version unifiée remplace :
-- MarketDataFetcher (market_data_fetcher.py)
-- BotDataLoader (bot_data_loader.py)
-- DataManager (data_manager.py)
+Cette version unifiée remplace les anciens composants de gestion de données.
 - Fonctionnalités de récupération de WatchlistManager
 
 Note : La construction de la watchlist est déléguée à WatchlistManager
@@ -483,7 +480,7 @@ class UnifiedDataManager:
         self, base_url: str, categories: List[str], timeout: int = 10
     ) -> Dict[str, Dict]:
         """
-        Récupère les données de funding pour plusieurs catégories 
+        Récupère les données de funding pour plusieurs catégories
         en parallèle.
 
         Args:
@@ -533,10 +530,10 @@ class UnifiedDataManager:
         volatility_tracker: VolatilityTracker,
     ) -> bool:
         """
-        Interface pour charger les données de la watchlist via 
+        Interface pour charger les données de la watchlist via
         WatchlistManager.
 
-        Cette méthode délègue la construction de la watchlist à 
+        Cette méthode délègue la construction de la watchlist à
         WatchlistManager
         et stocke les résultats dans ce gestionnaire pour utilisation ultérieure.
 
@@ -672,7 +669,7 @@ class UnifiedDataManager:
                 "error": str(e),
             }
 
-    # ===== MÉTHODES DE STOCKAGE DE DONNÉES (intégrées de DataManager) =====
+    # ===== MÉTHODES DE STOCKAGE DE DONNÉES =====
 
     def set_symbol_categories(self, symbol_categories: Dict[str, str]):
         """

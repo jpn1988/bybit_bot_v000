@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gestionnaire WebSocket dédié pour les connexions publiques Bybit - 
+Gestionnaire WebSocket dédié pour les connexions publiques Bybit -
 Version asynchrone.
 
 Cette classe gère uniquement :
@@ -19,7 +19,7 @@ from unified_data_manager import update
 
 class WebSocketManager:
     """
-    Gestionnaire WebSocket pour les connexions publiques Bybit - 
+    Gestionnaire WebSocket pour les connexions publiques Bybit -
     Version asynchrone.
 
     Responsabilités :
@@ -34,7 +34,7 @@ class WebSocketManager:
         Initialise le gestionnaire WebSocket.
 
         Args:
-            testnet (bool): Utiliser le testnet (True) ou le marché réel 
+            testnet (bool): Utiliser le testnet (True) ou le marché réel
             (False)
             logger: Logger pour les messages (optionnel)
         """
@@ -188,7 +188,7 @@ class WebSocketManager:
             conn: Connexion WebSocket à exécuter
         """
         try:
-            # Exécuter la connexion dans un thread séparé pour éviter de 
+            # Exécuter la connexion dans un thread séparé pour éviter de
             # bloquer l'event loop
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, conn.run)

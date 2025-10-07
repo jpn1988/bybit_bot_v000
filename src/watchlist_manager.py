@@ -10,9 +10,9 @@ Cette classe orchestre la construction de la watchlist en utilisant :
 
 Responsabilités principales :
 - Orchestration de la construction de la watchlist
-- Application des filtres de sélection (funding, volume, spread, 
+- Application des filtres de sélection (funding, volume, spread,
   volatilité)
-- Coordination entre ConfigManager, UnifiedDataManager, SymbolFilter 
+- Coordination entre ConfigManager, UnifiedDataManager, SymbolFilter
   et VolatilityTracker
 - Gestion de la logique métier de sélection des symboles
 - Surveillance des candidats (symboles proches des critères)
@@ -34,14 +34,14 @@ class WatchlistManager:
 
     Responsabilités principales :
     - Orchestration de la construction de la watchlist
-    - Application des filtres de sélection (funding, volume, spread, 
+    - Application des filtres de sélection (funding, volume, spread,
       volatilité)
-    - Coordination entre ConfigManager, UnifiedDataManager, SymbolFilter 
+    - Coordination entre ConfigManager, UnifiedDataManager, SymbolFilter
       et VolatilityTracker
     - Gestion de la logique métier de sélection des symboles
     - Surveillance des candidats (symboles proches des critères)
 
-    Cette classe utilise UnifiedDataManager pour récupérer les données 
+    Cette classe utilise UnifiedDataManager pour récupérer les données
     de marché
     et applique la logique de filtrage pour construire la watchlist finale.
     """
@@ -51,7 +51,7 @@ class WatchlistManager:
         Initialise le gestionnaire de watchlist.
 
         Args:
-            testnet (bool): Utiliser le testnet (True) ou le marché réel 
+            testnet (bool): Utiliser le testnet (True) ou le marché réel
             (False)
             logger: Logger pour les messages (optionnel)
         """
@@ -135,7 +135,7 @@ class WatchlistManager:
     def _prepare_watchlist_data(
         self, base_url: str, perp_data: Dict
     ) -> Tuple[Dict, Dict, int]:
-        """Prépare les données nécessaires pour la construction de la 
+        """Prépare les données nécessaires pour la construction de la
         watchlist."""
         # Extraire et valider la configuration
         config_params = self._extract_config_parameters()

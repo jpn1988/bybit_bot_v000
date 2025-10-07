@@ -10,7 +10,7 @@ Cette classe gère uniquement :
 
 import time
 from typing import Dict, Any
-from logging_setup import setup_logging, log_startup_summary
+from logging_setup import setup_logging
 from volatility_tracker import VolatilityTracker
 from display_manager import DisplayManager
 from ws_manager import WebSocketManager
@@ -109,7 +109,7 @@ class BotStarter:
         base_url: str,
         perp_data: Dict,
     ):
-        """Configure la surveillance des candidats - délégation directe à 
+        """Configure la surveillance des candidats - délégation directe à
         UnifiedMonitoringManager."""
         monitoring_manager.setup_candidate_monitoring(base_url, perp_data)
 
@@ -169,10 +169,8 @@ class BotStarter:
         # Ajouter l'intervalle de métriques à la config
         config["metrics_interval"] = 5
 
-        # Afficher le résumé structuré
-        log_startup_summary(
-            self.logger, bot_info, config, filter_results, ws_status
-        )
+        # Afficher un résumé simple
+        self.logger.info("✅ Initialisation terminée - Bot opérationnel")
 
     def get_startup_stats(
         self, data_manager: UnifiedDataManager

@@ -7,7 +7,7 @@ Ce module consolide :
 - La classe VolatilityCalculator (de volatility_calculator.py)
 - La gestion des clients et du filtrage
 
-Calcule la volatilité basée sur la plage de prix (high-low) des 5 
+Calcule la volatilité basée sur la plage de prix (high-low) des 5
 dernières bougies 1 minute.
 """
 
@@ -262,7 +262,7 @@ async def _compute_single_volatility_async(
                 return None
 
             # Extraire les prix (high et low de chaque bougie)
-            # Les bougies sont triées par timestamp décroissant 
+            # Les bougies sont triées par timestamp décroissant
             # (plus récent en premier)
             prices_high = []
             prices_low = []
@@ -336,7 +336,7 @@ class VolatilityCalculator:
         Initialise le calculateur de volatilité.
 
         Args:
-            testnet (bool): Utiliser le testnet (True) ou le marché réel 
+            testnet (bool): Utiliser le testnet (True) ou le marché réel
                 (False)
             timeout (int): Timeout pour les requêtes
             logger: Logger pour les messages (optionnel)
@@ -399,41 +399,6 @@ class VolatilityCalculator:
             self.logger.error(f"⚠️ Erreur calcul volatilité batch: {e}")
             return {symbol: None for symbol in symbols}
 
-    def compute_volatility_batch_sync(
-        self, symbols: List[str]
-    ) -> Dict[str, Optional[float]]:
-        """
-        Version synchrone du calcul de volatilité en batch.
-
-        Args:
-            symbols: Liste des symboles
-
-        Returns:
-            Dictionnaire {symbol: volatility_pct}
-        """
-        try:
-            # Créer un nouveau event loop dans un thread séparé pour 
-            # éviter les conflits
-            def run_in_new_loop():
-                return asyncio.run(self.compute_volatility_batch(symbols))
-
-            # Utiliser un ThreadPoolExecutor avec timeout pour éviter 
-            # les blocages
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=1
-            ) as executor:
-                future = executor.submit(run_in_new_loop)
-                return future.result(timeout=30)  # Timeout de 30 secondes
-
-        except concurrent.futures.TimeoutError:
-            self.logger.warning(
-                f"⚠️ Timeout calcul volatilité synchrone pour "
-                f"{len(symbols)} symboles"
-            )
-            return {symbol: None for symbol in symbols}
-        except Exception as e:
-            self.logger.warning(f"⚠️ Erreur calcul volatilité synchrone: {e}")
-            return {symbol: None for symbol in symbols}
 
     async def filter_by_volatility_async(
         self,
@@ -445,13 +410,13 @@ class VolatilityCalculator:
         Filtre les symboles par volatilité avec calcul automatique.
 
         Args:
-            symbols_data: Liste des (symbol, funding, volume, 
+            symbols_data: Liste des (symbol, funding, volume,
                 funding_time_remaining, spread_pct)
             volatility_min: Volatilité minimum ou None
             volatility_max: Volatilité maximum ou None
 
         Returns:
-            Liste des (symbol, funding, volume, funding_time_remaining, 
+            Liste des (symbol, funding, volume, funding_time_remaining,
                 spread_pct, volatility_pct)
         """
         # Préparer les volatilités (cache + calcul)
@@ -468,7 +433,7 @@ class VolatilityCalculator:
         self, symbols_data: List[Tuple[str, float, float, str, float]]
     ) -> Dict[str, Optional[float]]:
         """
-        Prépare les données de volatilité en utilisant le cache et les 
+        Prépare les données de volatilité en utilisant le cache et les
         calculs.
 
         Args:
@@ -543,7 +508,7 @@ class VolatilityCalculator:
         volatility_max: Optional[float],
     ) -> bool:
         """
-        Détermine si un symbole doit être rejeté selon les critères de 
+        Détermine si un symbole doit être rejeté selon les critères de
         volatilité.
 
         Args:
@@ -558,7 +523,7 @@ class VolatilityCalculator:
         if volatility_min is None and volatility_max is None:
             return False
 
-        # Symbole sans volatilité calculée - le rejeter si des filtres sont 
+        # Symbole sans volatilité calculée - le rejeter si des filtres sont
         # actifs
         if vol_pct is None:
             return True
@@ -590,7 +555,10 @@ class VolatilityCalculator:
             Liste filtrée avec volatilité
         """
         try:
-            # Créer un nouveau event loop dans un thread séparé pour 
+            import asyncio
+            import concurrent.futures
+
+            # Créer un nouveau event loop dans un thread séparé pour
             # éviter les conflits
             def run_in_new_loop():
                 return asyncio.run(
@@ -599,7 +567,7 @@ class VolatilityCalculator:
                     )
                 )
 
-            # Utiliser un ThreadPoolExecutor avec timeout pour éviter 
+            # Utiliser un ThreadPoolExecutor avec timeout pour éviter
             # les blocages
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=1
@@ -616,3 +584,4 @@ class VolatilityCalculator:
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur filtrage volatilité: {e}")
             return []
+

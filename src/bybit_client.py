@@ -1,4 +1,4 @@
-"""Client Bybit pour les opérations synchrones avec authentification 
+"""Client Bybit pour les opérations synchrones avec authentification
 privée."""
 
 import time
@@ -29,7 +29,7 @@ class BybitClient:
         Initialise le client Bybit.
 
         Args:
-            testnet (bool): Utiliser le testnet (True) ou le marché réel 
+            testnet (bool): Utiliser le testnet (True) ou le marché réel
             (False)
             timeout (int): Timeout pour les requêtes HTTP en secondes
             api_key (str | None): Clé API Bybit
@@ -442,7 +442,7 @@ class BybitClient:
 
     def public_base_url(self) -> str:
         """
-        Retourne l'URL de base publique pour les endpoints sans 
+        Retourne l'URL de base publique pour les endpoints sans
         authentification.
 
         Returns:

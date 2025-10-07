@@ -2,8 +2,8 @@
 """
 Client WebSocket privé Bybit v5 réutilisable.
 
-Cette classe centralise la logique d'authentification, de souscription 
-aux topics privés, la gestion du ping/pong, le watchdog d'auth, et la 
+Cette classe centralise la logique d'authentification, de souscription
+aux topics privés, la gestion du ping/pong, le watchdog d'auth, et la
 reconnexion avec backoff.
 
 Utilisation typique:
@@ -22,7 +22,7 @@ import websocket
 
 
 class PrivateWSClient:
-    """Client WebSocket privée Bybit v5 avec authentification et 
+    """Client WebSocket privée Bybit v5 avec authentification et
     reconnexion."""
 
     def __init__(

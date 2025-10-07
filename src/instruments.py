@@ -159,7 +159,7 @@ def category_of_symbol(
     symbol: str, categories: Dict[str, str] | None = None
 ) -> str:
     """
-    Retourne la catégorie officielle d'un symbole si connue, sinon une 
+    Retourne la catégorie officielle d'un symbole si connue, sinon une
     heuristique sûre.
 
     Args:

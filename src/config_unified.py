@@ -261,7 +261,7 @@ class UnifiedConfigManager:
     Gestionnaire de configuration unifié pour le bot Bybit.
 
     Responsabilités :
-    - Chargement de la configuration depuis fichier YAML et variables 
+    - Chargement de la configuration depuis fichier YAML et variables
       d'environnement
     - Validation des paramètres de configuration
     - Fourniture des valeurs par défaut

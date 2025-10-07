@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WebSocket publique Bybit v5 - Client réutilisable avec reconnexion 
+"""WebSocket publique Bybit v5 - Client réutilisable avec reconnexion
 automatique."""
 
 import json
@@ -33,7 +33,7 @@ class PublicWSClient:
             symbols (List[str]): Liste des symboles à suivre
             testnet (bool): Utiliser le testnet (True) ou le mainnet (False)
             logger: Instance du logger pour les messages
-            on_ticker_callback (Callable): Fonction appelée pour chaque 
+            on_ticker_callback (Callable): Fonction appelée pour chaque
             ticker reçu
         """
         self.category = category
@@ -75,7 +75,7 @@ class PublicWSClient:
         # Enregistrer la connexion WebSocket
         record_ws_connection(connected=True)
 
-        # Réinitialiser l'index de délai de reconnexion après une 
+        # Réinitialiser l'index de délai de reconnexion après une
         # connexion réussie
         self.current_delay_index = 0
 

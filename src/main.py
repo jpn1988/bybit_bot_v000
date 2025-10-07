@@ -4,12 +4,12 @@ import sys
 import atexit
 
 try:
-    from .config import get_settings
+    from .config_unified import get_settings
     from .logging_setup import setup_logging
     from .bybit_client import BybitClient
     from .http_client_manager import close_all_http_clients
 except ImportError:
-    from config import get_settings
+    from config_unified import get_settings
     from logging_setup import setup_logging
     from bybit_client import BybitClient
     from http_client_manager import close_all_http_clients

@@ -46,9 +46,9 @@ class SymbolFilter(BaseFilter):
         Applique le filtre de funding aux données de symboles.
 
         Args:
-            symbols_data: Liste contenant (perp_data, funding_map, 
+            symbols_data: Liste contenant (perp_data, funding_map,
             config_params)
-            config: Configuration du filtre (non utilisée ici, les paramètres 
+            config: Configuration du filtre (non utilisée ici, les paramètres
             sont dans symbols_data)
 
         Returns:
@@ -100,20 +100,20 @@ class SymbolFilter(BaseFilter):
         funding_time_max_minutes: Optional[int] = None,
     ) -> List[Tuple[str, float, float, str]]:
         """
-        Filtre les symboles par funding, volume et fenêtre temporelle 
+        Filtre les symboles par funding, volume et fenêtre temporelle
         avant funding.
 
         Args:
             perp_data: Données des perpétuels (linear, inverse, total)
-            funding_map: Dictionnaire des funding rates, volumes et temps 
+            funding_map: Dictionnaire des funding rates, volumes et temps
             de funding
             funding_min: Funding minimum en valeur absolue
             funding_max: Funding maximum en valeur absolue
             volume_min_millions: Volume minimum en millions
             limite: Limite du nombre d'éléments
-            funding_time_min_minutes: Temps minimum en minutes avant 
+            funding_time_min_minutes: Temps minimum en minutes avant
             prochain funding
-            funding_time_max_minutes: Temps maximum en minutes avant 
+            funding_time_max_minutes: Temps maximum en minutes avant
             prochain funding
 
         Returns:
@@ -138,7 +138,7 @@ class SymbolFilter(BaseFilter):
                 volume = data["volume"]
                 next_funding_time = data.get("next_funding_time")
 
-                # Appliquer les bornes funding/volume (utiliser valeur absolue 
+                # Appliquer les bornes funding/volume (utiliser valeur absolue
                 # pour funding)
                 if funding_min is not None and abs(funding) < funding_min:
                     continue
@@ -155,7 +155,7 @@ class SymbolFilter(BaseFilter):
                     funding_time_min_minutes is not None
                     or funding_time_max_minutes is not None
                 ):
-                    # Utiliser la fonction centralisée pour calculer 
+                    # Utiliser la fonction centralisée pour calculer
                     # les minutes restantes
                     minutes_remaining = (
                         self.calculate_funding_minutes_remaining(
@@ -205,13 +205,13 @@ class SymbolFilter(BaseFilter):
         Filtre les symboles par spread maximum.
 
         Args:
-            symbols_data: Liste des (symbol, funding, volume, 
+            symbols_data: Liste des (symbol, funding, volume,
             funding_time_remaining)
             spread_data: Dictionnaire des spreads {symbol: spread_pct}
             spread_max: Spread maximum autorisé
 
         Returns:
-            Liste des (symbol, funding, volume, funding_time_remaining, 
+            Liste des (symbol, funding, volume, funding_time_remaining,
             spread_pct) filtrés
         """
         if spread_max is None:
@@ -458,7 +458,7 @@ class SymbolFilter(BaseFilter):
 
         except Exception:
             # Ignorer silencieusement les erreurs de vérification des candidats
-            # (cela se produit normalement pour les symboles sans données 
+            # (cela se produit normalement pour les symboles sans données
             # complètes)
             return False
 
@@ -517,15 +517,15 @@ class SymbolFilter(BaseFilter):
         self, symbols_data: List[Tuple]
     ) -> Dict[str, Dict]:
         """
-        Construit un dictionnaire de données de funding à partir des 
+        Construit un dictionnaire de données de funding à partir des
         symboles filtrés.
 
         Args:
-            symbols_data: Liste des tuples (symbol, funding, volume, 
+            symbols_data: Liste des tuples (symbol, funding, volume,
             funding_time_remaining, ...)
 
         Returns:
-            Dictionnaire {symbol: {funding, volume, funding_time_remaining, 
+            Dictionnaire {symbol: {funding, volume, funding_time_remaining,
             spread_pct, volatility_pct}}
         """
         funding_data = {}
