@@ -9,7 +9,7 @@ Cette classe gère uniquement :
 """
 
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 try:
     from .logging_setup import setup_logging
 except ImportError:
@@ -130,20 +130,20 @@ class ErrorHandler:
     ) -> str:
         """Crée un message d'erreur HTTP formaté."""
         base_msg = f"Erreur HTTP Bybit GET {url}"
-        
+
         # Ajouter le contexte si fourni
         if context:
             base_msg += f" | {context}"
-        
+
         # Ajouter les paramètres importants
         base_msg += f" | limit={params.get('limit', 'N/A')}"
         base_msg += f" | cursor={params.get('cursor', '-')}"
         base_msg += f" | status={response.status_code}"
-        
+
         # Ajouter un extrait de la réponse
         response_text = response.text[:200] if hasattr(response, 'text') else str(response)
         base_msg += f' | detail="{response_text}"'
-        
+
         return base_msg
 
     def _create_api_error_message(
@@ -155,21 +155,21 @@ class ErrorHandler:
     ) -> str:
         """Crée un message d'erreur API formaté."""
         base_msg = f"Erreur API Bybit GET {url}"
-        
+
         # Ajouter le contexte si fourni
         if context:
             base_msg += f" | {context}"
-        
+
         # Ajouter les paramètres importants
         base_msg += f" | limit={params.get('limit', 'N/A')}"
         base_msg += f" | cursor={params.get('cursor', '-')}"
-        
+
         # Ajouter les codes d'erreur API
         ret_code = data.get("retCode", "N/A")
         ret_msg = data.get("retMsg", "")
         base_msg += f" | retCode={ret_code}"
         base_msg += f' | retMsg="{ret_msg}"'
-        
+
         return base_msg
 
     def _create_network_error_message(
@@ -181,20 +181,20 @@ class ErrorHandler:
     ) -> str:
         """Crée un message d'erreur réseau formaté."""
         base_msg = f"Erreur réseau Bybit GET {url}"
-        
+
         # Ajouter le contexte si fourni
         if context:
             base_msg += f" | {context}"
-        
+
         # Ajouter les paramètres importants
         base_msg += f" | limit={params.get('limit', 'N/A')}"
         base_msg += f" | cursor={params.get('cursor', '-')}"
-        
+
         # Ajouter le type d'erreur
         error_type = type(error).__name__
         base_msg += f" | error_type={error_type}"
         base_msg += f" | error_msg={str(error)}"
-        
+
         return base_msg
 
     def _create_validation_error_message(
@@ -204,18 +204,18 @@ class ErrorHandler:
         context: str,
     ) -> str:
         """Crée un message d'erreur de validation formaté."""
-        base_msg = f"Erreur validation données"
-        
+        base_msg = "Erreur validation données"
+
         # Ajouter le contexte si fourni
         if context:
             base_msg += f" | {context}"
-        
+
         # Ajouter les informations de validation
         actual_type = type(data).__name__
         base_msg += f" | expected_type={expected_type}"
         base_msg += f" | actual_type={actual_type}"
         base_msg += f" | data={str(data)[:100]}"
-        
+
         return base_msg
 
     def log_error(self, error: Exception, context: str = ""):
@@ -247,14 +247,14 @@ class ErrorHandler:
         """
         if attempt >= max_attempts:
             return False
-        
+
         # Retry pour les erreurs réseau temporaires
         if isinstance(error, (httpx.TimeoutException, httpx.ConnectError)):
             return True
-        
+
         # Retry pour les erreurs HTTP 5xx
         if isinstance(error, httpx.HTTPStatusError):
             if hasattr(error, 'response') and error.response.status_code >= 500:
                 return True
-        
+
         return False

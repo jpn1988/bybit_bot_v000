@@ -1,140 +1,183 @@
 #!/usr/bin/env python3
-"""Tests pour WebSocketManager."""
+"""
+Tests pour WebSocketManager (ws_manager.py)
+
+Couvre:
+- Démarrage des connexions (linear, inverse, dual)
+- Traitement des tickers et parsing JSON minimal
+- Callback externe de ticker
+- Arrêt propre (async) et nettoyage
+- Cas limites (aucun symbole, double start)
+"""
 
 import pytest
-import unittest.mock as mock
-from src.ws_manager import WebSocketManager
+import asyncio
+from unittest.mock import Mock, patch, AsyncMock
+from ws_manager import WebSocketManager
 
 
 class TestWebSocketManager:
-    """Tests pour la classe WebSocketManager."""
-    
-    def test_init(self):
-        """Test de l'initialisation du WebSocketManager."""
-        ws_manager = WebSocketManager(testnet=True)
-        
-        assert ws_manager.testnet is True
-        assert ws_manager.running is False
-        assert ws_manager.linear_symbols == []
-        assert ws_manager.inverse_symbols == []
-        assert ws_manager._ws_conns == []
-        assert ws_manager._ws_threads == []
-        assert ws_manager._ticker_callback is None
-    
+    @pytest.mark.asyncio
+    async def test_start_connections_linear(self):
+        with patch('ws_manager.PublicWSClient') as mock_client:
+            manager = WebSocketManager(testnet=True, logger=Mock())
+            await manager.start_connections(["BTCUSDT"], [])
+
+            # Une seule connexion créée
+            assert len(manager._ws_conns) == 1
+            mock_client.assert_called_once()
+            assert manager.is_running() is True
+            assert manager.get_connected_symbols()["linear"] == ["BTCUSDT"]
+
+    @pytest.mark.asyncio
+    async def test_start_connections_inverse(self):
+        with patch('ws_manager.PublicWSClient') as mock_client:
+            manager = WebSocketManager(testnet=True, logger=Mock())
+            await manager.start_connections([], ["BTCUSD"])
+
+            assert len(manager._ws_conns) == 1
+            mock_client.assert_called_once()
+            assert manager.is_running() is True
+            assert manager.get_connected_symbols()["inverse"] == ["BTCUSD"]
+
+    @pytest.mark.asyncio
+    async def test_start_connections_dual(self):
+        with patch('ws_manager.PublicWSClient') as mock_client:
+            manager = WebSocketManager(testnet=True, logger=Mock())
+            await manager.start_connections(["BTCUSDT"], ["BTCUSD"])
+
+            # Deux connexions créées
+            assert len(manager._ws_conns) == 2
+            assert manager.is_running() is True
+
+    @pytest.mark.asyncio
+    async def test_start_connections_no_symbols(self):
+        logger = Mock()
+        manager = WebSocketManager(testnet=True, logger=logger)
+        await manager.start_connections([], [])
+        # Aucun crash, warning logué par le manager
+        assert manager.is_running() is True  # running passe à True même sans tâches
+        assert manager.get_connected_symbols() == {"linear": [], "inverse": []}
+
     def test_set_ticker_callback(self):
-        """Test de la définition du callback ticker."""
-        ws_manager = WebSocketManager(testnet=True)
-        
-        def dummy_callback(ticker_data):
-            pass
-        
-        ws_manager.set_ticker_callback(dummy_callback)
-        assert ws_manager._ticker_callback == dummy_callback
-    
-    def test_get_connected_symbols_empty(self):
-        """Test de récupération des symboles connectés (vide)."""
-        ws_manager = WebSocketManager(testnet=True)
-        
-        symbols = ws_manager.get_connected_symbols()
-        expected = {"linear": [], "inverse": []}
-        assert symbols == expected
-    
-    def test_get_connected_symbols_with_data(self):
-        """Test de récupération des symboles connectés (avec données)."""
-        ws_manager = WebSocketManager(testnet=True)
-        ws_manager.linear_symbols = ["BTCUSDT", "ETHUSDT"]
-        ws_manager.inverse_symbols = ["BTCUSD"]
-        
-        symbols = ws_manager.get_connected_symbols()
-        expected = {"linear": ["BTCUSDT", "ETHUSDT"], "inverse": ["BTCUSD"]}
-        assert symbols == expected
-    
-    def test_is_running_initial_state(self):
-        """Test de l'état initial running."""
-        ws_manager = WebSocketManager(testnet=True)
-        assert ws_manager.is_running() is False
-    
-    @mock.patch('src.ws_manager.PublicWSClient')
-    def test_start_connections_no_symbols_warning(self, mock_ws_client):
-        """Test de démarrage sans symboles (doit afficher un warning)."""
-        mock_logger = mock.MagicMock()
-        ws_manager = WebSocketManager(testnet=True, logger=mock_logger)
-        
-        ws_manager.start_connections([], [])
-        
-        # Vérifier que le warning est affiché
-        mock_logger.warning.assert_called_once_with("⚠️ Aucun symbole fourni pour les connexions WebSocket")
-    
-    def test_handle_ticker_with_valid_data(self):
-        """Test du gestionnaire de ticker avec des données valides."""
-        callback_called = False
-        received_data = None
-        
-        def test_callback(ticker_data):
-            nonlocal callback_called, received_data
-            callback_called = True
-            received_data = ticker_data
-        
-        ws_manager = WebSocketManager(testnet=True)
-        ws_manager.set_ticker_callback(test_callback)
-        
-        ticker_data = {
-            "symbol": "BTCUSDT",
-            "markPrice": "50000.0",
-            "lastPrice": "50001.0",
-            "fundingRate": "0.0001"
-        }
-        
-        # Appeler directement le gestionnaire (simulation)
-        ws_manager._handle_ticker(ticker_data)
-        
-        # Vérifier que le callback a été appelé
-        assert callback_called is True
-        assert received_data == ticker_data
-    
-    def test_handle_ticker_without_callback(self):
-        """Test du gestionnaire de ticker sans callback défini."""
-        ws_manager = WebSocketManager(testnet=True)
-        
-        ticker_data = {
-            "symbol": "BTCUSDT",
-            "markPrice": "50000.0",
-            "lastPrice": "50001.0"
-        }
-        
-        # Ne doit pas lever d'exception
-        try:
-            ws_manager._handle_ticker(ticker_data)
-        except Exception as e:
-            pytest.fail(f"_handle_ticker a levé une exception inattendue: {e}")
-    
-    def test_handle_ticker_with_invalid_data(self):
-        """Test du gestionnaire de ticker avec des données invalides."""
-        mock_logger = mock.MagicMock()
-        ws_manager = WebSocketManager(testnet=True, logger=mock_logger)
-        
-        # Données invalides (pas de symbol)
-        ticker_data = {
-            "markPrice": "invalid_price",
-            "lastPrice": None
-        }
-        
-        # Ne doit pas lever d'exception mais peut logger un warning
-        try:
-            ws_manager._handle_ticker(ticker_data)
-        except Exception as e:
-            pytest.fail(f"_handle_ticker a levé une exception inattendue: {e}")
-    
-    def test_stop_when_not_running(self):
-        """Test d'arrêt quand pas en cours d'exécution."""
-        mock_logger = mock.MagicMock()
-        ws_manager = WebSocketManager(testnet=True, logger=mock_logger)
-        
-        # Ne doit pas lever d'exception
-        try:
-            ws_manager.stop()
-        except Exception as e:
-            pytest.fail(f"stop() a levé une exception inattendue: {e}")
-        
-        # Vérifier que l'état est mis à jour
-        assert ws_manager.running is False
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        cb = Mock()
+        manager.set_ticker_callback(cb)
+        # Appel via interne
+        manager._handle_ticker({"symbol": "BTCUSDT", "markPrice": "50000", "lastPrice": "50001"})
+        cb.assert_called_once()
+
+    def test_handle_ticker_updates_store(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        # Patch de update() global pour ne pas toucher le vrai store
+        with patch('ws_manager.update') as mock_update:
+            manager._handle_ticker({
+                "symbol": "BTCUSDT",
+                "markPrice": "50000.0",
+                "lastPrice": "50010.0",
+            })
+            mock_update.assert_called_once()
+
+    def test_handle_ticker_ignores_incomplete(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        with patch('ws_manager.update') as mock_update:
+            # Manque markPrice
+            manager._handle_ticker({"symbol": "BTCUSDT", "lastPrice": "50010.0"})
+            mock_update.assert_not_called()
+
+    def test_handle_ticker_parsing_error(self):
+        logger = Mock()
+        manager = WebSocketManager(testnet=True, logger=logger)
+        with patch('ws_manager.update', side_effect=Exception("boom")):
+            # Ne doit pas lever, log un warning
+            manager._handle_ticker({
+                "symbol": "BTCUSDT",
+                "markPrice": "50000.0",
+                "lastPrice": "50010.0",
+            })
+            # Pas d'assert stricte sur logger pour éviter la fragilité
+
+    @pytest.mark.asyncio
+    async def test_stop_without_running(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        # Not running → no-op
+        await manager.stop()
+        assert manager.is_running() is False
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_tasks_and_cleans(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        # Simuler une connexion et une tâche
+        fake_conn = Mock()
+        fake_task = AsyncMock()
+        fake_task.done.return_value = False
+        manager._ws_conns = [fake_conn]
+        manager._ws_tasks = [fake_task]
+        manager.linear_symbols = ["BTCUSDT"]
+        manager.inverse_symbols = ["BTCUSD"]
+        manager.running = True
+
+        await manager.stop()
+
+        assert manager.is_running() is False
+        assert manager._ws_conns == []
+        assert manager._ws_tasks == []
+        assert manager.get_connected_symbols() == {"linear": [], "inverse": []}
+
+    @pytest.mark.asyncio
+    async def test_double_start_is_safe(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        manager.running = True
+        # Ne doit pas lever, juste log un warning
+        await manager.start_connections(["BTCUSDT"], [])
+        assert manager.is_running() is True
+
+    def test_stop_sync_cleans_state(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        fake_conn = Mock()
+        manager._ws_conns = [fake_conn]
+        manager._ws_tasks = [Mock()]
+        manager.linear_symbols = ["BTCUSDT"]
+        manager.inverse_symbols = ["BTCUSD"]
+        manager.running = True
+
+        manager.stop_sync()
+
+        assert manager.is_running() is False
+        assert manager._ws_conns == []
+        assert manager._ws_tasks == []
+        assert manager.get_connected_symbols() == {"linear": [], "inverse": []}
+
+    @pytest.mark.asyncio
+    async def test_run_websocket_connection_handles_exception_when_running(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        manager.running = True
+        bad_conn = Mock()
+
+        async def fake_run_in_executor(_, __):
+            raise RuntimeError("ws boom")
+
+        with patch('asyncio.get_event_loop') as mock_loop:
+            loop = Mock()
+            loop.run_in_executor = fake_run_in_executor
+            mock_loop.return_value = loop
+            await manager._run_websocket_connection(bad_conn)
+
+    def test_ticker_callback_called_only_if_set_and_symbol_present(self):
+        manager = WebSocketManager(testnet=True, logger=Mock())
+        cb = Mock()
+        manager.set_ticker_callback(cb)
+
+        manager._handle_ticker({
+            "symbol": "ETHUSDT",
+            "markPrice": "1000.0",
+            "lastPrice": "1001.0",
+        })
+        assert cb.called
+
+        cb.reset_mock()
+        manager._handle_ticker({
+            "markPrice": "1000.0",
+            "lastPrice": "1001.0",
+        })
+        cb.assert_not_called()

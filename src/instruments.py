@@ -1,11 +1,11 @@
 """Module pour récupérer et filtrer les instruments perpétuels Bybit."""
 
 import httpx
+from http_client_manager import get_http_client
 from http_utils import get_rate_limiter
+from typing import Dict, List
 
 _rate_limiter = get_rate_limiter()
-from http_client_manager import get_http_client
-from typing import Dict, List
 
 
 def fetch_instruments_info(

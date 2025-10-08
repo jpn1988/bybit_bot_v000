@@ -37,7 +37,8 @@ class DataStorage:
         """
         self.logger = logger or setup_logging()
 
-        # Données de funding (format: {symbol: (funding, volume, funding_time, spread, volatility)})
+        # Données de funding (format: {symbol: (funding, volume, funding_time,
+        # spread, volatility)})
         self.funding_data: Dict[
             str, Tuple[float, float, str, float, Optional[float]]
         ] = {}

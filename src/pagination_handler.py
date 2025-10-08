@@ -8,8 +8,7 @@ Cette classe gère uniquement :
 - La détection de fin de pagination
 """
 
-import httpx
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 try:
     from .logging_setup import setup_logging
     from .http_utils import get_rate_limiter
@@ -72,32 +71,34 @@ class PaginationHandler:
             try:
                 # Préparer les paramètres de la page
                 page_params = self._prepare_page_params(params, cursor)
-                
+
                 # Effectuer la requête
                 page_data = self._make_paginated_request(
                     base_url, endpoint, page_params, timeout, page_index + 1, rate_limiter
                 )
-                
+
                 # Extraire les données de la page
                 page_items = page_data.get("list", [])
                 if not page_items:
                     break
-                
+
                 all_data.extend(page_items)
-                
+
                 # Vérifier s'il y a une page suivante
                 next_cursor = page_data.get("nextPageCursor")
                 if not next_cursor:
                     break
-                
+
                 cursor = next_cursor
                 page_index += 1
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Erreur pagination page {page_index + 1}: {e}")
                 raise
 
-        self.logger.debug(f"📄 Pagination terminée: {page_index + 1} pages, {len(all_data)} éléments")
+        self.logger.debug(
+            f"📄 Pagination terminée: {page_index + 1} pages, {len(all_data)} éléments"
+        )
         return all_data
 
     def _prepare_page_params(self, base_params: Dict[str, Any], cursor: str) -> Dict[str, Any]:
@@ -145,10 +146,10 @@ class PaginationHandler:
             RuntimeError: En cas d'erreur HTTP ou API
         """
         url = f"{base_url}{endpoint}"
-        
+
         # Respecter le rate limit
         rate_limiter.acquire()
-        
+
         # Effectuer la requête
         client = get_http_client(timeout=timeout)
         response = client.get(url, params=params)
@@ -188,7 +189,9 @@ class PaginationHandler:
         )
         raise RuntimeError(error_msg)
 
-    def should_continue_pagination(self, current_data: List, found_items: int, target_items: int) -> bool:
+    def should_continue_pagination(
+        self, current_data: List, found_items: int, target_items: int
+    ) -> bool:
         """
         Détermine si la pagination doit continuer.
 
@@ -203,6 +206,6 @@ class PaginationHandler:
         # Arrêt anticipé si on a trouvé tous les éléments cibles
         if target_items > 0 and found_items >= target_items:
             return False
-        
+
         # Continuer si on a des données
         return len(current_data) > 0

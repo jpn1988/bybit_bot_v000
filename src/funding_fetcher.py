@@ -62,24 +62,24 @@ class FundingFetcher:
         """
         try:
             self.logger.debug(f"📊 Récupération funding pour {category}...")
-            
+
             # Paramètres de base pour la pagination
             params = {
                 "category": category,
                 "limit": 1000,  # Limite maximum supportée par l'API Bybit
             }
-            
+
             # Récupérer toutes les données via pagination
             all_tickers = self._pagination_handler.fetch_paginated_data(
                 base_url, "/v5/market/tickers", params, timeout
             )
-            
+
             # Traiter les données de funding
             funding_map = self._process_funding_data(all_tickers)
-            
+
             self.logger.info(f"✅ Funding récupéré: {len(funding_map)} symboles pour {category}")
             return funding_map
-            
+
         except Exception as e:
             self._error_handler.log_error(e, f"fetch_funding_map category={category}")
             raise
@@ -120,7 +120,9 @@ class FundingFetcher:
                         funding_map.update(category_data)
                         self.logger.debug(f"✅ Funding {category}: {len(category_data)} symboles")
                     except Exception as e:
-                        self._error_handler.log_error(e, f"fetch_funding_data_parallel category={category}")
+                        self._error_handler.log_error(
+                            e, f"fetch_funding_data_parallel category={category}"
+                        )
                         raise
 
             self.logger.info(f"✅ Funding parallèle terminé: {len(funding_map)} symboles total")
@@ -141,7 +143,7 @@ class FundingFetcher:
             Dict[str, Dict]: Dictionnaire des données de funding
         """
         funding_map = {}
-        
+
         for ticker in tickers:
             try:
                 # Extraire les données du ticker
@@ -158,7 +160,7 @@ class FundingFetcher:
                 funding_entry = self._build_funding_entry(
                     symbol, funding_rate, volume_24h, next_funding_time
                 )
-                
+
                 if funding_entry:
                     funding_map[symbol] = funding_entry
 
@@ -192,7 +194,7 @@ class FundingFetcher:
             # Convertir et valider les données
             funding = self._safe_float_conversion(funding_rate, "funding_rate")
             volume = self._safe_float_conversion(volume_24h, "volume_24h")
-            
+
             if funding is None:
                 return None
 
@@ -245,7 +247,9 @@ class FundingFetcher:
                 if self._validate_single_funding_entry(symbol, data):
                     valid_count += 1
 
-            self.logger.debug(f"📊 Validation funding: {valid_count}/{len(funding_data)} entrées valides")
+            self.logger.debug(
+                f"📊 Validation funding: {valid_count}/{len(funding_data)} entrées valides"
+            )
             return valid_count > 0
 
         except Exception as e:

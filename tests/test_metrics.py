@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import patch, Mock
-from metrics import MetricsCollector, record_api_call, record_filter_result, record_ws_connection, record_ws_error, get_metrics_summary, reset_metrics
+from metrics import MetricsCollector, record_api_call, record_filter_result, record_ws_connection, record_ws_error, get_metrics_summary, metrics_collector
 from metrics_monitor import MetricsMonitor
 
 
@@ -129,7 +129,7 @@ class TestMetricsFunctions:
     
     def test_record_api_call_global(self):
         """Test de la fonction globale record_api_call."""
-        reset_metrics()
+        metrics_collector.reset()
         
         record_api_call(0.3, success=True)
         record_api_call(0.7, success=False)
@@ -141,7 +141,7 @@ class TestMetricsFunctions:
     
     def test_record_filter_result_global(self):
         """Test de la fonction globale record_filter_result."""
-        reset_metrics()
+        metrics_collector.reset()
         
         record_filter_result("test_filter", 5, 3)
         
@@ -153,7 +153,7 @@ class TestMetricsFunctions:
     
     def test_record_ws_connection_global(self):
         """Test de la fonction globale record_ws_connection."""
-        reset_metrics()
+        metrics_collector.reset()
         
         record_ws_connection(connected=True)
         record_ws_connection(connected=False)
@@ -164,7 +164,7 @@ class TestMetricsFunctions:
     
     def test_record_ws_error_global(self):
         """Test de la fonction globale record_ws_error."""
-        reset_metrics()
+        metrics_collector.reset()
         
         record_ws_error()
         record_ws_error()

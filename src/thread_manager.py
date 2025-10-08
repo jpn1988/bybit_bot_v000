@@ -14,7 +14,7 @@ except ImportError:
 class ThreadManager:
     """
     Gestionnaire de threads pour le bot Bybit.
-    
+
     Cette classe a été simplifiée - les méthodes complexes d'arrêt forcé
     ont été supprimées car elles n'étaient pas utilisées.
     """

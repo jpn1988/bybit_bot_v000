@@ -8,8 +8,7 @@ Cette classe gère uniquement :
 - La gestion des erreurs spécifiques aux spreads
 """
 
-import httpx
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any, Optional
 try:
     from .logging_setup import setup_logging
     from .pagination_handler import PaginationHandler
@@ -65,17 +64,19 @@ class SpreadFetcher:
             Dict[str, float]: map {symbol: spread_pct}
         """
         try:
-            self.logger.debug(f"📊 Récupération spreads pour {len(symbols)} symboles ({category})...")
-            
+            self.logger.debug(
+                f"📊 Récupération spreads pour {len(symbols)} symboles ({category})..."
+            )
+
             # Récupération paginée des spreads
             found = self._fetch_spreads_paginated(base_url, symbols, timeout, category)
-            
+
             # Fallback unitaire pour les symboles manquants
             self._fetch_missing_spreads(base_url, symbols, found, timeout, category)
-            
+
             self.logger.info(f"✅ Spreads récupérés: {len(found)}/{len(symbols)} symboles")
             return found
-            
+
         except Exception as e:
             self._error_handler.log_error(e, f"fetch_spread_data category={category}")
             raise
@@ -97,19 +98,19 @@ class SpreadFetcher:
         """
         wanted = set(symbols)
         found: Dict[str, float] = {}
-        
+
         # Paramètres de base pour la pagination
         params = {"category": category, "limit": 1000}
-        
+
         try:
             # Récupérer toutes les données via pagination
             all_tickers = self._pagination_handler.fetch_paginated_data(
                 base_url, "/v5/market/tickers", params, timeout
             )
-            
+
             # Traiter les tickers pour extraire les spreads
             self._process_tickers_for_spreads(all_tickers, wanted, found)
-            
+
         except Exception as e:
             self._error_handler.log_error(e, f"_fetch_spreads_paginated category={category}")
             raise
@@ -195,12 +196,12 @@ class SpreadFetcher:
             category: Catégorie des instruments
         """
         missing = [s for s in symbols if s not in found]
-        
+
         if not missing:
             return
 
         self.logger.debug(f"🔍 Récupération spreads manquants: {len(missing)} symboles")
-        
+
         for symbol in missing:
             try:
                 spread = self._fetch_single_spread(base_url, symbol, timeout, category)
@@ -296,7 +297,9 @@ class SpreadFetcher:
                 if self._validate_single_spread_entry(symbol, spread):
                     valid_count += 1
 
-            self.logger.debug(f"📊 Validation spread: {valid_count}/{len(spread_data)} entrées valides")
+            self.logger.debug(
+                f"📊 Validation spread: {valid_count}/{len(spread_data)} entrées valides"
+            )
             return valid_count > 0
 
         except Exception as e:

@@ -11,7 +11,7 @@ Cette classe coordonne les différents composants spécialisés :
 Cette version refactorisée améliore la lisibilité en séparant clairement les responsabilités.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 try:
     from .logging_setup import setup_logging
     from .funding_fetcher import FundingFetcher
@@ -215,36 +215,39 @@ class DataFetcher:
             Dict contenant funding_data et spread_data
         """
         try:
-            self.logger.info(f"📊 Récupération complète des données de marché...")
-            
+            self.logger.info("📊 Récupération complète des données de marché...")
+
             # Récupérer les données de funding
             funding_data = self.fetch_funding_data_parallel(base_url, categories, timeout)
-            
+
             # Récupérer les données de spread
             spread_data = {}
             for category in categories:
                 category_spreads = self.fetch_spread_data(base_url, symbols, timeout, category)
                 spread_data.update(category_spreads)
-            
+
             # Valider les données
             funding_valid = self.validate_funding_data(funding_data)
             spread_valid = self.validate_spread_data(spread_data)
-            
+
             if not funding_valid:
                 self.logger.warning("⚠️ Données de funding invalides")
             if not spread_valid:
                 self.logger.warning("⚠️ Données de spread invalides")
-            
+
             result = {
                 "funding_data": funding_data,
                 "spread_data": spread_data,
                 "funding_valid": funding_valid,
                 "spread_valid": spread_valid,
             }
-            
-            self.logger.info(f"✅ Données de marché récupérées: {len(funding_data)} funding, {len(spread_data)} spreads")
+
+            self.logger.info(
+                f"✅ Données de marché récupérées: {len(funding_data)} funding, "
+                f"{len(spread_data)} spreads"
+            )
             return result
-            
+
         except Exception as e:
             self._error_handler.log_error(e, "fetch_complete_market_data")
             raise

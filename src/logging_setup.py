@@ -2,7 +2,6 @@
 
 import sys
 from datetime import datetime
-from typing import Dict, Any
 from loguru import logger
 
 try:
@@ -113,7 +112,7 @@ def log_shutdown_summary(
         separator = "═" * banner_width
 
         print(f"\n{separator}")
-        print(f" 🛑 ARRÊT DU BOT")
+        print(" 🛑 ARRÊT DU BOT")
         print(f" 📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{separator}")
 

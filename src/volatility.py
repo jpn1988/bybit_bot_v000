@@ -14,7 +14,6 @@ dernières bougies 1 minute.
 import time
 import asyncio
 import aiohttp
-import concurrent.futures
 from typing import Optional, Dict, List, Tuple
 from collections import deque
 from logging_setup import setup_logging
@@ -399,7 +398,6 @@ class VolatilityCalculator:
             self.logger.error(f"⚠️ Erreur calcul volatilité batch: {e}")
             return {symbol: None for symbol in symbols}
 
-
     async def filter_by_volatility_async(
         self,
         symbols_data: List[Tuple[str, float, float, str, float]],
@@ -584,4 +582,3 @@ class VolatilityCalculator:
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur filtrage volatilité: {e}")
             return []
-

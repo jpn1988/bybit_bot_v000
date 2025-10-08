@@ -8,7 +8,7 @@ Cette classe gère uniquement :
 - La validation des paramètres d'entrée
 """
 
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Any
 try:
     from .logging_setup import setup_logging
 except ImportError:
@@ -35,9 +35,9 @@ class DataValidator:
         self.logger = logger or setup_logging()
 
     def validate_data_integrity(
-        self, 
-        linear_symbols: List[str], 
-        inverse_symbols: List[str], 
+        self,
+        linear_symbols: List[str],
+        inverse_symbols: List[str],
         funding_data: Dict
     ) -> bool:
         """
@@ -114,7 +114,7 @@ class DataValidator:
             if isinstance(data, (list, tuple)) and len(data) >= 4:
                 # Format: (funding, volume, funding_time, spread, volatility?)
                 funding, volume, funding_time, spread = data[:4]
-                
+
                 # Vérifier les types
                 if not isinstance(funding, (int, float)):
                     return False
@@ -213,7 +213,7 @@ class DataValidator:
                 return True  # Pas de catégories = pas d'erreur
 
             valid_categories = {"linear", "inverse"}
-            
+
             for symbol, category in symbol_categories.items():
                 if not symbol or not isinstance(symbol, str):
                     return False
@@ -227,8 +227,8 @@ class DataValidator:
             return False
 
     def validate_symbol_lists(
-        self, 
-        linear_symbols: List[str], 
+        self,
+        linear_symbols: List[str],
         inverse_symbols: List[str]
     ) -> bool:
         """
