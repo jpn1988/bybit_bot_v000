@@ -11,10 +11,12 @@ Cette classe gère uniquement :
 
 import asyncio
 import time
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, TYPE_CHECKING
 from logging_setup import setup_logging
 from ws_public import PublicWSClient
-from unified_data_manager import update
+
+if TYPE_CHECKING:
+    from unified_data_manager import UnifiedDataManager
 
 
 class WebSocketManager:
@@ -29,16 +31,20 @@ class WebSocketManager:
     - Callbacks vers l'application principale
     """
 
-    def __init__(self, testnet: bool = True, logger=None):
+    def __init__(
+        self, testnet: bool = True, data_manager: Optional["UnifiedDataManager"] = None, logger=None
+    ):
         """
         Initialise le gestionnaire WebSocket.
 
         Args:
             testnet (bool): Utiliser le testnet (True) ou le marché réel
             (False)
+            data_manager: Instance du gestionnaire de données unifié (injection de dépendances)
             logger: Logger pour les messages (optionnel)
         """
         self.testnet = testnet
+        self.data_manager = data_manager
         self.logger = logger or setup_logging()
         self.running = False
 
@@ -108,15 +114,15 @@ class WebSocketManager:
             ticker_data: Données ticker reçues via WebSocket
         """
         try:
-            # Mettre à jour le store de prix global
+            # Mettre à jour le store de prix via le data_manager injecté
             symbol = ticker_data.get("symbol", "")
             mark_price = ticker_data.get("markPrice")
             last_price = ticker_data.get("lastPrice")
 
-            if symbol and mark_price is not None and last_price is not None:
+            if symbol and mark_price is not None and last_price is not None and self.data_manager:
                 mark_val = float(mark_price)
                 last_val = float(last_price)
-                update(symbol, mark_val, last_val, time.time())
+                self.data_manager.update_price_data(symbol, mark_val, last_val, time.time())
 
             # Appeler le callback externe si défini
             if self._ticker_callback and symbol:

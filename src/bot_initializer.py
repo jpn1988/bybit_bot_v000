@@ -75,9 +75,9 @@ class BotInitializer:
             self.data_manager, testnet=self.testnet, logger=self.logger
         )
 
-        # Gestionnaire WebSocket dédié
+        # Gestionnaire WebSocket dédié (avec injection du data_manager)
         self.ws_manager = WebSocketManager(
-            testnet=self.testnet, logger=self.logger
+            testnet=self.testnet, data_manager=self.data_manager, logger=self.logger
         )
 
         # Gestionnaire de volatilité dédié

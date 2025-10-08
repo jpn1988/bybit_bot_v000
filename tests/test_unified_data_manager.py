@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from unified_data_manager import UnifiedDataManager, set_global_data_manager, update, get_price_data
+from unified_data_manager import UnifiedDataManager
 
 
 class TestUnifiedDataManager:
@@ -353,37 +353,3 @@ class TestUnifiedDataManager:
             
             result = data_manager.get_loading_summary()
             assert result == expected_summary
-
-
-class TestGlobalFunctions:
-    """Tests pour les fonctions globales."""
-
-    def test_set_global_data_manager(self):
-        """Test de définition du gestionnaire global."""
-        manager = Mock()
-        set_global_data_manager(manager)
-        # Vérifier que la fonction s'exécute sans erreur
-        assert True
-
-    def test_update_global_function(self):
-        """Test de la fonction update globale."""
-        with patch('unified_data_manager._get_global_data_manager') as mock_get_manager:
-            mock_manager = Mock()
-            mock_get_manager.return_value = mock_manager
-            
-            update("BTCUSDT", 50000.0, 50001.0, 1640995200.0)
-            
-            mock_manager.update_price_data.assert_called_once_with("BTCUSDT", 50000.0, 50001.0, 1640995200.0)
-
-    def test_get_price_data_global_function(self):
-        """Test de la fonction get_price_data globale."""
-        expected_data = {"mark_price": 50000.0, "last_price": 50001.0, "timestamp": 1640995200.0}
-        with patch('unified_data_manager._get_global_data_manager') as mock_get_manager:
-            mock_manager = Mock()
-            mock_get_manager.return_value = mock_manager
-            mock_manager.get_price_data.return_value = expected_data
-            
-            result = get_price_data("BTCUSDT")
-            
-            assert result == expected_data
-            mock_manager.get_price_data.assert_called_once_with("BTCUSDT")

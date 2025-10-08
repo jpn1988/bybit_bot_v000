@@ -27,16 +27,15 @@ class TestBotOrchestrator:
         """Mock des dépendances externes."""
         with patch('bot.setup_logging') as mock_logging, \
              patch('bot.get_settings') as mock_settings, \
-             patch('bot.close_all_http_clients') as mock_close, \
-             patch('bot.start_metrics_monitoring') as mock_metrics, \
-             patch('bot.BotInitializer') as mock_initializer, \
-             patch('bot.BotConfigurator') as mock_configurator, \
-             patch('bot.UnifiedDataManager') as mock_data_manager, \
-             patch('bot.BotStarter') as mock_starter, \
-             patch('bot.BotHealthMonitor') as mock_health, \
-             patch('bot.ShutdownManager') as mock_shutdown, \
-             patch('bot.ThreadManager') as mock_thread, \
-             patch('bot.set_global_data_manager') as mock_set_global:
+            patch('bot.close_all_http_clients') as mock_close, \
+            patch('bot.start_metrics_monitoring') as mock_metrics, \
+            patch('bot.BotInitializer') as mock_initializer, \
+            patch('bot.BotConfigurator') as mock_configurator, \
+            patch('bot.UnifiedDataManager') as mock_data_manager, \
+            patch('bot.BotStarter') as mock_starter, \
+            patch('bot.BotHealthMonitor') as mock_health, \
+            patch('bot.ShutdownManager') as mock_shutdown, \
+            patch('bot.ThreadManager') as mock_thread:
             
             # Configuration des mocks
             mock_logging.return_value = Mock()
@@ -543,18 +542,17 @@ class TestBotIntegration:
     async def test_full_bot_lifecycle(self):
         """Test du cycle de vie complet du bot."""
         with patch('bot.setup_logging') as mock_logging, \
-             patch('bot.get_settings') as mock_settings, \
-             patch('bot.close_all_http_clients') as mock_close, \
-             patch('bot.start_metrics_monitoring') as mock_metrics, \
-             patch('bot.BotInitializer') as mock_initializer, \
-             patch('bot.BotConfigurator') as mock_configurator, \
-             patch('bot.UnifiedDataManager') as mock_data_manager, \
-             patch('bot.BotStarter') as mock_starter, \
-             patch('bot.BotHealthMonitor') as mock_health, \
-             patch('bot.ShutdownManager') as mock_shutdown, \
-             patch('bot.ThreadManager') as mock_thread, \
-             patch('bot.set_global_data_manager') as mock_set_global, \
-             patch('metrics_monitor.metrics_monitor', Mock()):
+            patch('bot.get_settings') as mock_settings, \
+            patch('bot.close_all_http_clients') as mock_close, \
+            patch('bot.start_metrics_monitoring') as mock_metrics, \
+            patch('bot.BotInitializer') as mock_initializer, \
+            patch('bot.BotConfigurator') as mock_configurator, \
+            patch('bot.UnifiedDataManager') as mock_data_manager, \
+            patch('bot.BotStarter') as mock_starter, \
+            patch('bot.BotHealthMonitor') as mock_health, \
+            patch('bot.ShutdownManager') as mock_shutdown, \
+            patch('bot.ThreadManager') as mock_thread, \
+            patch('metrics_monitor.metrics_monitor', Mock()):
             
             # Configuration des mocks
             mock_logging.return_value = Mock()

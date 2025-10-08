@@ -28,7 +28,7 @@ from metrics_monitor import start_metrics_monitoring
 # Import des composants refactorisés
 from bot_initializer import BotInitializer
 from bot_configurator import BotConfigurator
-from unified_data_manager import UnifiedDataManager, set_global_data_manager
+from unified_data_manager import UnifiedDataManager
 from bot_starter import BotStarter
 from bot_health_monitor import BotHealthMonitor
 from shutdown_manager import ShutdownManager
@@ -106,9 +106,6 @@ class BotOrchestrator:
         self.watchlist_manager = managers["watchlist_manager"]
         self.callback_manager = managers["callback_manager"]
         self.opportunity_manager = managers["opportunity_manager"]
-
-        # Configurer le gestionnaire global pour la compatibilité avec price_store.py
-        set_global_data_manager(self.data_manager)
 
     async def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""

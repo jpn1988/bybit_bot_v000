@@ -68,34 +68,44 @@ class TestWebSocketManager:
         cb.assert_called_once()
 
     def test_handle_ticker_updates_store(self):
-        manager = WebSocketManager(testnet=True, logger=Mock())
-        # Patch de update() global pour ne pas toucher le vrai store
-        with patch('ws_manager.update') as mock_update:
-            manager._handle_ticker({
-                "symbol": "BTCUSDT",
-                "markPrice": "50000.0",
-                "lastPrice": "50010.0",
-            })
-            mock_update.assert_called_once()
+        # Mock du data_manager pour injection de dépendances
+        mock_data_manager = Mock()
+        manager = WebSocketManager(testnet=True, data_manager=mock_data_manager, logger=Mock())
+        
+        manager._handle_ticker({
+            "symbol": "BTCUSDT",
+            "markPrice": "50000.0",
+            "lastPrice": "50010.0",
+        })
+        # Vérifier que update_price_data a été appelé sur le data_manager
+        mock_data_manager.update_price_data.assert_called_once()
 
     def test_handle_ticker_ignores_incomplete(self):
-        manager = WebSocketManager(testnet=True, logger=Mock())
-        with patch('ws_manager.update') as mock_update:
-            # Manque markPrice
-            manager._handle_ticker({"symbol": "BTCUSDT", "lastPrice": "50010.0"})
-            mock_update.assert_not_called()
+        # Mock du data_manager pour injection de dépendances
+        mock_data_manager = Mock()
+        manager = WebSocketManager(testnet=True, data_manager=mock_data_manager, logger=Mock())
+        
+        # Manque markPrice
+        manager._handle_ticker({"symbol": "BTCUSDT", "lastPrice": "50010.0"})
+        # Vérifier que update_price_data n'a pas été appelé car les données sont incomplètes
+        mock_data_manager.update_price_data.assert_not_called()
 
     def test_handle_ticker_parsing_error(self):
         logger = Mock()
-        manager = WebSocketManager(testnet=True, logger=logger)
-        with patch('ws_manager.update', side_effect=Exception("boom")):
-            # Ne doit pas lever, log un warning
-            manager._handle_ticker({
-                "symbol": "BTCUSDT",
-                "markPrice": "50000.0",
-                "lastPrice": "50010.0",
-            })
-            # Pas d'assert stricte sur logger pour éviter la fragilité
+        # Mock du data_manager qui lève une exception
+        mock_data_manager = Mock()
+        mock_data_manager.update_price_data.side_effect = Exception("boom")
+        
+        manager = WebSocketManager(testnet=True, data_manager=mock_data_manager, logger=logger)
+        
+        # Ne doit pas lever, log un warning
+        manager._handle_ticker({
+            "symbol": "BTCUSDT",
+            "markPrice": "50000.0",
+            "lastPrice": "50010.0",
+        })
+        # Vérifier que le logger a été appelé avec un warning
+        logger.warning.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_stop_without_running(self):
