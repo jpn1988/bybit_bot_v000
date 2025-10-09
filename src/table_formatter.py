@@ -196,6 +196,8 @@ class TableFormatter:
     def prepare_row_data(self, symbol: str, data_manager) -> Dict[str, Any]:
         """
         Prépare les données d'une ligne avec fallback entre temps réel et REST.
+        
+        Utilise les FundingData Value Objects pour récupérer les données de base.
 
         Args:
             symbol: Symbole à préparer
@@ -205,21 +207,16 @@ class TableFormatter:
             Dict avec les clés: funding, volume, spread_pct, volatility_pct,
             funding_time
         """
-        funding_data = data_manager.get_funding_data(symbol)
+        # Récupérer le FundingData Value Object
+        funding_data_obj = data_manager.get_funding_data_object(symbol)
         realtime_info = data_manager.get_realtime_data(symbol)
 
-        # Valeurs initiales (REST) comme fallbacks
-        try:
-            if funding_data and len(funding_data) >= 4:
-                original_funding = funding_data[0]
-                original_volume = funding_data[1]
-                funding_data[2]
-                original_spread = funding_data[3]
-            else:
-                original_funding = None
-                original_volume = None
-                original_spread = None
-        except Exception:
+        # Valeurs initiales (REST) comme fallbacks depuis le Value Object
+        if funding_data_obj:
+            original_funding = funding_data_obj.funding_rate
+            original_volume = funding_data_obj.volume_24h
+            original_spread = funding_data_obj.spread_pct
+        else:
             original_funding = None
             original_volume = None
             original_spread = None

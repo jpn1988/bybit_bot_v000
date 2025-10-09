@@ -13,6 +13,7 @@ from logging_setup import setup_logging
 from unified_data_manager import UnifiedDataManager
 from watchlist_manager import WatchlistManager
 from instruments import category_of_symbol
+from models.funding_data import FundingData
 
 
 class OpportunityManager:
@@ -139,7 +140,7 @@ class OpportunityManager:
         """
         try:
             # Vérifier que le symbole n'est pas déjà dans la watchlist
-            if self.data_manager.get_funding_data(symbol):
+            if self.data_manager.get_funding_data_object(symbol):
                 return  # Déjà présent
 
             # Construire les données du symbole
@@ -171,15 +172,18 @@ class OpportunityManager:
                     except (ValueError, TypeError):
                         pass
 
-                # Ajouter à la watchlist via le DataManager
-                self.data_manager.update_funding_data(
-                    symbol,
-                    funding,
-                    volume,
-                    funding_time_remaining,
-                    spread_pct,
-                    None,
+                # Créer un FundingData Value Object
+                funding_obj = FundingData(
+                    symbol=symbol,
+                    funding_rate=funding,
+                    volume_24h=volume,
+                    next_funding_time=funding_time_remaining,
+                    spread_pct=spread_pct,
+                    volatility_pct=None
                 )
+
+                # Ajouter à la watchlist via le DataManager
+                self.data_manager.set_funding_data_object(funding_obj)
 
                 # Ajouter aux listes par catégorie
                 category = category_of_symbol(
@@ -197,5 +201,7 @@ class OpportunityManager:
                     f"✅ Symbole {symbol} ajouté à la watchlist principale"
                 )
 
+        except (ValueError, TypeError) as e:
+            self.logger.error(f"❌ Erreur création FundingData pour {symbol}: {e}")
         except Exception as e:
             self.logger.error(f"❌ Erreur ajout symbole {symbol}: {e}")

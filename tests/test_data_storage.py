@@ -367,7 +367,7 @@ class TestDataStorage:
         
         stats = storage.get_data_stats()
         
-        assert stats["funding_data"] == 1
+        assert stats["funding_data_objects"] == 1
         assert stats["original_funding_data"] == 1
         assert stats["realtime_data"] == 1
         assert stats["linear_symbols"] == 2

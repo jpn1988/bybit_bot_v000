@@ -22,6 +22,7 @@ from watchlist_manager import WatchlistManager
 from volatility_tracker import VolatilityTracker
 from bybit_client import BybitPublicClient
 from instruments import category_of_symbol
+from models.funding_data import FundingData
 
 
 class UnifiedMonitoringManager:
@@ -386,25 +387,48 @@ class UnifiedMonitoringManager:
         self.data_manager.set_symbol_lists(all_linear, all_inverse)
 
     def _update_funding_data(self, new_funding_data: Dict):
-        """Met à jour les données de funding avec les nouvelles opportunités."""
+        """Met à jour les données de funding avec les nouvelles opportunités (utilise Value Objects)."""
         # Mettre à jour chaque symbole dans le data manager
         for symbol, data in new_funding_data.items():
-            if isinstance(data, (list, tuple)) and len(data) >= 4:
-                funding, volume, funding_time, spread = data[:4]
-                volatility = data[4] if len(data) > 4 else None
-                self.data_manager.update_funding_data(
-                    symbol, funding, volume, funding_time, spread, volatility
-                )
-            elif isinstance(data, dict):
-                # Si c'est un dictionnaire, extraire les valeurs
-                funding = data.get("funding", 0.0)
-                volume = data.get("volume", 0.0)
-                funding_time = data.get("funding_time_remaining", "-")
-                spread = data.get("spread_pct", 0.0)
-                volatility = data.get("volatility_pct", None)
-                self.data_manager.update_funding_data(
-                    symbol, funding, volume, funding_time, spread, volatility
-                )
+            try:
+                # Créer un FundingData Value Object
+                if isinstance(data, (list, tuple)) and len(data) >= 4:
+                    funding, volume, funding_time, spread = data[:4]
+                    volatility = data[4] if len(data) > 4 else None
+                    
+                    funding_obj = FundingData(
+                        symbol=symbol,
+                        funding_rate=funding,
+                        volume_24h=volume,
+                        next_funding_time=funding_time,
+                        spread_pct=spread,
+                        volatility_pct=volatility
+                    )
+                    
+                elif isinstance(data, dict):
+                    # Si c'est un dictionnaire, extraire les valeurs
+                    funding = data.get("funding", 0.0)
+                    volume = data.get("volume", 0.0)
+                    funding_time = data.get("funding_time_remaining", "-")
+                    spread = data.get("spread_pct", 0.0)
+                    volatility = data.get("volatility_pct", None)
+                    
+                    funding_obj = FundingData(
+                        symbol=symbol,
+                        funding_rate=funding,
+                        volume_24h=volume,
+                        next_funding_time=funding_time,
+                        spread_pct=spread,
+                        volatility_pct=volatility
+                    )
+                else:
+                    continue
+                
+                # Stocker le Value Object
+                self.data_manager.set_funding_data_object(funding_obj)
+                
+            except (ValueError, TypeError) as e:
+                self.logger.warning(f"⚠️ Erreur création FundingData pour {symbol}: {e}")
 
         # Mettre à jour les données originales si disponible
         if self.watchlist_manager:

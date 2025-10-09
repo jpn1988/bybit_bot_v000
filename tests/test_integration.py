@@ -70,7 +70,7 @@ class TestDataManagerIntegration:
         
         # Vérifier qu'aucune exception n'a été levée
         stats = real_data_manager.get_data_stats()
-        assert stats["funding_data"] >= 0
+        assert stats["funding_data_objects"] >= 0
         assert stats["realtime_data"] >= 0
 
     def test_data_manager_symbol_management(self, real_data_manager):
@@ -353,6 +353,6 @@ class TestDataFlowIntegration:
         
         # La méthode validate_data_integrity n'existe pas encore, on teste les statistiques
         stats = data_manager.get_data_stats()
-        assert stats["funding_data"] == 1
+        assert stats["funding_data_objects"] == 1
         assert stats["linear_symbols"] == 1
         assert stats["inverse_symbols"] == 1

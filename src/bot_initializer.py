@@ -10,6 +10,7 @@ Cette classe gère uniquement :
 
 from typing import Optional
 from logging_setup import setup_logging
+from config_unified import UnifiedConfigManager
 from unified_data_manager import UnifiedDataManager
 from display_manager import DisplayManager
 from unified_monitoring_manager import UnifiedMonitoringManager
@@ -41,6 +42,9 @@ class BotInitializer:
         self.testnet = testnet
         self.logger = logger or setup_logging()
 
+        # Gestionnaire de configuration
+        self.config_manager: Optional[UnifiedConfigManager] = None
+
         # Managers principaux
         self.data_manager: Optional[UnifiedDataManager] = None
         self.display_manager: Optional[DisplayManager] = None
@@ -60,6 +64,9 @@ class BotInitializer:
         Cette méthode crée et configure tous les managers principaux
         nécessaires au fonctionnement du bot.
         """
+        # Initialiser le gestionnaire de configuration (partagé entre les managers)
+        self.config_manager = UnifiedConfigManager()
+
         # Initialiser le gestionnaire de données
         self.data_manager = UnifiedDataManager(
             testnet=self.testnet, logger=self.logger
@@ -85,9 +92,11 @@ class BotInitializer:
             testnet=self.testnet, logger=self.logger
         )
 
-        # Gestionnaire de watchlist dédié
+        # Gestionnaire de watchlist dédié (avec injection du config_manager)
         self.watchlist_manager = WatchlistManager(
-            testnet=self.testnet, logger=self.logger
+            testnet=self.testnet,
+            config_manager=self.config_manager,
+            logger=self.logger,
         )
 
     def initialize_specialized_managers(self):
@@ -146,6 +155,7 @@ class BotInitializer:
             dict: Dictionnaire contenant tous les managers
         """
         return {
+            "config_manager": self.config_manager,
             "data_manager": self.data_manager,
             "display_manager": self.display_manager,
             "monitoring_manager": self.monitoring_manager,

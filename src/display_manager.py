@@ -133,17 +133,22 @@ class DisplayManager:
         """
         Affiche le tableau des prix aligné avec funding, volume en millions,
         spread et volatilité.
+        
+        Utilise les FundingData Value Objects pour accéder aux données.
         """
         # Si aucune opportunité n'est trouvée, retourner
-        funding_data = self.data_manager.get_all_funding_data()
-        if not funding_data:
+        funding_data_objects = self.data_manager.get_all_funding_data_objects()
+        if not funding_data_objects:
             if self._first_display:
                 self._first_display = False
             return
 
+        # Pour la compatibilité avec calculate_column_widths qui attend un Dict
+        funding_data_keys = funding_data_objects
+
         # Vérifier si toutes les données sont disponibles avant d'afficher
         if not self._formatter.are_all_data_available(
-            funding_data, self.data_manager
+            funding_data_keys, self.data_manager
         ):
             if self._first_display:
                 self.logger.info(
@@ -153,7 +158,7 @@ class DisplayManager:
             return
 
         # Calculer les largeurs de colonnes
-        col_widths = self._formatter.calculate_column_widths(funding_data)
+        col_widths = self._formatter.calculate_column_widths(funding_data_keys)
 
         # Afficher l'en-tête
         header = self._formatter.format_table_header(col_widths)
@@ -162,7 +167,7 @@ class DisplayManager:
         print(separator)
 
         # Afficher les données
-        for symbol in funding_data.keys():
+        for symbol in funding_data_objects.keys():
             row_data = self._formatter.prepare_row_data(
                 symbol, self.data_manager
             )

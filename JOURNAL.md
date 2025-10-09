@@ -3,6 +3,99 @@
 > Ce fichier documente **ce qui a été fait** (date, but, fichiers modifiés), **pourquoi**, **comment tester**, et **les prochaines étapes**.  
 > **Règle d'or :** chaque modification significative ajoute une entrée ci-dessous.
 
+## [2025-10-08] — Refactorisation watchlist_manager.py (helpers)
+**But :** Améliorer drastiquement la lisibilité de `watchlist_manager.py` en extrayant les 16 méthodes privées vers 3 classes helper spécialisées.
+
+**Problème identifié :**
+- Fichier trop long (632 lignes)
+- 16 méthodes privées (_xxx) rendant la compréhension difficile
+- Responsabilités mélangées (préparation, filtrage, construction)
+
+**Solution implémentée :**
+Création d'un package `watchlist_helpers/` avec 3 classes spécialisées :
+1. **WatchlistDataPreparer** - Préparation et validation des données
+2. **WatchlistFilterApplier** - Application séquentielle des filtres
+3. **WatchlistResultBuilder** - Construction des résultats finaux
+
+**Fichiers créés :**
+- `src/watchlist_helpers/__init__.py`
+- `src/watchlist_helpers/data_preparer.py` (189 lignes)
+- `src/watchlist_helpers/filter_applier.py` (278 lignes)
+- `src/watchlist_helpers/result_builder.py` (71 lignes)
+- `src/watchlist_helpers/README.md` (documentation complète)
+
+**Fichiers modifiés :**
+- `src/watchlist_manager.py` - Refactorisation complète avec délégation aux helpers
+
+**Résultats :**
+- ✅ Réduction de 57% du fichier principal (632 → 274 lignes)
+- ✅ Réduction de 94% des méthodes privées (16 → 1 seule)
+- ✅ Séparation claire des responsabilités (SRP/SOLID)
+- ✅ Testabilité améliorée (chaque helper testable séparément)
+- ✅ Aucune erreur de linting
+- ✅ Pas de changement d'API publique (rétrocompatible)
+
+**Tests/commandes :**
+```bash
+# Test d'import et instanciation
+cd src
+python -c "from watchlist_manager import WatchlistManager; wm = WatchlistManager(); print('✅ OK')"
+
+# Test du bot complet
+python bot.py
+```
+
+## [2025-10-08] — Refactorisation unified_data_manager.py (interface simplifiée)
+**But :** Simplifier drastiquement l'interface de `unified_data_manager.py` en exposant directement les composants internes via des propriétés publiques.
+
+**Problème identifié :**
+- Fichier long (548 lignes)
+- Interface trop large (40+ méthodes publiques)
+- 90% des méthodes faisaient juste `return self._xxx.method()` (délégations inutiles)
+- Pattern Facade surchargé exposant TOUTES les méthodes des composants
+
+**Solution implémentée :**
+Exposition directe des composants via propriétés publiques + alias de compatibilité :
+- **fetcher** : Accès direct à DataFetcher
+- **storage** : Accès direct à DataStorage
+- **validator** : Accès direct à DataValidator
+
+**Nouveau style recommandé :**
+```python
+# Accès DIRECT (explicite et clair)
+dm.fetcher.fetch_funding_map(url, "linear", 10)
+dm.storage.get_funding_data("BTCUSDT")
+dm.validator.validate_data_integrity(...)
+
+# Ancien style toujours supporté (alias de compatibilité)
+dm.fetch_funding_map(url, "linear", 10)  # Fonctionne mais déprécié
+```
+
+**Fichiers modifiés :**
+- `src/unified_data_manager.py` - Simplification complète de l'interface
+
+**Fichiers créés :**
+- `src/unified_data_manager_README.md` - Guide complet de migration
+
+**Résultats :**
+- ✅ Réduction de 43% du fichier (548 → 313 lignes)
+- ✅ Interface clarifiée : Composants accessibles directement
+- ✅ Code auto-documenté : On voit immédiatement quel composant fait quoi
+- ✅ Rétrocompatibilité maintenue : Ancien code fonctionne toujours
+- ✅ Aucune erreur de linting
+- ✅ Aucune surcharge de performance (propriétés Python = accès direct)
+
+**Tests/commandes :**
+```bash
+cd src
+python -c "from unified_data_manager import UnifiedDataManager; dm = UnifiedDataManager(); print(f'✅ fetcher: {type(dm.fetcher).__name__}'); print(f'✅ storage: {type(dm.storage).__name__}'); print(f'✅ validator: {type(dm.validator).__name__}')"
+```
+
+**Prochaines étapes :**
+- Tests unitaires pour les 3 helpers
+- Même refactorisation pour `unified_monitoring_manager.py` (626 lignes)
+- Documentation développeur (DEVELOPER_GUIDE.md)
+
 ## 🔰 Base initiale (2025-09-06)
 **But :** Démarrage propre du projet, config `.env`, logs clairs, appel REST public pour l'heure serveur.  
 **Fichiers clés :** `src/main.py`, `src/config.py`, `src/logging_setup.py`, `src/bybit_client.py`  
