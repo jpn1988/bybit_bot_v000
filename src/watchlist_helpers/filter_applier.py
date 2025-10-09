@@ -117,7 +117,7 @@ class WatchlistFilterApplier:
             spread_data = {}
             if linear_symbols_for_spread:
                 linear_spread_data = (
-                    self.market_data_fetcher.fetch_spread_data(
+                    self.market_data_fetcher.fetcher.fetch_spread_data(
                         base_url, linear_symbols_for_spread, 10, "linear"
                     )
                 )
@@ -125,7 +125,7 @@ class WatchlistFilterApplier:
 
             if inverse_symbols_for_spread:
                 inverse_spread_data = (
-                    self.market_data_fetcher.fetch_spread_data(
+                    self.market_data_fetcher.fetcher.fetch_spread_data(
                         base_url, inverse_symbols_for_spread, 10, "inverse"
                     )
                 )

@@ -2,10 +2,32 @@
 """
 Démarreur du bot Bybit - Version refactorisée.
 
-Cette classe gère uniquement :
-- Le démarrage des composants du bot
-- La configuration de la surveillance
-- La gestion du résumé de démarrage
+🎯 RESPONSABILITÉ : Démarrer tous les composants du bot
+
+Cette classe est appelée au démarrage par BotOrchestrator pour lancer
+tous les composants actifs (WebSocket, monitoring, affichage, etc.).
+
+📝 CE QUE FAIT CE FICHIER :
+1. display_startup_summary() : Affiche le résumé de démarrage
+   - Filtres appliqués (funding, volume, spread, volatilité)
+   - Nombre de symboles sélectionnés
+   - Statistiques des données chargées
+
+2. start_bot_components() : Démarre tous les composants en parallèle
+   - Démarre volatility_tracker (refresh automatique)
+   - Démarre display_manager (affichage du tableau)
+   - Démarre ws_manager (connexions WebSocket)
+   - Démarre monitoring_manager (surveillance des opportunités)
+   
+   ⚠️ IMPORTANT : Cette méthode est ASYNCHRONE (await)
+
+3. get_startup_stats() : Retourne les stats de démarrage
+   - Nombre de symboles linear/inverse
+   - Volume total, funding moyen, etc.
+
+🔗 APPELÉ PAR : bot.py (BotOrchestrator.start(), lignes 147-160)
+
+📚 POUR EN SAVOIR PLUS : Consultez GUIDE_DEMARRAGE_BOT.md
 """
 
 import time
@@ -97,8 +119,8 @@ class BotStarter:
         self, ws_manager: WebSocketManager, data_manager: UnifiedDataManager
     ):
         """Démarre les connexions WebSocket."""
-        linear_symbols = data_manager.get_linear_symbols()
-        inverse_symbols = data_manager.get_inverse_symbols()
+        linear_symbols = data_manager.storage.get_linear_symbols()
+        inverse_symbols = data_manager.storage.get_inverse_symbols()
 
         if linear_symbols or inverse_symbols:
             await ws_manager.start_connections(linear_symbols, inverse_symbols)
@@ -145,8 +167,8 @@ class BotStarter:
 
         # Statistiques de filtrage
         total_symbols = perp_data.get("total", 0)
-        linear_count = len(data_manager.get_linear_symbols())
-        inverse_count = len(data_manager.get_inverse_symbols())
+        linear_count = len(data_manager.storage.get_linear_symbols())
+        inverse_count = len(data_manager.storage.get_inverse_symbols())
         final_count = linear_count + inverse_count
 
         filter_results = {
@@ -184,8 +206,8 @@ class BotStarter:
         Returns:
             Dictionnaire contenant les statistiques
         """
-        linear_symbols = data_manager.get_linear_symbols()
-        inverse_symbols = data_manager.get_inverse_symbols()
+        linear_symbols = data_manager.storage.get_linear_symbols()
+        inverse_symbols = data_manager.storage.get_inverse_symbols()
 
         return {
             "linear_count": len(linear_symbols),

@@ -2,6 +2,22 @@
 
 Bot de trading automatisé pour Bybit avec WebSocket et API REST, incluant un système de watchlist avec filtrage par funding et volume.
 
+## 📐 Architecture du projet
+
+**Nouveau développeur ?** Consultez ces guides dans cet ordre :
+
+1. [`ARCHITECTURE.md`](ARCHITECTURE.md) - **Vue d'ensemble** (5 minutes) :
+   - 🎯 4 couches principales (Orchestration, Données, Monitoring, Connexions)
+   - 📊 Responsabilités de chaque "Manager"
+   - 🔄 Flux de données complet
+   - 🎯 Guide pratique pour modifier le code
+
+2. [`GUIDE_DEMARRAGE_BOT.md`](GUIDE_DEMARRAGE_BOT.md) - **Flux de démarrage** (10 minutes) :
+   - 🔢 Séquence de démarrage détaillée (7 étapes)
+   - 📊 Diagrammes de séquence clairs
+   - ❓ FAQ : "Pourquoi 4 fichiers ?", "Comment débugger ?", etc.
+   - 🎯 Explication du pattern "Manager de Manager"
+
 ## 🚀 Démarrage rapide
 
 1. Installer les dépendances : `pip install -r requirements.txt`

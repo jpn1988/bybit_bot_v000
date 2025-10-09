@@ -2,10 +2,31 @@
 """
 Initialiseur du bot Bybit - Version refactorisée.
 
-Cette classe gère uniquement :
-- L'initialisation des managers principaux
-- La configuration des gestionnaires spécialisés
-- La configuration des callbacks entre managers
+🎯 RESPONSABILITÉ : Créer tous les managers du bot
+
+Cette classe est appelée UNE SEULE FOIS au démarrage par BotOrchestrator
+pour créer et configurer tous les managers nécessaires.
+
+📝 CE QUE FAIT CE FICHIER :
+1. initialize_managers() : Crée les 8 managers principaux
+   - data_manager : Gestion des données de marché
+   - display_manager : Affichage des tableaux
+   - monitoring_manager : Surveillance globale
+   - ws_manager : Connexions WebSocket
+   - volatility_tracker : Calcul de volatilité
+   - watchlist_manager : Construction de la watchlist
+   - callback_manager : Gestion des callbacks
+   - opportunity_manager : Détection d'opportunités
+
+2. setup_manager_callbacks() : Configure les liens entre managers
+   - Connecte le monitoring_manager au callback_manager
+   - Connecte l'opportunity_manager aux nouveaux symboles détectés
+
+3. get_managers() : Retourne un dict avec tous les managers créés
+
+🔗 APPELÉ PAR : bot.py (BotOrchestrator.__init__, ligne 76)
+
+📚 POUR EN SAVOIR PLUS : Consultez GUIDE_DEMARRAGE_BOT.md
 """
 
 from typing import Optional

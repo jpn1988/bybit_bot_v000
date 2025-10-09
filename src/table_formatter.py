@@ -208,8 +208,8 @@ class TableFormatter:
             funding_time
         """
         # Récupérer le FundingData Value Object
-        funding_data_obj = data_manager.get_funding_data_object(symbol)
-        realtime_info = data_manager.get_realtime_data(symbol)
+        funding_data_obj = data_manager.storage.get_funding_data_object(symbol)
+        realtime_info = data_manager.storage.get_realtime_data(symbol)
 
         # Valeurs initiales (REST) comme fallbacks depuis le Value Object
         if funding_data_obj:
@@ -305,7 +305,7 @@ class TableFormatter:
             return self._calculate_funding_time_remaining(next_funding)
 
         # Fallback aux données originales
-        original_data = data_manager.get_original_funding_data(symbol)
+        original_data = data_manager.storage.get_original_funding_data(symbol)
         if original_data:
             return self._calculate_funding_time_remaining(original_data)
 

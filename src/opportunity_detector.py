@@ -126,8 +126,8 @@ class OpportunityDetector:
         funding_data = opportunities.get("funding_data", {})
 
         # Récupérer les symboles existants
-        existing_linear = set(self.data_manager.get_linear_symbols())
-        existing_inverse = set(self.data_manager.get_inverse_symbols())
+        existing_linear = set(self.data_manager.storage.get_linear_symbols())
+        existing_inverse = set(self.data_manager.storage.get_inverse_symbols())
 
         # Identifier les nouveaux symboles
         new_linear = set(linear_symbols) - existing_linear
@@ -169,7 +169,7 @@ class OpportunityDetector:
         all_inverse = list(existing_inverse | set(inverse_symbols))
 
         # Mettre à jour dans le data manager
-        self.data_manager.set_symbol_lists(all_linear, all_inverse)
+        self.data_manager.storage.set_symbol_lists(all_linear, all_inverse)
 
     def _update_funding_data(self, new_funding_data: Dict):
         """Met à jour les données de funding avec les nouvelles opportunités (utilise Value Objects)."""
@@ -210,7 +210,7 @@ class OpportunityDetector:
                     continue
                 
                 # Stocker le Value Object
-                self.data_manager.set_funding_data_object(funding_obj)
+                self.data_manager.storage.set_funding_data_object(funding_obj)
                 
             except (ValueError, TypeError) as e:
                 self.logger.warning(f"⚠️ Erreur création FundingData pour {symbol}: {e}")
@@ -223,7 +223,7 @@ class OpportunityDetector:
         try:
             original_data = self.watchlist_manager.get_original_funding_data()
             for symbol, next_funding_time in original_data.items():
-                self.data_manager.update_original_funding_data(
+                self.data_manager.storage.update_original_funding_data(
                     symbol, next_funding_time
                 )
         except Exception as e:

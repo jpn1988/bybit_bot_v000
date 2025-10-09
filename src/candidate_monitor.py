@@ -140,7 +140,7 @@ class CandidateMonitor:
             linear_candidates = []
             inverse_candidates = []
 
-            symbol_categories = self.data_manager.symbol_categories
+            symbol_categories = self.data_manager.storage.symbol_categories
 
             for symbol in candidate_symbols:
                 category = category_of_symbol(symbol, symbol_categories)

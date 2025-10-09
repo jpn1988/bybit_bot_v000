@@ -140,7 +140,7 @@ class OpportunityManager:
         """
         try:
             # Vérifier que le symbole n'est pas déjà dans la watchlist
-            if self.data_manager.get_funding_data_object(symbol):
+            if self.data_manager.storage.get_funding_data_object(symbol):
                 return  # Déjà présent
 
             # Construire les données du symbole
@@ -182,18 +182,18 @@ class OpportunityManager:
                     volatility_pct=None
                 )
 
-                # Ajouter à la watchlist via le DataManager
-                self.data_manager.set_funding_data_object(funding_obj)
+                # Ajouter à la watchlist via le DataStorage
+                self.data_manager.storage.set_funding_data_object(funding_obj)
 
                 # Ajouter aux listes par catégorie
                 category = category_of_symbol(
-                    symbol, self.data_manager.symbol_categories
+                    symbol, self.data_manager.storage.symbol_categories
                 )
-                self.data_manager.add_symbol_to_category(symbol, category)
+                self.data_manager.storage.add_symbol_to_category(symbol, category)
 
                 # Mettre à jour les données originales
                 if next_funding_time:
-                    self.data_manager.update_original_funding_data(
+                    self.data_manager.storage.update_original_funding_data(
                         symbol, next_funding_time
                     )
 

@@ -137,7 +137,7 @@ class DisplayManager:
         Utilise les FundingData Value Objects pour accéder aux données.
         """
         # Si aucune opportunité n'est trouvée, retourner
-        funding_data_objects = self.data_manager.get_all_funding_data_objects()
+        funding_data_objects = self.data_manager.storage.get_all_funding_data_objects()
         if not funding_data_objects:
             if self._first_display:
                 self._first_display = False

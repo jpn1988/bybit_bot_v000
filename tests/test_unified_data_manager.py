@@ -230,47 +230,6 @@ class TestUnifiedDataManager:
         
         assert result is None
 
-    def test_update_data_from_watchlist(self, data_manager):
-        """Test de mise à jour des données depuis la watchlist."""
-        mock_watchlist_manager = Mock()
-        mock_watchlist_manager.get_original_funding_data.return_value = {"BTCUSDT": "1640995200000"}
-        
-        watchlist_data = (
-            ["BTCUSDT", "ETHUSDT"],  # linear_symbols
-            ["BTCUSD"],              # inverse_symbols
-            {"BTCUSDT": (0.0001, 1000000, "1h", 0.001, 0.05)}  # funding_data
-        )
-        
-        with patch.object(data_manager._storage, 'set_symbol_lists') as mock_set_symbols, \
-             patch.object(data_manager._storage, 'update_funding_data') as mock_update_funding, \
-             patch.object(data_manager._storage, 'update_original_funding_data') as mock_update_original:
-            
-            data_manager._update_data_from_watchlist(watchlist_data, mock_watchlist_manager)
-            
-            # Vérifier les appels
-            mock_set_symbols.assert_called_once_with(["BTCUSDT", "ETHUSDT"], ["BTCUSD"])
-            mock_update_funding.assert_called_once_with("BTCUSDT", 0.0001, 1000000, "1h", 0.001, 0.05)
-            mock_update_original.assert_called_once_with("BTCUSDT", "1640995200000")
-
-    def test_update_funding_data_from_tuple(self, data_manager):
-        """Test de mise à jour des données de funding depuis un tuple."""
-        with patch.object(data_manager._storage, 'update_funding_data') as mock_update:
-            data_manager._update_funding_from_tuple("BTCUSDT", (0.0001, 1000000, "1h", 0.001, 0.05))
-            mock_update.assert_called_once_with("BTCUSDT", 0.0001, 1000000, "1h", 0.001, 0.05)
-
-    def test_update_funding_data_from_dict(self, data_manager):
-        """Test de mise à jour des données de funding depuis un dictionnaire."""
-        with patch.object(data_manager._storage, 'update_funding_data') as mock_update:
-            funding_dict = {
-                "funding": 0.0001,
-                "volume": 1000000,
-                "funding_time_remaining": "1h",
-                "spread_pct": 0.001,
-                "volatility_pct": 0.05
-            }
-            data_manager._update_funding_from_dict("BTCUSDT", funding_dict)
-            mock_update.assert_called_once_with("BTCUSDT", 0.0001, 1000000, "1h", 0.001, 0.05)
-
     def test_validate_loaded_data(self, data_manager):
         """Test de validation des données chargées."""
         with patch.object(data_manager._storage, 'get_linear_symbols', return_value=["BTCUSDT"]), \
@@ -282,66 +241,52 @@ class TestUnifiedDataManager:
             assert result is True
 
     def test_fetch_funding_map_delegation(self, data_manager):
-        """Test de délégation vers DataFetcher pour fetch_funding_map."""
+        """Test d'accès direct au DataFetcher pour fetch_funding_map."""
         with patch.object(data_manager._fetcher, 'fetch_funding_map', return_value={"BTCUSDT": {"funding": 0.0001}}) as mock_fetch:
-            result = data_manager.fetch_funding_map("https://api-testnet.bybit.com", "linear", 10)
+            result = data_manager.fetcher.fetch_funding_map("https://api-testnet.bybit.com", "linear", 10)
             
             assert result == {"BTCUSDT": {"funding": 0.0001}}
             mock_fetch.assert_called_once_with("https://api-testnet.bybit.com", "linear", 10)
 
     def test_fetch_spread_data_delegation(self, data_manager):
-        """Test de délégation vers DataFetcher pour fetch_spread_data."""
+        """Test d'accès direct au DataFetcher pour fetch_spread_data."""
         with patch.object(data_manager._fetcher, 'fetch_spread_data', return_value={"BTCUSDT": 0.001}) as mock_fetch:
-            result = data_manager.fetch_spread_data("https://api-testnet.bybit.com", ["BTCUSDT"], 10, "linear")
+            result = data_manager.fetcher.fetch_spread_data("https://api-testnet.bybit.com", ["BTCUSDT"], 10, "linear")
             
             assert result == {"BTCUSDT": 0.001}
             mock_fetch.assert_called_once_with("https://api-testnet.bybit.com", ["BTCUSDT"], 10, "linear")
 
-    def test_update_funding_data_delegation(self, data_manager):
-        """Test de délégation vers DataStorage pour update_funding_data."""
-        with patch.object(data_manager._storage, 'update_funding_data') as mock_update:
-            data_manager.update_funding_data("BTCUSDT", 0.0001, 1000000, "1h", 0.001, 0.05)
-            mock_update.assert_called_once_with("BTCUSDT", 0.0001, 1000000, "1h", 0.001, 0.05)
-
-    def test_get_funding_data_delegation(self, data_manager):
-        """Test de délégation vers DataStorage pour get_funding_data."""
-        expected_data = (0.0001, 1000000, "1h", 0.001, 0.05)
-        with patch.object(data_manager._storage, 'get_funding_data', return_value=expected_data) as mock_get:
-            result = data_manager.get_funding_data("BTCUSDT")
-            
-            assert result == expected_data
-            mock_get.assert_called_once_with("BTCUSDT")
-
     def test_update_realtime_data_delegation(self, data_manager):
-        """Test de délégation vers DataStorage pour update_realtime_data."""
+        """Test d'accès direct au DataStorage pour update_realtime_data."""
         ticker_data = {"markPrice": 50000, "lastPrice": 50001}
         with patch.object(data_manager._storage, 'update_realtime_data') as mock_update:
-            data_manager.update_realtime_data("BTCUSDT", ticker_data)
+            data_manager.storage.update_realtime_data("BTCUSDT", ticker_data)
             mock_update.assert_called_once_with("BTCUSDT", ticker_data)
 
     def test_get_realtime_data_delegation(self, data_manager):
-        """Test de délégation vers DataStorage pour get_realtime_data."""
+        """Test d'accès direct au DataStorage pour get_realtime_data."""
         expected_data = {"markPrice": 50000, "lastPrice": 50001}
         with patch.object(data_manager._storage, 'get_realtime_data', return_value=expected_data) as mock_get:
-            result = data_manager.get_realtime_data("BTCUSDT")
+            result = data_manager.storage.get_realtime_data("BTCUSDT")
             
             assert result == expected_data
             mock_get.assert_called_once_with("BTCUSDT")
 
-    def test_properties_for_compatibility(self, data_manager):
-        """Test des propriétés pour la compatibilité."""
-        # Simuler les données directement sur l'instance
+    def test_direct_storage_access(self, data_manager):
+        """Test d'accès direct au DataStorage via la propriété storage."""
+        # Simuler les données directement sur l'instance storage
         data_manager._storage.symbol_categories = {"BTCUSDT": "linear"}
         data_manager._storage.linear_symbols = ["BTCUSDT"]
         data_manager._storage.inverse_symbols = ["BTCUSD"]
         data_manager._storage.funding_data = {"BTCUSDT": (0.0001, 1000000, "1h", 0.001, None)}
         data_manager._storage.realtime_data = {"BTCUSDT": {"markPrice": 50000}}
         
-        assert data_manager.symbol_categories == {"BTCUSDT": "linear"}
-        assert data_manager.linear_symbols == ["BTCUSDT"]
-        assert data_manager.inverse_symbols == ["BTCUSD"]
-        assert data_manager.funding_data == {"BTCUSDT": (0.0001, 1000000, "1h", 0.001, None)}
-        assert data_manager.realtime_data == {"BTCUSDT": {"markPrice": 50000}}
+        # Accès direct via storage
+        assert data_manager.storage.symbol_categories == {"BTCUSDT": "linear"}
+        assert data_manager.storage.linear_symbols == ["BTCUSDT"]
+        assert data_manager.storage.inverse_symbols == ["BTCUSD"]
+        assert data_manager.storage.funding_data == {"BTCUSDT": (0.0001, 1000000, "1h", 0.001, None)}
+        assert data_manager.storage.realtime_data == {"BTCUSDT": {"markPrice": 50000}}
 
     def test_get_loading_summary(self, data_manager):
         """Test de récupération du résumé de chargement."""

@@ -2,10 +2,33 @@
 """
 Configurateur du bot Bybit - Version refactorisée.
 
-Cette classe gère uniquement :
-- Le chargement et la validation de la configuration
-- La configuration des paramètres des managers
-- La gestion des données de marché initiales
+🎯 RESPONSABILITÉ : Charger la configuration et récupérer les données de marché
+
+Cette classe est appelée au démarrage par BotOrchestrator pour préparer
+tout ce qui est nécessaire avant de construire la watchlist.
+
+📝 CE QUE FAIT CE FICHIER :
+1. load_and_validate_config() : Charge parameters.yaml + ENV
+   - Charge les paramètres depuis YAML
+   - Applique les variables d'environnement
+   - Valide la cohérence (ex: funding_min ≤ funding_max)
+   - Retourne la configuration validée ou lève ValueError
+
+2. get_market_data() : Récupère les données de marché via API
+   - Détermine l'URL de l'API (testnet ou mainnet)
+   - Récupère tous les contrats perpétuels
+   - Retourne (base_url, perp_data)
+   - Exemple: perp_data = {"linear": [...], "inverse": [...], "total": 761}
+
+3. configure_managers() : Configure les managers avec les paramètres
+   - Configure data_manager avec symbol_categories
+   - Configure volatility_tracker avec TTL du cache
+   - Configure watchlist_manager (rien à faire, déjà configuré)
+   - Configure display_manager avec intervalle d'affichage
+
+🔗 APPELÉ PAR : bot.py (BotOrchestrator.start(), lignes 114-135)
+
+📚 POUR EN SAVOIR PLUS : Consultez GUIDE_DEMARRAGE_BOT.md
 """
 
 from typing import Dict, Tuple
@@ -109,7 +132,7 @@ class BotConfigurator:
         """
         # Stocker le mapping officiel des catégories
         symbol_categories = perp_data.get("categories", {}) or {}
-        data_manager.set_symbol_categories(symbol_categories)
+        data_manager.storage.set_symbol_categories(symbol_categories)
 
         # Configurer les gestionnaires avec les catégories
         volatility_tracker.set_symbol_categories(symbol_categories)

@@ -182,8 +182,8 @@ class CallbackManager:
             if not symbol:
                 return
 
-            # Déléguer au DataManager
-            data_manager.update_realtime_data(symbol, ticker_data)
+            # Déléguer au DataStorage
+            data_manager.storage.update_realtime_data(symbol, ticker_data)
 
         return ticker_callback
 
@@ -207,6 +207,6 @@ class CallbackManager:
             Returns:
                 Liste des symboles actifs
             """
-            return data_manager.get_all_symbols()
+            return data_manager.storage.get_all_symbols()
 
         return active_symbols_callback

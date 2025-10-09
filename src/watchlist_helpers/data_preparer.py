@@ -75,15 +75,15 @@ class WatchlistDataPreparer:
             Données de funding récupérées
         """
         if categorie == "linear":
-            return self.market_data_fetcher.fetch_funding_map(
+            return self.market_data_fetcher.fetcher.fetch_funding_map(
                 base_url, "linear", 10
             )
         elif categorie == "inverse":
-            return self.market_data_fetcher.fetch_funding_map(
+            return self.market_data_fetcher.fetcher.fetch_funding_map(
                 base_url, "inverse", 10
             )
         else:  # "both"
-            return self.market_data_fetcher.fetch_funding_data_parallel(
+            return self.market_data_fetcher.fetcher.fetch_funding_data_parallel(
                 base_url, ["linear", "inverse"], 10
             )
 

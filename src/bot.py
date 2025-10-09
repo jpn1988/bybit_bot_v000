@@ -2,10 +2,40 @@
 """
 Orchestrateur principal du bot Bybit.
 
-Cette classe coordonne les différents composants spécialisés :
+╔═══════════════════════════════════════════════════════════════════╗
+║                    📖 GUIDE DE LECTURE                            ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+Ce fichier est l'ORCHESTRATEUR PRINCIPAL du bot. Il coordonne tous
+les composants spécialisés pour démarrer et maintenir le bot en vie.
+
+🔍 COMPRENDRE CE FICHIER EN 5 MINUTES :
+
+1. __init__() (lignes 52-91) : Initialise tous les managers
+   └─> Crée les helpers : initializer, configurator, starter, etc.
+
+2. start() (lignes 110-163) : Séquence de démarrage en 7 étapes
+   ├─> Charge la configuration (parameters.yaml + ENV)
+   ├─> Récupère les données de marché via API
+   ├─> Configure les managers
+   ├─> Construit la watchlist (avec filtres)
+   ├─> Affiche le résumé
+   ├─> Démarre les composants (WebSocket, monitoring, affichage)
+   └─> Entre dans la boucle de surveillance
+
+3. _keep_bot_alive() (lignes 165-195) : Boucle principale
+   └─> Vérifie la santé des composants toutes les secondes
+
+4. stop() (lignes 218-242) : Arrêt propre du bot
+   └─> Utilise ShutdownManager pour tout arrêter proprement
+
+📚 FLUX DÉTAILLÉ : Consultez GUIDE_DEMARRAGE_BOT.md pour comprendre
+   chaque étape en détail avec des diagrammes et explications.
+
+🎯 COMPOSANTS UTILISÉS :
 - BotInitializer : Initialisation des managers
 - BotConfigurator : Configuration du bot
-    - UnifiedDataManager : Gestion unifiée des données
+- UnifiedDataManager : Gestion unifiée des données
 - BotStarter : Démarrage des composants
 - BotHealthMonitor : Surveillance de la santé
 - ShutdownManager : Gestion de l'arrêt

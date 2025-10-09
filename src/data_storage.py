@@ -410,7 +410,7 @@ class DataStorage:
         """
         Retourne les données de funding en format tuple pour compatibilité.
         
-        Cette propriété est utilisée par data_coordinator.py et data_compatibility.py.
+        Cette propriété est utilisée pour la compatibilité avec l'ancien code.
         Les données sont converties à la volée depuis les Value Objects.
         
         Returns:

@@ -122,7 +122,7 @@ class WebSocketManager:
             if symbol and mark_price is not None and last_price is not None and self.data_manager:
                 mark_val = float(mark_price)
                 last_val = float(last_price)
-                self.data_manager.update_price_data(symbol, mark_val, last_val, time.time())
+                self.data_manager.storage.update_price_data(symbol, mark_val, last_val, time.time())
 
             # Appeler le callback externe si défini
             if self._ticker_callback and symbol:
