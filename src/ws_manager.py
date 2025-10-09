@@ -215,25 +215,23 @@ class WebSocketManager:
         # Nettoyer les callbacks pour éviter les fuites mémoire
         self._ticker_callback = None
 
-        # Fermer toutes les connexions de manière plus agressive
+        # Fermer toutes les connexions
         for conn in self._ws_conns:
             try:
                 conn.close()
-                # Attendre un peu pour que la fermeture se propage
-                import time
-
-                time.sleep(0.1)
+                # Attendre un peu pour que la fermeture se propage (asyncio-friendly)
+                await asyncio.sleep(0.1)
             except Exception as e:
                 self.logger.warning(
                     f"⚠️ Erreur fermeture connexion WebSocket: {e}"
                 )
 
-        # Annuler toutes les tâches asynchrones avec timeout plus court
+        # Annuler toutes les tâches asynchrones avec timeout
         for i, task in enumerate(self._ws_tasks):
             if not task.done():
                 try:
                     task.cancel()
-                    # Attendre l'annulation avec timeout plus court
+                    # Attendre l'annulation avec timeout
                     try:
                         await asyncio.wait_for(
                             task, timeout=3.0
@@ -250,32 +248,11 @@ class WebSocketManager:
                         f"⚠️ Erreur annulation tâche WebSocket {i}: {e}"
                     )
 
-        # Nettoyer les listes et références de manière plus robuste
-        try:
-            # Nettoyer les connexions WebSocket
-            for conn in self._ws_conns:
-                if hasattr(conn, "close"):
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
-            self._ws_conns.clear()
-
-            # Nettoyer les tâches asynchrones
-            for task in self._ws_tasks:
-                if not task.done():
-                    try:
-                        task.cancel()
-                    except Exception:
-                        pass
-            self._ws_tasks.clear()
-
-            # Nettoyer les listes de symboles
-            self.linear_symbols.clear()
-            self.inverse_symbols.clear()
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Erreur nettoyage WebSocket: {e}")
+        # Nettoyer les listes et références
+        self._ws_conns.clear()
+        self._ws_tasks.clear()
+        self.linear_symbols.clear()
+        self.inverse_symbols.clear()
 
     def stop_sync(self):
         """
