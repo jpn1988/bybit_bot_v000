@@ -9,18 +9,11 @@ Cette classe gère uniquement :
 """
 
 from typing import Dict, List, Any, Optional
-try:
-    from .logging_setup import setup_logging
-    from .pagination_handler import PaginationHandler
-    from .error_handler import ErrorHandler
-    from .http_utils import get_rate_limiter
-    from .http_client_manager import get_http_client
-except ImportError:
-    from logging_setup import setup_logging
-    from pagination_handler import PaginationHandler
-    from error_handler import ErrorHandler
-    from http_utils import get_rate_limiter
-    from http_client_manager import get_http_client
+from logging_setup import setup_logging
+from pagination_handler import PaginationHandler
+from error_handler import ErrorHandler
+from http_utils import get_rate_limiter
+from http_client_manager import get_http_client
 
 
 class SpreadFetcher:

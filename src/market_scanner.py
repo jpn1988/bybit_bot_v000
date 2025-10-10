@@ -10,6 +10,7 @@ import asyncio
 import time
 from typing import Optional, Callable, Dict
 from logging_setup import setup_logging
+from config.timeouts import ScanIntervalConfig
 
 
 class MarketScanner:
@@ -19,16 +20,17 @@ class MarketScanner:
     Responsabilité unique : Gérer le cycle de scan périodique du marché.
     """
 
-    def __init__(self, scan_interval: int = 60, logger=None):
+    def __init__(self, scan_interval: int = None, logger=None):
         """
         Initialise le scanner de marché.
 
         Args:
-            scan_interval: Intervalle entre chaque scan en secondes (défaut: 60)
+            scan_interval: Intervalle entre chaque scan en secondes 
+            (utilise ScanIntervalConfig.MARKET_SCAN par défaut)
             logger: Logger pour les messages (optionnel)
         """
         self.logger = logger or setup_logging()
-        self._scan_interval = scan_interval
+        self._scan_interval = scan_interval if scan_interval is not None else ScanIntervalConfig.MARKET_SCAN
         self._scan_running = False
         self._scan_task: Optional[asyncio.Task] = None
         self._last_scan_time = 0

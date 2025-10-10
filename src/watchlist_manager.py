@@ -51,6 +51,8 @@ class WatchlistManager:
         self,
         testnet: bool = True,
         config_manager: Optional[ConfigManager] = None,
+        market_data_fetcher: Optional[DataManager] = None,
+        symbol_filter: Optional[SymbolFilter] = None,
         logger=None,
     ):
         """
@@ -61,17 +63,21 @@ class WatchlistManager:
             (False)
             config_manager: Gestionnaire de configuration (optionnel, créé
             automatiquement si non fourni)
+            market_data_fetcher: Gestionnaire de données (optionnel, créé
+            automatiquement si non fourni)
+            symbol_filter: Filtre de symboles (optionnel, créé
+            automatiquement si non fourni)
             logger: Logger pour les messages (optionnel)
         """
         self.testnet = testnet
         self.logger = logger or setup_logging()
 
-        # Composants principaux (injection de dépendances)
-        self.config_manager = config_manager or ConfigManager()
-        self.market_data_fetcher = DataManager(
+        # Composants principaux (injection de dépendances avec fallback)
+        self.config_manager = config_manager or ConfigManager(logger=self.logger)
+        self.market_data_fetcher = market_data_fetcher or DataManager(
             testnet=testnet, logger=self.logger
         )
-        self.symbol_filter = SymbolFilter(logger=self.logger)
+        self.symbol_filter = symbol_filter or SymbolFilter(logger=self.logger)
 
         # Configuration et données
         self.config = self.config_manager.load_and_validate_config()

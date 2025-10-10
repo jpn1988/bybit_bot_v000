@@ -10,16 +10,10 @@ Cette classe gère uniquement :
 
 from typing import Dict, List, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
-try:
-    from .logging_setup import setup_logging
-    from .pagination_handler import PaginationHandler
-    from .error_handler import ErrorHandler
-    from .config import MAX_WORKERS_THREADPOOL
-except ImportError:
-    from logging_setup import setup_logging
-    from pagination_handler import PaginationHandler
-    from error_handler import ErrorHandler
-    from config import MAX_WORKERS_THREADPOOL
+from logging_setup import setup_logging
+from pagination_handler import PaginationHandler
+from error_handler import ErrorHandler
+from config import MAX_WORKERS_THREADPOOL
 
 
 class FundingFetcher:

@@ -5,10 +5,7 @@ Gestionnaire de threads pour le bot Bybit.
 Cette classe est maintenant simplifiée et ne contient plus de méthodes inutiles.
 """
 
-try:
-    from .logging_setup import setup_logging
-except ImportError:
-    from logging_setup import setup_logging
+from logging_setup import setup_logging
 
 
 class ThreadManager:

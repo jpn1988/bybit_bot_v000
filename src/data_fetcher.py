@@ -12,18 +12,11 @@ Cette version refactorisée améliore la lisibilité en séparant clairement les
 """
 
 from typing import Dict, List, Any
-try:
-    from .logging_setup import setup_logging
-    from .funding_fetcher import FundingFetcher
-    from .spread_fetcher import SpreadFetcher
-    from .pagination_handler import PaginationHandler
-    from .error_handler import ErrorHandler
-except ImportError:
-    from logging_setup import setup_logging
-    from funding_fetcher import FundingFetcher
-    from spread_fetcher import SpreadFetcher
-    from pagination_handler import PaginationHandler
-    from error_handler import ErrorHandler
+from logging_setup import setup_logging
+from funding_fetcher import FundingFetcher
+from spread_fetcher import SpreadFetcher
+from pagination_handler import PaginationHandler
+from error_handler import ErrorHandler
 
 
 class DataFetcher:

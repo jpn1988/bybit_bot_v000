@@ -11,14 +11,9 @@ Cette classe gère uniquement :
 import time
 import threading
 from typing import Dict, List, Optional, Tuple, Any, Union
-try:
-    from .logging_setup import setup_logging
-    from .models.funding_data import FundingData
-    from .models.ticker_data import TickerData
-except ImportError:
-    from logging_setup import setup_logging
-    from models.funding_data import FundingData
-    from models.ticker_data import TickerData
+from logging_setup import setup_logging
+from models.funding_data import FundingData
+from models.ticker_data import TickerData
 
 
 class DataStorage:

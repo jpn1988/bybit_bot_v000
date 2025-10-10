@@ -78,9 +78,31 @@ class BotOrchestrator:
     - ThreadManager : Gestion des threads
     """
 
-    def __init__(self):
-        """Initialise l'orchestrateur du bot."""
-        self.logger = setup_logging()
+    def __init__(
+        self,
+        logger=None,
+        initializer=None,
+        configurator=None,
+        data_loader=None,
+        starter=None,
+        health_monitor=None,
+        shutdown_manager=None,
+        thread_manager=None,
+    ):
+        """
+        Initialise l'orchestrateur du bot.
+        
+        Args:
+            logger: Logger pour les messages (optionnel)
+            initializer: Initialiseur du bot (optionnel, créé automatiquement si non fourni)
+            configurator: Configurateur du bot (optionnel, créé automatiquement si non fourni)
+            data_loader: Gestionnaire de données (optionnel, créé automatiquement si non fourni)
+            starter: Démarreur du bot (optionnel, créé automatiquement si non fourni)
+            health_monitor: Moniteur de santé (optionnel, créé automatiquement si non fourni)
+            shutdown_manager: Gestionnaire d'arrêt (optionnel, créé automatiquement si non fourni)
+            thread_manager: Gestionnaire de threads (optionnel, créé automatiquement si non fourni)
+        """
+        self.logger = logger or setup_logging()
         self.running = True
 
         # S'assurer que les clients HTTP sont fermés à l'arrêt
@@ -90,16 +112,16 @@ class BotOrchestrator:
         settings = get_settings()
         self.testnet = settings["testnet"]
 
-        # Initialiser les composants spécialisés
-        self._initializer = BotInitializer(self.testnet, self.logger)
-        self._configurator = BotConfigurator(self.testnet, self.logger)
-        self._data_loader = DataManager(self.testnet, self.logger)
-        self._starter = BotStarter(self.testnet, self.logger)
-        self._health_monitor = BotHealthMonitor(self.logger)
+        # Initialiser les composants spécialisés (injection avec fallback)
+        self._initializer = initializer or BotInitializer(self.testnet, self.logger)
+        self._configurator = configurator or BotConfigurator(self.testnet, self.logger)
+        self._data_loader = data_loader or DataManager(self.testnet, self.logger)
+        self._starter = starter or BotStarter(self.testnet, self.logger)
+        self._health_monitor = health_monitor or BotHealthMonitor(self.logger)
 
         # Initialiser les nouveaux managers
-        self._shutdown_manager = ShutdownManager(self.logger)
-        self._thread_manager = ThreadManager(self.logger)
+        self._shutdown_manager = shutdown_manager or ShutdownManager(self.logger)
+        self._thread_manager = thread_manager or ThreadManager(self.logger)
 
         # Initialiser les managers via l'initialiseur
         self._initialize_components()

@@ -85,7 +85,6 @@ class TestBotOrchestrator:
                     'mock_health': mock_health,
                     'mock_shutdown': mock_shutdown,
                     'mock_thread': mock_thread,
-                    'mock_set_global': mock_set_global,
                     'mock_init_instance': mock_init_instance,
                     'mock_config_instance': mock_config_instance,
                     'mock_data_instance': mock_data_instance,

@@ -10,10 +10,7 @@ Cette classe gère uniquement :
 
 import httpx
 from typing import Dict, Any
-try:
-    from .logging_setup import setup_logging
-except ImportError:
-    from logging_setup import setup_logging
+from logging_setup import setup_logging
 
 
 class ErrorHandler:

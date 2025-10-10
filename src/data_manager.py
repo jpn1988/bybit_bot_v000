@@ -15,20 +15,12 @@ Architecture simplifiée :
 """
 
 from typing import Dict, List, Optional, Tuple, Any
-try:
-    from .logging_setup import setup_logging
-    from .volatility_tracker import VolatilityTracker
-    from .data_fetcher import DataFetcher
-    from .data_storage import DataStorage
-    from .data_validator import DataValidator
-    from .models.funding_data import FundingData
-except ImportError:
-    from logging_setup import setup_logging
-    from volatility_tracker import VolatilityTracker
-    from data_fetcher import DataFetcher
-    from data_storage import DataStorage
-    from data_validator import DataValidator
-    from models.funding_data import FundingData
+from logging_setup import setup_logging
+from volatility_tracker import VolatilityTracker
+from data_fetcher import DataFetcher
+from data_storage import DataStorage
+from data_validator import DataValidator
+from models.funding_data import FundingData
 
 
 class DataManager:
@@ -52,21 +44,34 @@ class DataManager:
         data_manager.load_watchlist_data(url, perp_data, wm, vt)
     """
 
-    def __init__(self, testnet: bool = True, logger=None):
+    def __init__(
+        self,
+        testnet: bool = True,
+        logger=None,
+        fetcher: Optional["DataFetcher"] = None,
+        storage: Optional["DataStorage"] = None,
+        validator: Optional["DataValidator"] = None,
+    ):
         """
         Initialise le gestionnaire de données unifié.
 
         Args:
             testnet: Utiliser le testnet (True) ou le marché réel (False)
             logger: Logger pour les messages (optionnel)
+            fetcher: Composant de récupération de données (optionnel, créé
+            automatiquement si non fourni)
+            storage: Composant de stockage de données (optionnel, créé
+            automatiquement si non fourni)
+            validator: Composant de validation de données (optionnel, créé
+            automatiquement si non fourni)
         """
         self.testnet = testnet
         self.logger = logger or setup_logging()
 
-        # Initialiser les composants spécialisés (accès public via properties)
-        self._fetcher = DataFetcher(logger=logger)
-        self._storage = DataStorage(logger=logger)
-        self._validator = DataValidator(logger=logger)
+        # Initialiser les composants spécialisés (injection avec fallback)
+        self._fetcher = fetcher or DataFetcher(logger=self.logger)
+        self._storage = storage or DataStorage(logger=self.logger)
+        self._validator = validator or DataValidator(logger=self.logger)
 
     # ===== PROPRIÉTÉS D'ACCÈS DIRECT AUX COMPOSANTS =====
 

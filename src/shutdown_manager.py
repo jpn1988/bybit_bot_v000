@@ -16,21 +16,12 @@ import signal
 import asyncio
 import gc
 from typing import Dict, Any
-
-try:
-    from .logging_setup import (
-        setup_logging,
-        log_shutdown_summary,
-        disable_logging,
-        safe_log_info,
-    )
-except ImportError:
-    from logging_setup import (
-        setup_logging,
-        log_shutdown_summary,
-        disable_logging,
-        safe_log_info,
-    )
+from logging_setup import (
+    setup_logging,
+    log_shutdown_summary,
+    disable_logging,
+    safe_log_info,
+)
 
 
 class ShutdownManager:

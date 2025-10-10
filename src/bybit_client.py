@@ -6,13 +6,9 @@ import hashlib
 import hmac
 import httpx
 import random
-
-try:
-    from .metrics import record_api_call
-    from .http_client_manager import get_http_client
-except ImportError:
-    from metrics import record_api_call
-    from http_client_manager import get_http_client
+from config.timeouts import TimeoutConfig
+from metrics import record_api_call
+from http_client_manager import get_http_client
 
 
 class BybitClient:
@@ -21,7 +17,7 @@ class BybitClient:
     def __init__(
         self,
         testnet: bool = True,
-        timeout: int = 15,  # Timeout augmenté de 10s à 15s
+        timeout: int = None,
         api_key: str | None = None,
         api_secret: str | None = None,
     ):
@@ -32,6 +28,7 @@ class BybitClient:
             testnet (bool): Utiliser le testnet (True) ou le marché réel
             (False)
             timeout (int): Timeout pour les requêtes HTTP en secondes
+            (utilise TimeoutConfig.HTTP_REQUEST par défaut)
             api_key (str | None): Clé API Bybit
             api_secret (str | None): Secret API Bybit
 
@@ -42,7 +39,7 @@ class BybitClient:
             raise RuntimeError("Clés API manquantes")
 
         self.testnet = testnet
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else TimeoutConfig.HTTP_REQUEST
         self.api_key = api_key
         self.api_secret = api_secret
 
@@ -471,9 +468,9 @@ class BybitClient:
 class BybitPublicClient:
     """Client public Bybit v5 (aucune clé requise)."""
 
-    def __init__(self, testnet: bool = True, timeout: int = 10):
+    def __init__(self, testnet: bool = True, timeout: int = None):
         self.testnet = testnet
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else TimeoutConfig.DEFAULT
 
     def public_base_url(self) -> str:
         """Retourne l'URL de base publique (testnet ou mainnet)."""

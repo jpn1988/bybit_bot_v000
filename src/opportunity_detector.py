@@ -13,6 +13,7 @@ from watchlist_manager import WatchlistManager
 from volatility_tracker import VolatilityTracker
 from bybit_client import BybitPublicClient
 from models.funding_data import FundingData
+from config.timeouts import TimeoutConfig
 
 
 class OpportunityDetector:
@@ -90,7 +91,7 @@ class OpportunityDetector:
                 return None
 
             # Créer un nouveau client pour éviter les problèmes de futures
-            client = BybitPublicClient(testnet=self.testnet, timeout=10)
+            client = BybitPublicClient(testnet=self.testnet, timeout=TimeoutConfig.DEFAULT)
             fresh_base_url = client.public_base_url()
 
             # Reconstruire la watchlist (peut prendre du temps)

@@ -31,6 +31,9 @@ class VolatilityTracker:
         ttl_seconds: int = 120,
         max_cache_size: int = 1000,
         logger=None,
+        calculator=None,
+        cache=None,
+        scheduler=None,
     ):
         """
         Initialise le gestionnaire de volatilité.
@@ -40,22 +43,25 @@ class VolatilityTracker:
             ttl_seconds (int): Durée de vie du cache en secondes
             max_cache_size (int): Taille maximale du cache
             logger: Logger pour les messages (optionnel)
+            calculator: Calculateur de volatilité (optionnel, créé automatiquement si non fourni)
+            cache: Cache de volatilité (optionnel, créé automatiquement si non fourni)
+            scheduler: Planificateur de volatilité (optionnel, créé automatiquement si non fourni)
         """
         self.testnet = testnet
         self.ttl_seconds = ttl_seconds
         self.max_cache_size = max_cache_size
         self.logger = logger or setup_logging()
 
-        # Initialiser les composants spécialisés
-        self.calculator = VolatilityCalculator(
+        # Initialiser les composants spécialisés (injection avec fallback)
+        self.calculator = calculator or VolatilityCalculator(
             testnet=testnet, logger=self.logger
         )
-        self.cache = VolatilityCache(
+        self.cache = cache or VolatilityCache(
             ttl_seconds=ttl_seconds,
             max_cache_size=max_cache_size,
             logger=self.logger,
         )
-        self.scheduler = VolatilityScheduler(
+        self.scheduler = scheduler or VolatilityScheduler(
             self.calculator, self.cache, logger=self.logger
         )
 

@@ -13,7 +13,7 @@ import pytest
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 from volatility import VolatilityCalculator, get_async_rate_limiter, get_volatility_cache_key, is_cache_valid
-from volatility import _compute_single_volatility_async
+# from volatility import _compute_single_volatility_async  # Fonction privée supprimée lors de refactoring
 
 
 class TestVolatilityCalculator:
@@ -36,6 +36,7 @@ class TestVolatilityCalculator:
         calculator.set_symbol_categories(categories)
         assert calculator._symbol_categories == categories
 
+    @pytest.mark.skip(reason="Fonction privée _compute_single_volatility_async supprimée lors du refactoring")
     @pytest.mark.asyncio
     async def test__compute_single_volatility_async_success(self):
         class _FakeResp:
@@ -65,6 +66,7 @@ class TestVolatilityCalculator:
         vol = await _compute_single_volatility_async(sess, "http://x", "BTCUSDT", {"BTCUSDT": "linear"})
         assert vol is not None and vol > 0
 
+    @pytest.mark.skip(reason="Fonction privée _compute_single_volatility_async supprimée lors du refactoring")
     @pytest.mark.asyncio
     async def test__compute_single_volatility_async_http_error(self):
         class _FakeResp:
@@ -88,6 +90,7 @@ class TestVolatilityCalculator:
         vol = await _compute_single_volatility_async(sess, "http://x", "BTCUSDT", None)
         assert vol is None
 
+    @pytest.mark.skip(reason="Fonction privée _compute_single_volatility_async supprimée lors du refactoring")
     @pytest.mark.asyncio
     async def test__compute_single_volatility_async_retcode_error(self):
         class _FakeResp:
