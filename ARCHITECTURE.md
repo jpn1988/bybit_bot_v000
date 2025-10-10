@@ -354,7 +354,7 @@ Une fois le flux principal compris, explorer les composants selon les besoins :
 
 ## 📖 Références
 
-- **Documentation technique détaillée** : `unified_data_manager_README.md`
+- **Documentation technique détaillée** : `src/unified_data_manager_README.md`
 - **Historique des changements** : `JOURNAL.md`
 - **Guide de contribution** : `CONTRIBUTING.md`
 - **Configuration** : `README.md` (section Configuration)

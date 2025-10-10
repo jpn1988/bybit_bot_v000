@@ -3,15 +3,15 @@
 import pytest
 import httpx
 from unittest.mock import Mock, patch, MagicMock
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from data_storage import DataStorage
 from data_fetcher import DataFetcher
 from bybit_client import BybitClient
 from error_handler import ErrorHandler
 
 
-class TestUnifiedDataManagerErrorHandling:
-    """Tests de gestion d'erreurs pour UnifiedDataManager."""
+class TestDataManagerErrorHandling:
+    """Tests de gestion d'erreurs pour DataManager."""
 
     @pytest.fixture
     def mock_logger(self):
@@ -20,11 +20,11 @@ class TestUnifiedDataManagerErrorHandling:
 
     @pytest.fixture
     def data_manager(self, mock_logger):
-        """Instance de UnifiedDataManager pour les tests."""
-        with patch('unified_data_manager.DataFetcher'), \
-             patch('unified_data_manager.DataStorage'), \
-             patch('unified_data_manager.DataValidator'):
-            return UnifiedDataManager(testnet=True, logger=mock_logger)
+        """Instance de DataManager pour les tests."""
+        with patch('data_manager.DataFetcher'), \
+             patch('data_manager.DataStorage'), \
+             patch('data_manager.DataValidator'):
+            return DataManager(testnet=True, logger=mock_logger)
 
     def test_load_watchlist_data_exception_handling(self, data_manager, mock_logger):
         """Test de gestion d'exception lors du chargement de la watchlist."""
@@ -87,7 +87,7 @@ class TestUnifiedDataManagerErrorHandling:
     def test_storage_methods_exception_handling(self, data_manager, mock_logger):
         """Test de gestion d'exception dans les méthodes de stockage."""
         with patch.object(data_manager._storage, 'update_funding_data', side_effect=Exception("Storage Error")):
-            # Les exceptions dans le stockage sont propagées par le UnifiedDataManager
+            # Les exceptions dans le stockage sont propagées par le DataManager
             with pytest.raises(Exception, match="Storage Error"):
                 data_manager.update_funding_data("BTCUSDT", 0.0001, 1000000, "1h", 0.001)
 
@@ -287,7 +287,7 @@ class TestErrorRecovery:
 
     def test_data_manager_recovery_after_error(self, mock_logger):
         """Test de récupération du DataManager après une erreur."""
-        data_manager = UnifiedDataManager(testnet=True, logger=mock_logger)
+        data_manager = DataManager(testnet=True, logger=mock_logger)
         
         # Simuler une erreur
         with patch.object(data_manager._storage, 'update_funding_data', side_effect=Exception("Storage error")):

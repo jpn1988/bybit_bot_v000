@@ -1,8 +1,8 @@
-# UnifiedDataManager - Architecture Simplifiée
+# DataManager - Architecture Simplifiée
 
 ## 🎯 Objectif de la refactorisation
 
-Simplifier drastiquement l'interface de `UnifiedDataManager` en exposant directement les composants internes via des propriétés publiques, tout en maintenant la rétrocompatibilité.
+Simplifier drastiquement l'interface de `DataManager` en exposant directement les composants internes via des propriétés publiques, tout en maintenant la rétrocompatibilité.
 
 ## 📊 Résultats de la refactorisation
 
@@ -29,9 +29,9 @@ Simplifier drastiquement l'interface de `UnifiedDataManager` en exposant directe
 ### Composants exposés via propriétés publiques
 
 ```python
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 
-dm = UnifiedDataManager(testnet=True)
+dm = DataManager(testnet=True)
 
 # Accès DIRECT aux composants (RECOMMANDÉ)
 dm.fetcher.fetch_funding_map(url, "linear", 10)    # DataFetcher
@@ -45,7 +45,7 @@ dm.load_watchlist_data(url, perp_data, wm, vt)    # Orchestration
 ### Hiérarchie des composants
 
 ```
-UnifiedDataManager
+DataManager
 ├── fetcher (property)
 │   └── DataFetcher
 │       ├── fetch_funding_map()
@@ -147,7 +147,7 @@ dm.validator.validate_data()      # Validation des données
 ```python
 # Tests unitaires plus faciles
 def test_storage():
-    dm = UnifiedDataManager()
+    dm = DataManager()
     dm.storage.update_funding_data(...)
     assert dm.storage.get_funding_data(...) is not None
 ```

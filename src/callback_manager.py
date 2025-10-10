@@ -10,9 +10,9 @@ Cette classe gère uniquement :
 
 from typing import List, Callable
 from logging_setup import setup_logging
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from display_manager import DisplayManager
-from unified_monitoring_manager import UnifiedMonitoringManager
+from monitoring_manager import MonitoringManager
 from volatility_tracker import VolatilityTracker
 from ws_manager import WebSocketManager
 
@@ -39,10 +39,10 @@ class CallbackManager:
     def setup_manager_callbacks(
         self,
         display_manager: DisplayManager,
-        monitoring_manager: UnifiedMonitoringManager,
+        monitoring_manager: MonitoringManager,
         volatility_tracker: VolatilityTracker,
         ws_manager: WebSocketManager,
-        data_manager: UnifiedDataManager,
+        data_manager: DataManager,
         watchlist_manager=None,
         opportunity_manager=None,
     ):
@@ -86,10 +86,10 @@ class CallbackManager:
     def setup_all_callbacks(
         self,
         display_manager: DisplayManager,
-        monitoring_manager: UnifiedMonitoringManager,
+        monitoring_manager: MonitoringManager,
         volatility_tracker: VolatilityTracker,
         ws_manager: WebSocketManager,
-        data_manager: UnifiedDataManager,
+        data_manager: DataManager,
         watchlist_manager=None,
         opportunity_manager=None,
     ):
@@ -126,7 +126,7 @@ class CallbackManager:
         self.setup_volatility_callbacks(volatility_tracker, data_manager)
 
     def setup_ws_callbacks(
-        self, ws_manager: WebSocketManager, data_manager: UnifiedDataManager
+        self, ws_manager: WebSocketManager, data_manager: DataManager
     ):
         """
         Configure les callbacks WebSocket.
@@ -143,7 +143,7 @@ class CallbackManager:
     def setup_volatility_callbacks(
         self,
         volatility_tracker: VolatilityTracker,
-        data_manager: UnifiedDataManager,
+        data_manager: DataManager,
     ):
         """
         Configure les callbacks de volatilité.
@@ -158,7 +158,7 @@ class CallbackManager:
         )
 
     def _create_ticker_callback(
-        self, data_manager: UnifiedDataManager
+        self, data_manager: DataManager
     ) -> Callable:
         """
         Crée le callback pour les données ticker.
@@ -188,7 +188,7 @@ class CallbackManager:
         return ticker_callback
 
     def _create_active_symbols_callback(
-        self, data_manager: UnifiedDataManager
+        self, data_manager: DataManager
     ) -> Callable:
         """
         Crée le callback pour obtenir les symboles actifs.

@@ -1,12 +1,12 @@
-"""Tests pour UnifiedDataManager."""
+"""Tests pour DataManager."""
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 
 
-class TestUnifiedDataManager:
-    """Tests pour UnifiedDataManager."""
+class TestDataManager:
+    """Tests pour DataManager."""
 
     @pytest.fixture
     def mock_logger(self):
@@ -15,11 +15,11 @@ class TestUnifiedDataManager:
 
     @pytest.fixture
     def data_manager(self, mock_logger):
-        """Instance de UnifiedDataManager pour les tests."""
-        with patch('unified_data_manager.DataFetcher'), \
-             patch('unified_data_manager.DataStorage'), \
-             patch('unified_data_manager.DataValidator'):
-            return UnifiedDataManager(testnet=True, logger=mock_logger)
+        """Instance de DataManager pour les tests."""
+        with patch('data_manager.DataFetcher'), \
+             patch('data_manager.DataStorage'), \
+             patch('data_manager.DataValidator'):
+            return DataManager(testnet=True, logger=mock_logger)
 
     def test_init(self, mock_logger):
         """Test d'initialisation."""
@@ -27,7 +27,7 @@ class TestUnifiedDataManager:
              patch('unified_data_manager.DataStorage') as mock_storage, \
              patch('unified_data_manager.DataValidator') as mock_validator:
             
-            manager = UnifiedDataManager(testnet=True, logger=mock_logger)
+            manager = DataManager(testnet=True, logger=mock_logger)
             
             assert manager.testnet is True
             assert manager.logger == mock_logger
@@ -45,7 +45,7 @@ class TestUnifiedDataManager:
             mock_logger = Mock()
             mock_setup.return_value = mock_logger
             
-            manager = UnifiedDataManager()
+            manager = DataManager()
             
             assert manager.testnet is True
             assert manager.logger == mock_logger

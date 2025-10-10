@@ -13,7 +13,7 @@ Cette version refactorisée suit le principe de responsabilité unique.
 import asyncio
 from typing import List, Dict, Optional, Callable
 from logging_setup import setup_logging
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from watchlist_manager import WatchlistManager
 from volatility_tracker import VolatilityTracker
 from market_scanner import MarketScanner
@@ -21,7 +21,7 @@ from opportunity_detector import OpportunityDetector
 from candidate_monitor import CandidateMonitor
 
 
-class UnifiedMonitoringManager:
+class MonitoringManager:
     """
     Coordinateur de surveillance pour le bot Bybit.
 
@@ -33,7 +33,7 @@ class UnifiedMonitoringManager:
 
     def __init__(
         self,
-        data_manager: UnifiedDataManager,
+        data_manager: DataManager,
         testnet: bool = True,
         logger=None,
     ):

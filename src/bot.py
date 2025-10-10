@@ -35,7 +35,7 @@ les composants spécialisés pour démarrer et maintenir le bot en vie.
 🎯 COMPOSANTS UTILISÉS :
 - BotInitializer : Initialisation des managers
 - BotConfigurator : Configuration du bot
-- UnifiedDataManager : Gestion unifiée des données
+- DataManager : Gestion des données
 - BotStarter : Démarrage des composants
 - BotHealthMonitor : Surveillance de la santé
 - ShutdownManager : Gestion de l'arrêt
@@ -50,15 +50,14 @@ import atexit
 from typing import Dict, Any
 from logging_setup import setup_logging
 
-# cleaned: removed unused imports (log_startup_summary, log_shutdown_summary)
-from config_unified import get_settings
+from config import get_settings
 from http_client_manager import close_all_http_clients
 from metrics_monitor import start_metrics_monitoring
 
 # Import des composants refactorisés
 from bot_initializer import BotInitializer
 from bot_configurator import BotConfigurator
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from bot_starter import BotStarter
 from bot_health_monitor import BotHealthMonitor
 from shutdown_manager import ShutdownManager
@@ -72,7 +71,7 @@ class BotOrchestrator:
     Cette classe coordonne les différents composants spécialisés :
     - BotInitializer : Initialisation des managers
     - BotConfigurator : Configuration du bot
-    - UnifiedDataManager : Gestion unifiée des données
+    - DataManager : Gestion des données
     - BotStarter : Démarrage des composants
     - BotHealthMonitor : Surveillance de la santé
     - ShutdownManager : Gestion de l'arrêt
@@ -94,7 +93,7 @@ class BotOrchestrator:
         # Initialiser les composants spécialisés
         self._initializer = BotInitializer(self.testnet, self.logger)
         self._configurator = BotConfigurator(self.testnet, self.logger)
-        self._data_loader = UnifiedDataManager(self.testnet, self.logger)
+        self._data_loader = DataManager(self.testnet, self.logger)
         self._starter = BotStarter(self.testnet, self.logger)
         self._health_monitor = BotHealthMonitor(self.logger)
 

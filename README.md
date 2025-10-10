@@ -130,29 +130,77 @@ REXUSDT  |     +0.4951% |      121.9 |    +0.050% |     +0.320% |          45m
 
 ## 📁 Structure du projet
 
+> **💡 Pour comprendre l'architecture complète, consultez [`ARCHITECTURE.md`](ARCHITECTURE.md)**
+
 ### Scripts principaux
 - `src/bot.py` - **ORCHESTRATEUR PRINCIPAL** : Watchlist (REST) + suivi temps réel (WS)
 - `src/main.py` - Point d'entrée privé (lecture du solde)
 
-### Modules de base
-- `src/bybit_client.py` - Client Bybit API
-- `src/config.py` - Configuration et variables d'environnement
+### Initialisation et cycle de vie
+- `src/bot_initializer.py` - Création de tous les managers
+- `src/bot_configurator.py` - Chargement et validation de la configuration
+- `src/bot_starter.py` - Démarrage des composants (WebSocket, monitoring)
+- `src/bot_health_monitor.py` - Surveillance de la santé du bot
+- `src/shutdown_manager.py` - Arrêt propre de tous les composants
+- `src/thread_manager.py` - Gestion des threads
+
+### Gestion des données
+- `src/data_manager.py` - Coordinateur des données de marché
+- `src/data_fetcher.py` - Récupération des données API (funding, spread)
+- `src/data_storage.py` - Stockage thread-safe avec Value Objects
+- `src/data_validator.py` - Validation de l'intégrité des données
+
+### Watchlist et filtrage
+- `src/watchlist_manager.py` - Construction de la watchlist avec filtres
+- `src/watchlist_helpers/data_preparer.py` - Préparation des données
+- `src/watchlist_helpers/filter_applier.py` - Application des filtres
+- `src/watchlist_helpers/result_builder.py` - Construction des résultats
+- `src/filters/symbol_filter.py` - Filtres de symboles (funding, volume, temps)
+- `src/filters/base_filter.py` - Interface de base pour les filtres
+
+### Monitoring et opportunités
+- `src/monitoring_manager.py` - Coordination de la surveillance
+- `src/opportunity_manager.py` - Détection d'opportunités de trading
+- `src/display_manager.py` - Affichage des tableaux en temps réel
+- `src/table_formatter.py` - Formatage des tableaux
+- `src/callback_manager.py` - Gestion centralisée des callbacks
+
+### Volatilité
+- `src/volatility_tracker.py` - Gestion de la volatilité 5 minutes
+- `src/volatility.py` - Calcul de volatilité (VolatilityCalculator)
+- `src/volatility_cache.py` - Cache avec TTL
+- `src/volatility_scheduler.py` - Rafraîchissement automatique
+- `src/volatility_computer.py` - Calculs optimisés
+- `src/volatility_filter.py` - Filtrage par volatilité
+
+### Connexions WebSocket et HTTP
+- `src/ws_manager.py` - Gestion des connexions WebSocket
+- `src/ws_public.py` - Client WebSocket public
+- `src/ws_private.py` - Client WebSocket privé
+- `src/http_client_manager.py` - Pool de clients HTTP avec rate limiting
+- `src/http_utils.py` - Utilitaires HTTP
+
+### Configuration et base
+- `src/config/manager.py` - Gestion de la configuration (YAML + ENV)
+- `src/config/settings_loader.py` - Chargement des paramètres
+- `src/config/env_validator.py` - Validation des variables d'environnement
+- `src/config/config_validator.py` - Validation de la configuration
+- `src/config/constants.py` - Constantes globales
+- `src/parameters.yaml` - **Configuration par défaut** (filtres, limites)
 - `src/logging_setup.py` - Configuration des logs
+- `src/bybit_client.py` - Client Bybit API
+- `src/instruments.py` - Récupération des instruments perpétuels
 
-### Modules de watchlist
-- `src/instruments.py` - Récupération des instruments perpétuels (pagination 1000)
-- `src/filtering.py` - Filtrage funding/volume/fenêtre avant funding + tri
-- `src/volatility.py` - Calcul de volatilité 5 minutes (async, semaphore=5)
-- `src/price_store.py` - Stockage des prix en mémoire
-- `src/parameters.yaml` - Configuration des paramètres
+### Value Objects (modèles de données)
+- `src/models/funding_data.py` - Données de funding validées
+- `src/models/ticker_data.py` - Données de ticker validées
+- `src/models/symbol_data.py` - Données de symbole validées
 
-### Modules refactorisés
-- `src/bot_orchestrator_refactored.py` - Orchestrateur principal refactorisé
-- `src/bot_initializer.py` - Initialisation des managers
-- `src/bot_configurator.py` - Configuration du bot
-- `src/bot_data_loader.py` - Chargement des données
-- `src/bot_starter.py` - Démarrage des composants
-- `src/bot_health_monitor.py` - Surveillance de la santé
+### Utilitaires
+- `src/metrics.py` - Métriques de performance
+- `src/metrics_monitor.py` - Monitoring des métriques
+- `src/error_handler.py` - Gestion centralisée des erreurs
+- `src/pagination_handler.py` - Gestion de la pagination API
 
 ## 🗒️ Journal de bord & Workflow
 - Toutes les modifications importantes doivent être **documentées** dans `JOURNAL.md` (voir modèle).

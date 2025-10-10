@@ -2,7 +2,7 @@
 """
 Gestionnaire de watchlist pour le bot Bybit - Version refactorisée.
 
-Cette classe orchestre la construction de la watchlist en délé guant aux
+Cette classe orchestre la construction de la watchlist en déléguant aux
 helpers spécialisés :
 - WatchlistDataPreparer : Préparation des données
 - WatchlistFilterApplier : Application des filtres
@@ -17,8 +17,8 @@ Responsabilités principales :
 
 from typing import List, Tuple, Dict, Optional
 from logging_setup import setup_logging
-from config_unified import UnifiedConfigManager
-from unified_data_manager import UnifiedDataManager
+from config import ConfigManager
+from data_manager import DataManager
 from filters.symbol_filter import SymbolFilter
 from volatility_tracker import VolatilityTracker
 from metrics import record_filter_result
@@ -37,12 +37,12 @@ class WatchlistManager:
     - Orchestration de la construction de la watchlist
     - Application des filtres de sélection (funding, volume, spread,
       volatilité)
-    - Coordination entre ConfigManager, UnifiedDataManager, SymbolFilter
+    - Coordination entre ConfigManager, DataManager, SymbolFilter
       et VolatilityTracker
     - Gestion de la logique métier de sélection des symboles
     - Surveillance des candidats (symboles proches des critères)
 
-    Cette classe utilise UnifiedDataManager pour récupérer les données
+    Cette classe utilise DataManager pour récupérer les données
     de marché
     et applique la logique de filtrage pour construire la watchlist finale.
     """
@@ -50,7 +50,7 @@ class WatchlistManager:
     def __init__(
         self,
         testnet: bool = True,
-        config_manager: Optional[UnifiedConfigManager] = None,
+        config_manager: Optional[ConfigManager] = None,
         logger=None,
     ):
         """
@@ -67,8 +67,8 @@ class WatchlistManager:
         self.logger = logger or setup_logging()
 
         # Composants principaux (injection de dépendances)
-        self.config_manager = config_manager or UnifiedConfigManager()
-        self.market_data_fetcher = UnifiedDataManager(
+        self.config_manager = config_manager or ConfigManager()
+        self.market_data_fetcher = DataManager(
             testnet=testnet, logger=self.logger
         )
         self.symbol_filter = SymbolFilter(logger=self.logger)

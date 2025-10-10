@@ -1,8 +1,12 @@
-# Migration - unified_data_manager.py
+# Migration - Nettoyage des alias (unified_data_manager.py + data_storage.py)
 
-## ✅ Changement effectué
+## ✅ Changements effectués
 
-Le fichier `unified_data_manager.py` a été **simplifié de 47%** : de **473 lignes à 251 lignes**.
+### 1. unified_data_manager.py
+Le fichier a été **simplifié de 47%** : de **473 lignes à 251 lignes**.
+
+### 2. data_storage.py  
+Le fichier a été **simplifié de 34%** : de **468 lignes à 308 lignes**.
 
 ## 🎯 Objectif
 
@@ -57,6 +61,23 @@ linear = data_manager.storage.get_linear_symbols()
 | `data_manager.fetch_funding_data_parallel(...)` | `data_manager.fetcher.fetch_funding_data_parallel(...)` |
 
 ### 2. Stockage de données (DataStorage)
+
+#### Méthodes supprimées de data_storage.py
+
+| Ancienne méthode (SUPPRIMÉE) | Nouvelle méthode (à utiliser) |
+|------------------------------|-------------------------------|
+| `storage.update_funding_data(symbol, funding, volume, ...)` | `storage.set_funding_data_object(FundingData(...))` |
+| `storage.get_funding_data(symbol)` | `storage.get_funding_data_object(symbol)` |
+| `storage.get_all_funding_data()` | `storage.get_all_funding_data_objects()` |
+| `storage.update_funding_data_from_object(...)` | `storage.set_funding_data_object(...)` |
+
+#### Propriété supprimée
+
+| Ancienne propriété (SUPPRIMÉE) | Nouvelle méthode (à utiliser) |
+|--------------------------------|-------------------------------|
+| `storage.funding_data` | `storage.get_all_funding_data_objects()` |
+
+#### Accès via data_manager
 
 | Ancien | Nouveau |
 |--------|---------|
@@ -126,18 +147,27 @@ print(funding_obj.volume_24h)       # 1000000000
 
 ## 📊 Fichiers modifiés
 
-Les fichiers suivants ont été mis à jour pour utiliser la nouvelle API :
+Les fichiers suivants ont été nettoyés et mis à jour :
 
-1. ✅ `src/watchlist_helpers/data_preparer.py`
-2. ✅ `src/watchlist_helpers/filter_applier.py`
-3. ✅ `src/bot_starter.py`
-4. ✅ `src/candidate_monitor.py`
-5. ✅ `src/opportunity_detector.py`
-6. ✅ `src/opportunity_manager.py`
-7. ✅ `src/callback_manager.py`
-8. ✅ `src/display_manager.py`
-9. ✅ `src/table_formatter.py`
-10. ✅ `tests/test_unified_data_manager.py`
+### Fichiers nettoyés (suppression d'alias)
+1. ✅ `src/unified_data_manager.py` - **-222 lignes (-47%)**
+2. ✅ `src/data_storage.py` - **-160 lignes (-34%)**
+
+### Fichiers mis à jour pour utiliser la nouvelle API
+3. ✅ `src/watchlist_helpers/data_preparer.py`
+4. ✅ `src/watchlist_helpers/filter_applier.py`
+5. ✅ `src/bot_starter.py`
+6. ✅ `src/bot_configurator.py`
+7. ✅ `src/ws_manager.py`
+8. ✅ `src/candidate_monitor.py`
+9. ✅ `src/opportunity_detector.py`
+10. ✅ `src/opportunity_manager.py`
+11. ✅ `src/callback_manager.py`
+12. ✅ `src/display_manager.py`
+13. ✅ `src/table_formatter.py`
+14. ✅ `tests/test_unified_data_manager.py`
+
+**Total : 382 lignes supprimées** (222 + 160)
 
 ---
 

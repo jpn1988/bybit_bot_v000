@@ -31,10 +31,10 @@ pour créer et configurer tous les managers nécessaires.
 
 from typing import Optional
 from logging_setup import setup_logging
-from config_unified import UnifiedConfigManager
-from unified_data_manager import UnifiedDataManager
+from config import ConfigManager
+from data_manager import DataManager
 from display_manager import DisplayManager
-from unified_monitoring_manager import UnifiedMonitoringManager
+from monitoring_manager import MonitoringManager
 from ws_manager import WebSocketManager
 from volatility_tracker import VolatilityTracker
 from watchlist_manager import WatchlistManager
@@ -64,12 +64,12 @@ class BotInitializer:
         self.logger = logger or setup_logging()
 
         # Gestionnaire de configuration
-        self.config_manager: Optional[UnifiedConfigManager] = None
+        self.config_manager: Optional[ConfigManager] = None
 
         # Managers principaux
-        self.data_manager: Optional[UnifiedDataManager] = None
+        self.data_manager: Optional[DataManager] = None
         self.display_manager: Optional[DisplayManager] = None
-        self.monitoring_manager: Optional[UnifiedMonitoringManager] = None
+        self.monitoring_manager: Optional[MonitoringManager] = None
         self.ws_manager: Optional[WebSocketManager] = None
         self.volatility_tracker: Optional[VolatilityTracker] = None
         self.watchlist_manager: Optional[WatchlistManager] = None
@@ -86,10 +86,10 @@ class BotInitializer:
         nécessaires au fonctionnement du bot.
         """
         # Initialiser le gestionnaire de configuration (partagé entre les managers)
-        self.config_manager = UnifiedConfigManager()
+        self.config_manager = ConfigManager()
 
         # Initialiser le gestionnaire de données
-        self.data_manager = UnifiedDataManager(
+        self.data_manager = DataManager(
             testnet=self.testnet, logger=self.logger
         )
 
@@ -98,8 +98,8 @@ class BotInitializer:
             self.data_manager, logger=self.logger
         )
 
-        # Initialiser le gestionnaire de surveillance unifié
-        self.monitoring_manager = UnifiedMonitoringManager(
+        # Initialiser le gestionnaire de surveillance
+        self.monitoring_manager = MonitoringManager(
             self.data_manager, testnet=self.testnet, logger=self.logger
         )
 

@@ -9,7 +9,7 @@ des symboles candidats via WebSocket.
 import threading
 from typing import List, Dict, Optional, Callable
 from logging_setup import setup_logging
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from watchlist_manager import WatchlistManager
 from instruments import category_of_symbol
 
@@ -24,7 +24,7 @@ class CandidateMonitor:
 
     def __init__(
         self,
-        data_manager: UnifiedDataManager,
+        data_manager: DataManager,
         watchlist_manager: WatchlistManager,
         testnet: bool = True,
         logger=None,

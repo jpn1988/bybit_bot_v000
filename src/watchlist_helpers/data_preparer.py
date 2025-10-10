@@ -27,7 +27,7 @@ class WatchlistDataPreparer:
         Initialise le préparateur de données.
 
         Args:
-            market_data_fetcher: Instance de UnifiedDataManager
+            market_data_fetcher: Instance de DataManager
             logger: Logger pour les messages (optionnel)
         """
         self.market_data_fetcher = market_data_fetcher

@@ -5,9 +5,9 @@ from datetime import datetime
 from loguru import logger
 
 try:
-    from .config_unified import get_settings
+    from .config import get_settings
 except ImportError:
-    from config_unified import get_settings
+    from config import get_settings
 
 # Variable globale pour éviter les reentrant calls
 _shutdown_logging_active = False

@@ -9,7 +9,7 @@ from unittest.mock import Mock, MagicMock, patch, AsyncMock
 from market_scanner import MarketScanner
 from opportunity_detector import OpportunityDetector
 from candidate_monitor import CandidateMonitor
-from unified_monitoring_manager import UnifiedMonitoringManager
+from monitoring_manager import MonitoringManager
 
 
 class TestMarketScanner:
@@ -213,13 +213,13 @@ class TestCandidateMonitor:
         assert result == ["BTCUSDT", "ETHUSDT"]
 
 
-class TestUnifiedMonitoringManagerRefactored:
-    """Tests pour UnifiedMonitoringManager refactorisé"""
+class TestMonitoringManagerRefactored:
+    """Tests pour MonitoringManager refactorisé"""
 
     def test_init_sets_parameters(self):
         """Test que l'initialisation configure correctement les paramètres"""
         data_manager = Mock()
-        manager = UnifiedMonitoringManager(
+        manager = MonitoringManager(
             data_manager=data_manager,
             testnet=True
         )
@@ -230,21 +230,21 @@ class TestUnifiedMonitoringManagerRefactored:
 
     def test_set_watchlist_manager(self):
         """Test que le watchlist_manager peut être défini"""
-        manager = UnifiedMonitoringManager(Mock())
+        manager = MonitoringManager(Mock())
         watchlist_manager = Mock()
         manager.set_watchlist_manager(watchlist_manager)
         assert manager.watchlist_manager == watchlist_manager
 
     def test_set_volatility_tracker(self):
         """Test que le volatility_tracker peut être défini"""
-        manager = UnifiedMonitoringManager(Mock())
+        manager = MonitoringManager(Mock())
         volatility_tracker = Mock()
         manager.set_volatility_tracker(volatility_tracker)
         assert manager.volatility_tracker == volatility_tracker
 
     def test_set_ws_manager(self):
         """Test que le ws_manager peut être défini"""
-        manager = UnifiedMonitoringManager(Mock())
+        manager = MonitoringManager(Mock())
         ws_manager = Mock()
         manager.set_ws_manager(ws_manager)
         assert manager.ws_manager == ws_manager
@@ -257,7 +257,7 @@ class TestUnifiedMonitoringManagerRefactored:
         watchlist_manager.find_candidate_symbols.return_value = []
         volatility_tracker = Mock()
         
-        manager = UnifiedMonitoringManager(
+        manager = MonitoringManager(
             data_manager=data_manager,
             testnet=True
         )
@@ -273,7 +273,7 @@ class TestUnifiedMonitoringManagerRefactored:
     @pytest.mark.asyncio
     async def test_stop_continuous_monitoring(self):
         """Test l'arrêt de la surveillance continue"""
-        manager = UnifiedMonitoringManager(Mock())
+        manager = MonitoringManager(Mock())
         manager._running = True
         
         # Créer des composants mockés
@@ -290,12 +290,12 @@ class TestUnifiedMonitoringManagerRefactored:
 
     def test_is_running_false_when_not_started(self):
         """Test que is_running retourne False quand pas démarré"""
-        manager = UnifiedMonitoringManager(Mock())
+        manager = MonitoringManager(Mock())
         assert manager.is_running() is False
 
     def test_candidate_symbols_property(self):
         """Test la propriété candidate_symbols"""
-        manager = UnifiedMonitoringManager(Mock())
+        manager = MonitoringManager(Mock())
         
         # Sans candidat monitor
         assert manager.candidate_symbols == []

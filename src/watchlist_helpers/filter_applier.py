@@ -30,7 +30,7 @@ class WatchlistFilterApplier:
 
         Args:
             symbol_filter: Instance de SymbolFilter
-            market_data_fetcher: Instance de UnifiedDataManager
+            market_data_fetcher: Instance de DataManager
             symbol_categories: Mapping des catégories de symboles
             logger: Logger pour les messages (optionnel)
         """

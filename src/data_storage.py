@@ -71,77 +71,6 @@ class DataStorage:
         """
         self.symbol_categories = symbol_categories
 
-    def update_funding_data(
-        self,
-        symbol: str,
-        funding: float,
-        volume: float,
-        funding_time: str,
-        spread: float,
-        volatility: Optional[float] = None,
-    ):
-        """
-        Met à jour les données de funding pour un symbole (DÉPRÉCIÉ - utilise Value Objects en interne).
-        
-        Cette méthode crée automatiquement un FundingData Value Object.
-        Préférez utiliser set_funding_data_object() directement.
-
-        Args:
-            symbol: Symbole à mettre à jour
-            funding: Taux de funding
-            volume: Volume 24h
-            funding_time: Temps restant avant funding
-            spread: Spread en pourcentage
-            volatility: Volatilité (optionnel)
-        """
-        try:
-            funding_obj = FundingData(
-                symbol=symbol,
-                funding_rate=funding,
-                volume_24h=volume,
-                next_funding_time=funding_time,
-                spread_pct=spread,
-                volatility_pct=volatility
-            )
-            self.set_funding_data_object(funding_obj)
-        except (ValueError, TypeError) as e:
-            self.logger.warning(f"⚠️ Erreur création FundingData pour {symbol}: {e}")
-
-    def get_funding_data(
-        self, symbol: str
-    ) -> Optional[Tuple[float, float, str, float, Optional[float]]]:
-        """
-        Récupère les données de funding pour un symbole (DÉPRÉCIÉ - utilise Value Objects en interne).
-        
-        Retourne un tuple pour compatibilité avec l'ancien code.
-        Préférez utiliser get_funding_data_object() directement.
-
-        Args:
-            symbol: Symbole à récupérer
-
-        Returns:
-            Tuple des données de funding ou None si absent
-        """
-        funding_obj = self.get_funding_data_object(symbol)
-        return funding_obj.to_tuple() if funding_obj else None
-
-    def get_all_funding_data(
-        self,
-    ) -> Dict[str, Tuple[float, float, str, float, Optional[float]]]:
-        """
-        Récupère toutes les données de funding (DÉPRÉCIÉ - utilise Value Objects en interne).
-        
-        Retourne des tuples pour compatibilité avec l'ancien code.
-        Préférez utiliser get_all_funding_data_objects() directement.
-
-        Returns:
-            Dictionnaire des données de funding
-        """
-        funding_data_objects = self.get_all_funding_data_objects()
-        return {
-            symbol: obj.to_tuple() 
-            for symbol, obj in funding_data_objects.items()
-        }
 
     def update_realtime_data(self, symbol: str, ticker_data: Dict[str, Any]):
         """
@@ -403,25 +332,6 @@ class DataStorage:
             "inverse_symbols": len(self.inverse_symbols),
         }
     
-    # ===== PROPRIÉTÉ POUR LA COMPATIBILITÉ =====
-    
-    @property
-    def funding_data(self) -> Dict[str, Tuple[float, float, str, float, Optional[float]]]:
-        """
-        Retourne les données de funding en format tuple pour compatibilité.
-        
-        Cette propriété est utilisée pour la compatibilité avec l'ancien code.
-        Les données sont converties à la volée depuis les Value Objects.
-        
-        Returns:
-            Dictionnaire {symbol: tuple(funding, volume, funding_time, spread, volatility)}
-        """
-        with self._funding_lock:
-            return {
-                symbol: obj.to_tuple() 
-                for symbol, obj in self._funding_data_objects.items()
-            }
-    
     # ===== MÉTHODES UTILISANT LES VALUE OBJECTS =====
     
     def set_funding_data_object(self, funding_data: FundingData):
@@ -456,12 +366,3 @@ class DataStorage:
         """
         with self._funding_lock:
             return self._funding_data_objects.copy()
-    
-    def update_funding_data_from_object(self, funding_data: FundingData):
-        """
-        Alias pour set_funding_data_object (cohérence avec l'API existante).
-        
-        Args:
-            funding_data: Instance de FundingData à stocker
-        """
-        self.set_funding_data_object(funding_data)

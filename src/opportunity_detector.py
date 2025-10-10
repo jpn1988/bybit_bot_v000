@@ -8,7 +8,7 @@ des opportunités de trading.
 
 from typing import List, Dict, Optional, Callable
 from logging_setup import setup_logging
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from watchlist_manager import WatchlistManager
 from volatility_tracker import VolatilityTracker
 from bybit_client import BybitPublicClient
@@ -24,7 +24,7 @@ class OpportunityDetector:
 
     def __init__(
         self,
-        data_manager: UnifiedDataManager,
+        data_manager: DataManager,
         watchlist_manager: WatchlistManager,
         volatility_tracker: VolatilityTracker,
         testnet: bool = True,

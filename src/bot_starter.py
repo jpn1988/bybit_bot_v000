@@ -36,8 +36,8 @@ from logging_setup import setup_logging
 from volatility_tracker import VolatilityTracker
 from display_manager import DisplayManager
 from ws_manager import WebSocketManager
-from unified_data_manager import UnifiedDataManager
-from unified_monitoring_manager import UnifiedMonitoringManager
+from data_manager import DataManager
+from monitoring_manager import MonitoringManager
 
 
 class BotStarter:
@@ -66,8 +66,8 @@ class BotStarter:
         volatility_tracker: VolatilityTracker,
         display_manager: DisplayManager,
         ws_manager: WebSocketManager,
-        data_manager: UnifiedDataManager,
-        monitoring_manager: UnifiedMonitoringManager,
+        data_manager: DataManager,
+        monitoring_manager: MonitoringManager,
         base_url: str,
         perp_data: Dict,
     ):
@@ -116,7 +116,7 @@ class BotStarter:
         await display_manager.start_display_loop()
 
     async def _start_websocket_connections(
-        self, ws_manager: WebSocketManager, data_manager: UnifiedDataManager
+        self, ws_manager: WebSocketManager, data_manager: DataManager
     ):
         """Démarre les connexions WebSocket."""
         linear_symbols = data_manager.storage.get_linear_symbols()
@@ -127,17 +127,17 @@ class BotStarter:
 
     def _setup_candidate_monitoring(
         self,
-        monitoring_manager: UnifiedMonitoringManager,
+        monitoring_manager: MonitoringManager,
         base_url: str,
         perp_data: Dict,
     ):
         """Configure la surveillance des candidats - délégation directe à
-        UnifiedMonitoringManager."""
+        MonitoringManager."""
         monitoring_manager.setup_candidate_monitoring(base_url, perp_data)
 
     async def _start_continuous_monitoring(
         self,
-        monitoring_manager: UnifiedMonitoringManager,
+        monitoring_manager: MonitoringManager,
         base_url: str,
         perp_data: Dict,
     ):
@@ -147,7 +147,7 @@ class BotStarter:
         )
 
     def display_startup_summary(
-        self, config: Dict, perp_data: Dict, data_manager: UnifiedDataManager
+        self, config: Dict, perp_data: Dict, data_manager: DataManager
     ):
         """
         Affiche le résumé de démarrage structuré.
@@ -195,7 +195,7 @@ class BotStarter:
         self.logger.info("✅ Initialisation terminée - Bot opérationnel")
 
     def get_startup_stats(
-        self, data_manager: UnifiedDataManager
+        self, data_manager: DataManager
     ) -> Dict[str, Any]:
         """
         Retourne les statistiques de démarrage.

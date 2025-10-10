@@ -3537,9 +3537,9 @@ class TestBotInitializer:
     def test_initialize_managers(self):
         from bot_initializer import BotInitializer
         initializer = BotInitializer(testnet=True)
-        with patch('bot_initializer.UnifiedDataManager') as mock_data:
+        with patch('bot_initializer.DataManager') as mock_data:
             with patch('bot_initializer.DisplayManager') as mock_display:
-                with patch('bot_initializer.UnifiedMonitoringManager') as mock_monitoring:
+                with patch('bot_initializer.MonitoringManager') as mock_monitoring:
                     with patch('bot_initializer.WebSocketManager') as mock_ws:
                         with patch('bot_initializer.VolatilityTracker') as mock_volatility:
                             with patch('bot_initializer.WatchlistManager') as mock_watchlist:
@@ -3853,11 +3853,11 @@ class TestConfigUnified:
         assert manager.get_config_value("nonexistent", "default") == "default"
 
 
-class TestUnifiedMonitoringManager:
+class TestMonitoringManager:
     def test_init_sets_parameters(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager, testnet=True)
+        manager = MonitoringManager(mock_data_manager, testnet=True)
         assert manager.data_manager is mock_data_manager
         assert manager.testnet is True
         assert manager.logger is not None
@@ -3866,59 +3866,59 @@ class TestUnifiedMonitoringManager:
         assert manager._candidate_running is False
 
     def test_set_watchlist_manager(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         mock_watchlist = Mock()
         manager.set_watchlist_manager(mock_watchlist)
         assert manager.watchlist_manager is mock_watchlist
 
     def test_set_volatility_tracker(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         mock_tracker = Mock()
         manager.set_volatility_tracker(mock_tracker)
         assert manager.volatility_tracker is mock_tracker
 
     def test_set_ws_manager(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         mock_ws = Mock()
         manager.set_ws_manager(mock_ws)
         assert manager.ws_manager is mock_ws
 
     def test_set_on_new_opportunity_callback(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         callback = lambda x, y: None
         manager.set_on_new_opportunity_callback(callback)
         assert manager._on_new_opportunity_callback is callback
 
     def test_set_on_candidate_ticker_callback(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         callback = lambda x, y: None
         manager.set_on_candidate_ticker_callback(callback)
         assert manager._on_candidate_ticker_callback is callback
 
     @pytest.mark.asyncio
     async def test_start_continuous_monitoring_already_running(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager._running = True
         await manager.start_continuous_monitoring("http://test", {"test": "data"})
         # Ne devrait pas démarrer si déjà en cours
 
     @pytest.mark.asyncio
     async def test_start_continuous_monitoring_success(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         with patch.object(manager, '_start_market_scanning'):
             with patch.object(manager, '_setup_candidate_monitoring'):
                 await manager.start_continuous_monitoring("http://test", {"test": "data"})
@@ -3926,9 +3926,9 @@ class TestUnifiedMonitoringManager:
 
     @pytest.mark.asyncio
     async def test_stop_continuous_monitoring(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager._running = True
         with patch.object(manager, '_stop_market_scanning'):
             with patch.object(manager, '_stop_candidate_monitoring'):
@@ -3938,35 +3938,35 @@ class TestUnifiedMonitoringManager:
                 assert manager._on_candidate_ticker_callback is None
 
     def test_should_perform_scan_true(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager._scan_running = True
         manager._last_scan_time = time.time() - 70  # 70 secondes ago
         result = manager._should_perform_scan(time.time())
         assert result is True
 
     def test_should_perform_scan_false(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager._scan_running = True
         manager._last_scan_time = time.time() - 30  # 30 secondes ago
         result = manager._should_perform_scan(time.time())
         assert result is False
 
     def test_scan_for_opportunities_no_watchlist(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager.watchlist_manager = None
         result = manager._scan_for_opportunities("http://test", {"test": "data"})
         assert result is None
 
     def test_scan_for_opportunities_success(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         mock_watchlist = Mock()
         mock_watchlist.build_watchlist.return_value = (["BTCUSDT"], ["BTCUSD"], {"BTCUSDT": "data"})
         manager.watchlist_manager = mock_watchlist
@@ -3978,9 +3978,9 @@ class TestUnifiedMonitoringManager:
             assert "inverse" in result
 
     def test_integrate_opportunities(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         mock_data_manager.get_linear_symbols.return_value = []
         mock_data_manager.get_inverse_symbols.return_value = []
         opportunities = {
@@ -3995,18 +3995,18 @@ class TestUnifiedMonitoringManager:
                 mock_data_manager.get_inverse_symbols.assert_called()
 
     def test_detect_candidates_no_watchlist(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager.watchlist_manager = None
         linear, inverse = manager._detect_candidates("http://test", {"test": "data"})
         assert linear == []
         assert inverse == []
 
     def test_detect_candidates_success(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         mock_data_manager.symbol_categories = {"BTCUSDT": "linear", "BTCUSD": "inverse"}
         mock_watchlist = Mock()
         mock_watchlist.find_candidate_symbols.return_value = ["BTCUSDT", "BTCUSD"]
@@ -4016,24 +4016,24 @@ class TestUnifiedMonitoringManager:
         assert "BTCUSD" in inverse
 
     def test_is_running_true(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager._running = True
         manager._scan_running = True
         assert manager.is_running() is True
 
     def test_is_running_false(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         manager._running = False
         assert manager.is_running() is False
 
     def test_setup_candidate_monitoring(self):
-        from unified_monitoring_manager import UnifiedMonitoringManager
+        from monitoring_manager import MonitoringManager
         mock_data_manager = Mock()
-        manager = UnifiedMonitoringManager(mock_data_manager)
+        manager = MonitoringManager(mock_data_manager)
         with patch.object(manager, '_detect_candidates', return_value=(["BTCUSDT"], ["BTCUSD"])):
             with patch.object(manager, '_start_candidate_monitoring'):
                 manager.setup_candidate_monitoring("http://test", {"test": "data"})

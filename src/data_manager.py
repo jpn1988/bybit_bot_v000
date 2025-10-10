@@ -31,9 +31,9 @@ except ImportError:
     from models.funding_data import FundingData
 
 
-class UnifiedDataManager:
+class DataManager:
     """
-    Gestionnaire de données unifié pour le bot Bybit - Version simplifiée.
+    Gestionnaire de données pour le bot Bybit - Version simplifiée.
 
     Cette classe coordonne les opérations de haut niveau et expose les
     composants spécialisés via des propriétés publiques pour un accès direct.

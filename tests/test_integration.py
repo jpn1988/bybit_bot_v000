@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 from unittest.mock import Mock, patch, MagicMock
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from data_storage import DataStorage
 from data_fetcher import DataFetcher
 from ws_manager import WebSocketManager
@@ -11,7 +11,7 @@ from bot_initializer import BotInitializer
 
 
 class TestDataManagerIntegration:
-    """Tests d'intégration pour UnifiedDataManager avec ses composants."""
+    """Tests d'intégration pour DataManager avec ses composants."""
 
     @pytest.fixture
     def mock_logger(self):
@@ -20,8 +20,8 @@ class TestDataManagerIntegration:
 
     @pytest.fixture
     def real_data_manager(self, mock_logger):
-        """Instance réelle de UnifiedDataManager pour les tests d'intégration."""
-        return UnifiedDataManager(testnet=True, logger=mock_logger)
+        """Instance réelle de DataManager pour les tests d'intégration."""
+        return DataManager(testnet=True, logger=mock_logger)
 
     def test_data_manager_with_real_storage(self, real_data_manager):
         """Test d'intégration avec DataStorage réel."""
@@ -303,7 +303,7 @@ class TestDataFlowIntegration:
     def test_data_flow_from_fetcher_to_storage(self, mock_logger):
         """Test du flux de données depuis DataFetcher vers DataStorage."""
         # Créer les composants réels
-        data_manager = UnifiedDataManager(testnet=True, logger=mock_logger)
+        data_manager = DataManager(testnet=True, logger=mock_logger)
         
         # Simuler la récupération de données (sans appels API réels)
         funding_data = {"BTCUSDT": {"funding": 0.0001, "volume": 1000000}}
@@ -326,7 +326,7 @@ class TestDataFlowIntegration:
 
     def test_data_flow_realtime_updates(self, mock_logger):
         """Test du flux de données temps réel."""
-        data_manager = UnifiedDataManager(testnet=True, logger=mock_logger)
+        data_manager = DataManager(testnet=True, logger=mock_logger)
         
         # Simuler des mises à jour temps réel
         ticker_updates = [
@@ -345,7 +345,7 @@ class TestDataFlowIntegration:
 
     def test_data_flow_validation_integration(self, mock_logger):
         """Test d'intégration de la validation des données."""
-        data_manager = UnifiedDataManager(testnet=True, logger=mock_logger)
+        data_manager = DataManager(testnet=True, logger=mock_logger)
         
         # Ajouter des données valides
         data_manager.update_funding_data("BTCUSDT", 0.0001, 1000000, "1h", 0.001)

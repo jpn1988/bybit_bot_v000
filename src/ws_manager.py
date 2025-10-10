@@ -16,7 +16,7 @@ from logging_setup import setup_logging
 from ws_public import PublicWSClient
 
 if TYPE_CHECKING:
-    from unified_data_manager import UnifiedDataManager
+    from data_manager import DataManager
 
 
 class WebSocketManager:
@@ -32,7 +32,7 @@ class WebSocketManager:
     """
 
     def __init__(
-        self, testnet: bool = True, data_manager: Optional["UnifiedDataManager"] = None, logger=None
+        self, testnet: bool = True, data_manager: Optional["DataManager"] = None, logger=None
     ):
         """
         Initialise le gestionnaire WebSocket.

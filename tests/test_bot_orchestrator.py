@@ -31,7 +31,7 @@ class TestBotOrchestrator:
             patch('bot.start_metrics_monitoring') as mock_metrics, \
             patch('bot.BotInitializer') as mock_initializer, \
             patch('bot.BotConfigurator') as mock_configurator, \
-            patch('bot.UnifiedDataManager') as mock_data_manager, \
+            patch('bot.DataManager') as mock_data_manager, \
             patch('bot.BotStarter') as mock_starter, \
             patch('bot.BotHealthMonitor') as mock_health, \
             patch('bot.ShutdownManager') as mock_shutdown, \
@@ -547,7 +547,7 @@ class TestBotIntegration:
             patch('bot.start_metrics_monitoring') as mock_metrics, \
             patch('bot.BotInitializer') as mock_initializer, \
             patch('bot.BotConfigurator') as mock_configurator, \
-            patch('bot.UnifiedDataManager') as mock_data_manager, \
+            patch('bot.DataManager') as mock_data_manager, \
             patch('bot.BotStarter') as mock_starter, \
             patch('bot.BotHealthMonitor') as mock_health, \
             patch('bot.ShutdownManager') as mock_shutdown, \

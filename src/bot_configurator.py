@@ -35,7 +35,7 @@ from typing import Dict, Tuple
 from logging_setup import setup_logging
 from bybit_client import BybitPublicClient
 from instruments import get_perp_symbols
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from volatility_tracker import VolatilityTracker
 from watchlist_manager import WatchlistManager
 from display_manager import DisplayManager
@@ -114,7 +114,7 @@ class BotConfigurator:
         self,
         config: Dict,
         perp_data: Dict,
-        data_manager: UnifiedDataManager,
+        data_manager: DataManager,
         volatility_tracker: VolatilityTracker,
         watchlist_manager: WatchlistManager,
         display_manager: DisplayManager,

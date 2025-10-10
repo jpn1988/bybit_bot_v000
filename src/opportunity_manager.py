@@ -10,7 +10,7 @@ Cette classe gère uniquement :
 
 from typing import List
 from logging_setup import setup_logging
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from watchlist_manager import WatchlistManager
 from instruments import category_of_symbol
 from models.funding_data import FundingData
@@ -26,7 +26,7 @@ class OpportunityManager:
     - Gestion des symboles candidats
     """
 
-    def __init__(self, data_manager: UnifiedDataManager, logger=None):
+    def __init__(self, data_manager: DataManager, logger=None):
         """
         Initialise le gestionnaire d'opportunités.
 
@@ -56,43 +56,18 @@ class OpportunityManager:
         try:
             # Vérifier si le WebSocketManager est déjà en cours d'exécution
             if ws_manager.running:
-                # Si déjà en cours, ne pas redémarrer, juste logger l'info
+                # Le WebSocket est déjà actif et gère automatiquement
+                # tous les symboles via ses souscriptions existantes
                 self.logger.info(
                     f"🎯 Nouvelles opportunités détectées: "
                     f"{len(linear_symbols)} linear, {len(inverse_symbols)} inverse "
                     f"(WebSocket déjà actif)"
                 )
-                # Pas besoin de faire quoi que ce soit d'autre -
-                # le WebSocket gère déjà les données
             else:
-                # Démarrer les connexions WebSocket pour les nouvelles
-                # opportunités
-                import asyncio
-
-                try:
-                    asyncio.run(
-                        ws_manager.start_connections(
-                            linear_symbols, inverse_symbols
-                        )
-                    )
-                except RuntimeError:
-                    # Si une boucle est déjà en cours, utiliser une approche alternative
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Créer une tâche dans la boucle existante et l'attendre
-                        task = loop.create_task(
-                            ws_manager.start_connections(
-                                linear_symbols, inverse_symbols
-                            )
-                        )
-                        # Attendre la tâche de manière non-bloquante
-                        asyncio.ensure_future(task)
-                    else:
-                        loop.run_until_complete(
-                            ws_manager.start_connections(
-                                linear_symbols, inverse_symbols
-                            )
-                        )
+                # Démarrer les connexions WebSocket pour les nouvelles opportunités
+                self._start_websocket_connections(
+                    ws_manager, linear_symbols, inverse_symbols
+                )
                 self.logger.info(
                     f"🎯 Nouvelles opportunités intégrées: "
                     f"{len(linear_symbols)} linear, {len(inverse_symbols)} inverse"
@@ -100,6 +75,38 @@ class OpportunityManager:
         except Exception as e:
             self.logger.warning(
                 f"⚠️ Erreur intégration nouvelles opportunités: {e}"
+            )
+
+    def _start_websocket_connections(
+        self, ws_manager, linear_symbols: List[str], inverse_symbols: List[str]
+    ):
+        """
+        Démarre les connexions WebSocket de manière sécurisée.
+
+        Cette méthode gère automatiquement les différents contextes d'exécution :
+        - Depuis un contexte synchrone (crée une nouvelle event loop)
+        - Depuis un contexte asynchrone (utilise la loop existante)
+
+        Args:
+            ws_manager: Gestionnaire WebSocket
+            linear_symbols: Symboles linear à surveiller
+            inverse_symbols: Symboles inverse à surveiller
+        """
+        import asyncio
+
+        try:
+            # Tenter d'obtenir la loop en cours d'exécution
+            loop = asyncio.get_running_loop()
+            # Si on arrive ici, on est dans un contexte async
+            # Créer une tâche dans la boucle existante
+            asyncio.create_task(
+                ws_manager.start_connections(linear_symbols, inverse_symbols)
+            )
+        except RuntimeError:
+            # Pas de loop en cours = contexte synchrone
+            # Créer une nouvelle event loop pour exécuter la coroutine
+            asyncio.run(
+                ws_manager.start_connections(linear_symbols, inverse_symbols)
             )
 
     def on_candidate_ticker(

@@ -11,7 +11,7 @@ Cette classe gère uniquement :
 import gc
 from logging_setup import setup_logging
 from display_manager import DisplayManager
-from unified_monitoring_manager import UnifiedMonitoringManager
+from monitoring_manager import MonitoringManager
 from volatility_tracker import VolatilityTracker
 
 
@@ -38,7 +38,7 @@ class BotHealthMonitor:
 
     def check_components_health(
         self,
-        monitoring_manager: UnifiedMonitoringManager,
+        monitoring_manager: MonitoringManager,
         display_manager: DisplayManager,
         volatility_tracker: VolatilityTracker,
     ) -> bool:
@@ -142,7 +142,7 @@ class BotHealthMonitor:
 
     def get_health_status(
         self,
-        monitoring_manager: UnifiedMonitoringManager,
+        monitoring_manager: MonitoringManager,
         display_manager: DisplayManager,
         volatility_tracker: VolatilityTracker,
     ) -> dict:

@@ -11,7 +11,7 @@ Cette classe gère uniquement :
 import asyncio
 from typing import Optional
 from logging_setup import setup_logging
-from unified_data_manager import UnifiedDataManager
+from data_manager import DataManager
 from table_formatter import TableFormatter
 
 
@@ -25,7 +25,7 @@ class DisplayManager:
     - Coordination avec le TableFormatter
     """
 
-    def __init__(self, data_manager: UnifiedDataManager, logger=None):
+    def __init__(self, data_manager: DataManager, logger=None):
         """
         Initialise le gestionnaire d'affichage.
 
