@@ -35,9 +35,6 @@ class SymbolFilter(BaseFilter):
         """Retourne le nom du filtre."""
         return "symbol_filter"
 
-    def get_description(self) -> str:
-        """Retourne la description du filtre."""
-        return "Filtre par funding, volume et temps avant funding"
 
     def apply(
         self, symbols_data: List[Any], config: Dict[str, Any]

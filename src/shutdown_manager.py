@@ -73,6 +73,14 @@ class ShutdownManager:
         if not orchestrator.running or self._shutdown_in_progress:
             return
 
+        # CORRECTIF : Arrêter immédiatement le thread de volatilité
+        # pour éviter qu'il ne continue à logger pendant l'arrêt
+        try:
+            if hasattr(orchestrator, 'volatility_tracker') and orchestrator.volatility_tracker:
+                orchestrator.volatility_tracker.stop_refresh_task()
+        except Exception:
+            pass
+
         # Désactiver le logging pour éviter les reentrant calls
         disable_logging()
 
@@ -94,17 +102,20 @@ class ShutdownManager:
             # Afficher le résumé d'arrêt professionnel
             log_shutdown_summary(self.logger, last_candidates, uptime_seconds)
 
-            # Arrêt immédiat du processus - pas de nettoyage complexe
+            # Arrêt propre du processus
             safe_log_info("✅ Arrêt du bot terminé")
 
-            # Forcer l'arrêt immédiat
+            # CORRECTIF : Dans le signal handler (Ctrl+C), utiliser os._exit()
+            # pour arrêt immédiat et éviter que les threads daemon continuent à logger
+            # Note : C'est le SEUL endroit où os._exit() est acceptable car
+            # le signal handler a déjà affiché le résumé et stop_refresh_task() a été appelé
             os._exit(0)
 
         except Exception as e:
             # Utiliser safe_log_info pour éviter les reentrant calls
             safe_log_info(f"⚠️ Erreur lors de l'arrêt: {e}")
-            # Arrêt forcé même en cas d'erreur
-            os._exit(0)
+            # Arrêt brutal même en cas d'erreur dans le signal handler
+            os._exit(1)
 
     async def stop_all_managers_async(self, managers: Dict[str, Any]):
         """
@@ -206,7 +217,8 @@ class ShutdownManager:
             self._close_websocket_connections(ws_manager)
 
             # Attendre un peu pour que l'arrêt se propage
-            time.sleep(0.2)
+            from config.timeouts import TimeoutConfig
+            time.sleep(TimeoutConfig.MEDIUM_SLEEP)
 
             self.logger.debug("✅ WebSocket manager arrêté")
         except Exception as e:
@@ -429,11 +441,6 @@ class ShutdownManager:
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur nettoyage threads: {e}")
 
-    def stop_active_threads(self):
-        """
-        Arrêt des threads simplifié.
-        """
-        # Pas de gestion complexe des threads
 
     def force_close_network_connections(self, managers: Dict[str, Any]):
         """

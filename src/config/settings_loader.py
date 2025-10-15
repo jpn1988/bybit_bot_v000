@@ -47,6 +47,32 @@ def safe_int(value: Optional[str]) -> Optional[int]:
         return None
 
 
+def validate_credentials() -> None:
+    """
+    Valide que les clés API ne sont pas les valeurs par défaut.
+    
+    Raises:
+        ValueError: Si les credentials ne sont pas correctement configurés
+    """
+    api_key = os.getenv("BYBIT_API_KEY", "")
+    api_secret = os.getenv("BYBIT_API_SECRET", "")
+    
+    # Vérifier si les clés sont les valeurs placeholder par défaut
+    if api_key == "your_api_key_here" or api_secret == "your_api_secret_here":
+        raise ValueError(
+            "🔐 ERREUR SÉCURITÉ: Les clés API utilisent les valeurs par défaut.\n"
+            "Veuillez configurer vos vraies clés API dans le fichier .env:\n"
+            "1. Copiez .env.example vers .env\n"
+            "2. Remplacez 'your_api_key_here' et 'your_api_secret_here' par vos vraies clés\n"
+            "3. Obtenez vos clés sur: https://testnet.bybit.com/app/user/api-management"
+        )
+    
+    # Vérifier si les clés sont vides (mais permettre None pour usage public uniquement)
+    if not api_key or not api_secret:
+        print("⚠️ Avertissement: Clés API non configurées, fonctionnalités privées désactivées")
+        print("💡 Pour activer les fonctionnalités privées, configurez BYBIT_API_KEY et BYBIT_API_SECRET dans .env")
+
+
 def get_settings() -> Dict:
     """
     Retourne un dictionnaire avec les paramètres de configuration
@@ -54,14 +80,18 @@ def get_settings() -> Dict:
     
     Cette fonction :
     1. Valide les variables d'environnement (détecte les fautes de frappe)
-    2. Récupère et convertit les valeurs
-    3. Retourne un dictionnaire typé
+    2. Valide les credentials API pour sécurité
+    3. Récupère et convertit les valeurs
+    4. Retourne un dictionnaire typé
     
     Returns:
         dict: Dictionnaire contenant les paramètres de configuration
     """
     # Valider les variables d'environnement
     validate_environment_variables()
+    
+    # SEC-001: Valider les credentials pour sécurité
+    validate_credentials()
     
     # Récupérer les clés API et convertir les chaînes vides en None
     api_key = os.getenv("BYBIT_API_KEY") or None

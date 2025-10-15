@@ -15,7 +15,7 @@ import asyncio
 import time
 import signal
 import sys
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock
 from bot import BotOrchestrator, AsyncBotRunner, main_async
 
 
@@ -339,14 +339,15 @@ class TestBotOrchestrator:
         assert status["health_status"] == {"health": "ok"}
         assert status["startup_stats"] == {"stats": "ok"}
 
-    def test_stop_success(self, mock_dependencies):
+    @pytest.mark.asyncio
+    async def test_stop_success(self, mock_dependencies):
         """Test de l'arrêt réussi du bot."""
         orchestrator = BotOrchestrator()
         
         # Mock de l'arrêt asynchrone
         mock_dependencies['mock_shutdown_instance'].stop_all_managers_async = AsyncMock()
         
-        orchestrator.stop()
+        await orchestrator.stop()
         
         # Vérifier que running est mis à False
         assert orchestrator.running is False
@@ -354,7 +355,8 @@ class TestBotOrchestrator:
         # Vérifier que l'arrêt asynchrone est appelé
         mock_dependencies['mock_shutdown_instance'].stop_all_managers_async.assert_called_once()
 
-    def test_stop_with_exception(self, mock_dependencies):
+    @pytest.mark.asyncio
+    async def test_stop_with_exception(self, mock_dependencies):
         """Test de l'arrêt avec exception."""
         orchestrator = BotOrchestrator()
         
@@ -362,7 +364,7 @@ class TestBotOrchestrator:
         mock_dependencies['mock_shutdown_instance'].stop_all_managers_async.side_effect = Exception("Stop error")
         
         # L'arrêt ne doit pas lever d'exception
-        orchestrator.stop()
+        await orchestrator.stop()
         
         # Vérifier que running est mis à False malgré l'erreur
         assert orchestrator.running is False
@@ -476,8 +478,8 @@ class TestAsyncBotRunner:
         """Test de l'arrêt réussi d'AsyncBotRunner."""
         runner = AsyncBotRunner()
         
-        # Mock de l'arrêt de l'orchestrateur
-        mock_dependencies['mock_orchestrator_instance'].stop = Mock()
+        # Mock de l'arrêt de l'orchestrateur (maintenant asynchrone)
+        mock_dependencies['mock_orchestrator_instance'].stop = AsyncMock()
         
         # Mock des tâches asynchrones
         with patch('asyncio.all_tasks') as mock_tasks, \
@@ -507,8 +509,8 @@ class TestAsyncBotRunner:
         runner = AsyncBotRunner()
         runner.running = False
         
-        # Mock de l'arrêt de l'orchestrateur
-        mock_dependencies['mock_orchestrator_instance'].stop = Mock()
+        # Mock de l'arrêt de l'orchestrateur (maintenant asynchrone)
+        mock_dependencies['mock_orchestrator_instance'].stop = AsyncMock()
         
         await runner.stop()
         
@@ -618,7 +620,7 @@ class TestBotIntegration:
             
             # Tester l'arrêt
             mock_shutdown_instance.stop_all_managers_async = AsyncMock()
-            orchestrator.stop()
+            await orchestrator.stop()
             
             assert orchestrator.running is False
             mock_shutdown_instance.stop_all_managers_async.assert_called_once()

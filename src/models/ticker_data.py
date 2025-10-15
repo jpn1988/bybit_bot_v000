@@ -121,15 +121,6 @@ class TickerData:
         spread = (self.ask1_price - self.bid1_price) / self.bid1_price
         return spread
     
-    @property
-    def has_spread(self) -> bool:
-        """Vérifie si les données de spread sont disponibles."""
-        return self.bid1_price is not None and self.ask1_price is not None
-    
-    @property
-    def has_funding(self) -> bool:
-        """Vérifie si les données de funding sont disponibles."""
-        return self.funding_rate is not None
     
     def to_dict(self) -> dict:
         """

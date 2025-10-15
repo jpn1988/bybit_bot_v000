@@ -24,12 +24,14 @@ from .constants import (
 from .settings_loader import get_settings
 from .manager import ConfigManager
 from .timeouts import TimeoutConfig, ScanIntervalConfig
+from .urls import URLConfig
 
 __all__ = [
     "ConfigManager",
     "get_settings",
     "TimeoutConfig",
     "ScanIntervalConfig",
+    "URLConfig",
     "MAX_LIMIT_RECOMMENDED",
     "MAX_SPREAD_PERCENTAGE",
     "MAX_FUNDING_TIME_MINUTES",

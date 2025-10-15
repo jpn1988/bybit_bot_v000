@@ -33,12 +33,14 @@ tout ce qui est nécessaire avant de construire la watchlist.
 
 from typing import Dict, Tuple
 from logging_setup import setup_logging
+from interfaces.bybit_client_interface import BybitClientInterface
 from bybit_client import BybitPublicClient
 from instruments import get_perp_symbols
 from data_manager import DataManager
 from volatility_tracker import VolatilityTracker
 from watchlist_manager import WatchlistManager
 from display_manager import DisplayManager
+from config.timeouts import TimeoutConfig
 
 
 class BotConfigurator:
@@ -98,11 +100,11 @@ class BotConfigurator:
         """
         try:
             # Créer un client PUBLIC pour récupérer l'URL publique (aucune clé requise)
-            client = BybitPublicClient(testnet=self.testnet, timeout=15)
+            client: BybitClientInterface = BybitPublicClient(testnet=self.testnet, timeout=TimeoutConfig.HTTP_REQUEST)
             base_url = client.public_base_url()
 
             # Récupérer l'univers perp
-            perp_data = get_perp_symbols(base_url, timeout=15)
+            perp_data = get_perp_symbols(base_url, timeout=TimeoutConfig.HTTP_REQUEST)
 
             return base_url, perp_data
 
@@ -149,28 +151,3 @@ class BotConfigurator:
         display_manager.set_display_interval(display_interval)
         display_manager.set_price_ttl(120)
 
-    def validate_environment(self) -> bool:
-        """
-        Valide l'environnement d'exécution.
-
-        Returns:
-            True si l'environnement est valide
-        """
-        self.logger.info("🔍 Validation de l'environnement...")
-
-        try:
-            # Vérifier que les modules nécessaires sont disponibles
-            pass
-
-            # Vérifier la connectivité réseau (optionnel)
-            # Cette vérification peut être ajoutée si nécessaire
-
-            self.logger.info("✅ Environnement validé")
-            return True
-
-        except ImportError as e:
-            self.logger.error(f"❌ Module manquant : {e}")
-            return False
-        except Exception as e:
-            self.logger.error(f"❌ Erreur validation environnement : {e}")
-            return False

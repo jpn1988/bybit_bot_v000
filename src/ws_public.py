@@ -1,6 +1,121 @@
 #!/usr/bin/env python3
-"""WebSocket publique Bybit v5 - Client réutilisable avec reconnexion
-automatique."""
+"""
+Client WebSocket publique Bybit v5 avec reconnexion automatique.
+
+╔═══════════════════════════════════════════════════════════════════╗
+║                    📖 GUIDE DE LECTURE                            ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+Ce fichier implémente un client WebSocket publique pour l'API Bybit v5 avec :
+- Connexion automatique aux endpoints publics (tickers, orderbook, trades)
+- Souscription automatique aux symboles
+- Reconnexion avec backoff progressif
+- Gestion des erreurs et timeouts
+- Callbacks personnalisables
+
+🔍 COMPRENDRE CE FICHIER EN 5 MINUTES :
+
+1. Connexion et souscription (lignes 71-98)
+   └─> Ouverture de la connexion et souscription aux tickers
+
+2. Gestion des messages (lignes 146-203)
+   └─> Parsing et dispatch des messages reçus
+
+3. Reconnexion automatique (lignes 239-279)
+   └─> Backoff progressif en cas d'erreur
+
+4. Callbacks personnalisables (lignes 51-54)
+   └─> Hooks pour événements (ouverture, fermeture, erreur)
+
+📡 ENDPOINTS WEBSOCKET PUBLICS BYBIT V5 :
+
+Format des URLs :
+- Testnet linear: wss://stream-testnet.bybit.com/v5/public/linear
+- Mainnet linear: wss://stream.bybit.com/v5/public/linear
+- Testnet inverse: wss://stream-testnet.bybit.com/v5/public/inverse
+- Mainnet inverse: wss://stream.bybit.com/v5/public/inverse
+
+Topics disponibles :
+- "tickers.{symbol}" : Prix en temps réel (lastPrice, bid1, ask1, volume24h)
+- "orderbook.{depth}.{symbol}" : Carnet d'ordres (depth: 1, 50, 200, 500)
+- "publicTrade.{symbol}" : Trades publics en temps réel
+- "kline.{interval}.{symbol}" : Bougies (interval: 1, 3, 5, 15, 30, 60, etc.)
+
+🔄 MÉCANISME DE RECONNEXION AVEC BACKOFF PROGRESSIF :
+
+Le backoff progressif évite de surcharger le serveur en cas d'erreur.
+Les délais augmentent à chaque tentative échouée :
+
+- Tentative 1 : Délai = 1 seconde
+- Tentative 2 : Délai = 2 secondes
+- Tentative 3 : Délai = 5 secondes
+- Tentative 4 : Délai = 10 secondes
+- Tentative 5+ : Délai = 30 secondes (max)
+
+Le délai est réinitialisé à 0 après une connexion réussie.
+
+Pourquoi le backoff progressif ?
+- ✅ Évite de spammer le serveur avec des reconnexions rapides
+- ✅ Laisse le temps au serveur de se rétablir
+- ✅ Réduit la charge réseau
+- ✅ Augmente les chances de succès
+
+📚 EXEMPLE D'UTILISATION :
+
+```python
+from ws_public import PublicWSClient
+
+# Créer le client
+def on_ticker(data):
+    symbol = data.get("symbol")
+    price = data.get("lastPrice")
+    print(f"{symbol}: ${price}")
+
+client = PublicWSClient(
+    category="linear",
+    symbols=["BTCUSDT", "ETHUSDT"],
+    testnet=True,
+    logger=my_logger,
+    on_ticker_callback=on_ticker
+)
+
+# Démarrer (bloquant)
+client.run()
+```
+
+📊 FORMAT DES MESSAGES REÇUS :
+
+Message ticker :
+```json
+{
+    "topic": "tickers.BTCUSDT",
+    "type": "snapshot",
+    "data": {
+        "symbol": "BTCUSDT",
+        "lastPrice": "43500.50",
+        "bid1Price": "43500.00",
+        "ask1Price": "43501.00",
+        "volume24h": "12345.67",
+        "turnover24h": "537000000"
+    },
+    "ts": 1712345678000
+}
+```
+
+Message subscription confirmation :
+```json
+{
+    "success": true,
+    "ret_msg": "subscribe",
+    "conn_id": "...",
+    "op": "subscribe"
+}
+```
+
+📖 RÉFÉRENCES :
+- Documentation WebSocket Bybit v5: https://bybit-exchange.github.io/docs/v5/ws/connect
+- Topics publics: https://bybit-exchange.github.io/docs/v5/ws/public/ticker
+"""
 
 import json
 import time
@@ -11,10 +126,48 @@ from metrics import record_ws_connection, record_ws_error
 
 class PublicWSClient:
     """
-    Client WebSocket publique Bybit v5 réutilisable.
-
-    Gère automatiquement la connexion, reconnexion, souscription aux symboles
-    et le traitement des messages tickers.
+    Client WebSocket publique Bybit v5 avec reconnexion automatique.
+    
+    Ce client gère automatiquement :
+    - Connexion au serveur WebSocket Bybit
+    - Souscription aux topics publics (tickers, orderbook, trades, klines)
+    - Reconnexion automatique avec backoff progressif
+    - Parsing et dispatch des messages reçus
+    - Gestion des erreurs et timeouts
+    
+    Attributes:
+        category (str): Catégorie des symboles ("linear" ou "inverse")
+        symbols (List[str]): Liste des symboles à suivre
+        testnet (bool): Utiliser le testnet (True) ou mainnet (False)
+        logger: Instance du logger pour tracer les événements
+        on_ticker_callback (Callable): Fonction appelée pour chaque ticker reçu
+        ws (WebSocketApp): Instance WebSocket sous-jacente
+        running (bool): État de la connexion
+        reconnect_delays (List[int]): Délais de reconnexion progressifs [1, 2, 5, 10, 30]
+        current_delay_index (int): Index du délai actuel (réinitialisé après succès)
+        
+    Example:
+        ```python
+        # Exemple simple : suivre 2 symboles
+        def on_ticker(data):
+            print(f"{data['symbol']}: ${data['lastPrice']}")
+        
+        client = PublicWSClient(
+            category="linear",
+            symbols=["BTCUSDT", "ETHUSDT"],
+            testnet=True,
+            logger=my_logger,
+            on_ticker_callback=on_ticker
+        )
+        
+        # Démarrer (bloquant)
+        client.run()
+        ```
+        
+    Note:
+        - La méthode run() est bloquante (utiliser un thread si nécessaire)
+        - Le backoff progressif évite de spammer le serveur
+        - Les callbacks sont appelés dans le thread WebSocket
     """
 
     def __init__(
@@ -27,14 +180,26 @@ class PublicWSClient:
     ):
         """
         Initialise le client WebSocket publique.
-
+        
         Args:
-            category (str): Catégorie des symboles ("linear" ou "inverse")
-            symbols (List[str]): Liste des symboles à suivre
-            testnet (bool): Utiliser le testnet (True) ou le mainnet (False)
-            logger: Instance du logger pour les messages
-            on_ticker_callback (Callable): Fonction appelée pour chaque
-            ticker reçu
+            category (str): Catégorie des symboles
+                          - "linear" : Contrats USDT perpetual (BTCUSDT, ETHUSDT, etc.)
+                          - "inverse" : Contrats inverse (BTCUSD, ETHUSD, etc.)
+            symbols (List[str]): Liste des symboles à suivre en temps réel
+                               Exemples: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+                               Max recommandé: ~100 symboles par connexion
+            testnet (bool): Environnement à utiliser
+                          - True : Testnet (api-testnet.bybit.com)
+                          - False : Mainnet (api.bybit.com)
+            logger: Instance du logger pour tracer les événements
+                   Recommandé: logging.getLogger(__name__)
+            on_ticker_callback (Callable[[dict], None]): Fonction appelée pour chaque ticker
+                                                        Signature: callback(ticker_data: dict) -> None
+                                                        
+        Note:
+            - Les symboles invalides seront ignorés par Bybit
+            - Le callback doit être rapide (non-bloquant)
+            - Pour des traitements lourds, utiliser une queue
         """
         self.category = category
         self.symbols = symbols
@@ -45,8 +210,11 @@ class PublicWSClient:
         self.running = False
 
         # Configuration de reconnexion avec backoff progressif
+        # Les délais augmentent à chaque échec pour éviter de spammer le serveur
+        # [1, 2, 5, 10, 30] signifie : 1s, puis 2s, puis 5s, puis 10s, puis 30s (max)
+        # Le current_delay_index est réinitialisé à 0 après une connexion réussie
         self.reconnect_delays = [1, 2, 5, 10, 30]  # secondes
-        self.current_delay_index = 0
+        self.current_delay_index = 0  # Commence au premier délai (1s)
 
         # Callbacks optionnels pour événements de connexion
         self.on_open_callback: Optional[Callable] = None
@@ -55,28 +223,28 @@ class PublicWSClient:
 
     def _build_url(self) -> str:
         """Construit l'URL WebSocket selon la catégorie et l'environnement."""
-        if self.category == "linear":
-            return (
-                "wss://stream-testnet.bybit.com/v5/public/linear"
-                if self.testnet
-                else "wss://stream.bybit.com/v5/public/linear"
-            )
-        else:
-            return (
-                "wss://stream-testnet.bybit.com/v5/public/inverse"
-                if self.testnet
-                else "wss://stream.bybit.com/v5/public/inverse"
-            )
+        from config.urls import URLConfig
+        return URLConfig.get_websocket_url(self.category, self.testnet)
 
     def _on_open(self, ws):
-        """Callback interne appelé à l'ouverture de la connexion."""
-        # WebSocket ouverte
-
-        # Enregistrer la connexion WebSocket
+        """
+        Callback appelé automatiquement à l'ouverture de la connexion WebSocket.
+        
+        Cette méthode :
+        1. Enregistre la connexion dans les métriques
+        2. Réinitialise le backoff progressif (connexion réussie)
+        3. Souscrit automatiquement aux topics tickers pour tous les symboles
+        4. Appelle le callback personnalisé si défini
+        
+        Args:
+            ws: Instance WebSocketApp (fournie automatiquement par websocket-client)
+        """
+        # Enregistrer la connexion réussie dans les métriques
         record_ws_connection(connected=True)
 
-        # Réinitialiser l'index de délai de reconnexion après une
-        # connexion réussie
+        # ✅ SUCCÈS : Réinitialiser le backoff progressif
+        # Après une connexion réussie, on recommence avec le délai le plus court (1s)
+        # Cela permet de réagir rapidement en cas de nouvelle déconnexion
         self.current_delay_index = 0
 
         # S'abonner aux tickers pour tous les symboles
@@ -163,93 +331,106 @@ class PublicWSClient:
         Boucle principale avec reconnexion automatique et backoff progressif.
 
         Cette méthode bloque jusqu'à ce que close() soit appelé.
+        
+        CORRECTIF : Entoure tout d'un try/finally pour garantir le nettoyage
+        des callbacks même en cas d'exception.
         """
         self.running = True
 
-        while self.running:
-            try:
-                # Connexion à la WebSocket publique
-
-                url = self._build_url()
-                self.ws = websocket.WebSocketApp(
-                    url,
-                    on_open=self._on_open,
-                    on_message=self._on_message,
-                    on_error=self._on_error,
-                    on_close=self._on_close,
-                )
-
-                self.ws.run_forever(
-                    ping_interval=20, ping_timeout=15
-                )  # Timeout ping augmenté de 10s à 15s
-
-            except (ConnectionError, OSError, TimeoutError) as e:
-                if self.running:
-                    try:
-                        self.logger.error(
-                            f"Erreur connexion réseau WS publique "
-                            f"({self.category}): "
-                            f"{type(e).__name__}: {e}"
-                        )
-                    except Exception:
-                        pass
-            except Exception as e:
-                if self.running:
-                    try:
-                        self.logger.error(
-                            f"Erreur connexion WS publique "
-                            f"({self.category}): {e}"
-                        )
-                    except Exception:
-                        pass
-
-            # Reconnexion avec backoff progressif
-            if self.running:
-                delay = self.reconnect_delays[
-                    min(
-                        self.current_delay_index,
-                        len(self.reconnect_delays) - 1,
-                    )
-                ]
+        try:
+            while self.running:
                 try:
-                    self.logger.warning(
-                        f"🔁 WS publique ({self.category}) déconnectée "
-                        f"→ reconnexion dans {delay}s"
+                    # Connexion à la WebSocket publique
+
+                    url = self._build_url()
+                    self.ws = websocket.WebSocketApp(
+                        url,
+                        on_open=self._on_open,
+                        on_message=self._on_message,
+                        on_error=self._on_error,
+                        on_close=self._on_close,
                     )
-                    record_ws_connection(
-                        connected=False
-                    )  # Enregistrer la reconnexion
-                except Exception:
-                    pass
 
-                # Attendre le délai avec vérification périodique de l'arrêt
-                # Utiliser time.sleep mais avec vérification plus fréquente
-                # pour éviter les blocages
-                for _ in range(delay * 10):  # 10 vérifications par seconde
-                    if not self.running:
-                        break
-                    time.sleep(0.1)  # Vérification très fréquente (100ms)
+                    self.ws.run_forever(
+                        ping_interval=20, ping_timeout=15
+                    )  # Timeout ping augmenté de 10s à 15s
 
-                # Augmenter l'index de délai pour le prochain backoff
-                # (jusqu'à la limite)
-                if self.current_delay_index < len(self.reconnect_delays) - 1:
-                    self.current_delay_index += 1
-            else:
-                break
+                except (ConnectionError, OSError, TimeoutError) as e:
+                    if self.running:
+                        try:
+                            self.logger.error(
+                                f"Erreur connexion réseau WS publique "
+                                f"({self.category}): "
+                                f"{type(e).__name__}: {e}"
+                            )
+                        except Exception:
+                            pass
+                except Exception as e:
+                    if self.running:
+                        try:
+                            self.logger.error(
+                                f"Erreur connexion WS publique "
+                                f"({self.category}): {e}"
+                            )
+                        except Exception:
+                            pass
 
-    def close(self):
-        """Ferme proprement la connexion WebSocket."""
-        self.running = False
+                # ❌ ÉCHEC DE CONNEXION : Appliquer le backoff progressif
+                if self.running:
+                    # Obtenir le délai de reconnexion actuel
+                    # min() garantit qu'on ne dépasse pas le dernier délai (30s)
+                    delay = self.reconnect_delays[
+                        min(
+                            self.current_delay_index,
+                            len(self.reconnect_delays) - 1,
+                        )
+                    ]
+                    try:
+                        self.logger.warning(
+                            f"🔁 WS publique ({self.category}) déconnectée "
+                            f"→ reconnexion dans {delay}s (tentative #{self.current_delay_index + 1})"
+                        )
+                        # Enregistrer la déconnexion dans les métriques
+                        record_ws_connection(connected=False)
+                    except Exception:
+                        pass
 
-        # Fermer la WebSocket de manière plus agressive
+                    # Attendre le délai avec vérification périodique de l'arrêt
+                    # On ne peut pas utiliser time.sleep(delay) directement car ça bloquerait
+                    # l'arrêt propre du bot. Au lieu de ça, on vérifie toutes les 100ms.
+                    # Exemple : delay=5s → 50 vérifications de 100ms chacune
+                    for _ in range(delay * 10):  # 10 vérifications par seconde
+                        if not self.running:  # Arrêt demandé ?
+                            break
+                        from config.timeouts import TimeoutConfig
+                        time.sleep(TimeoutConfig.SHORT_SLEEP)  # Attendre 100ms
+
+                    # 📈 BACKOFF PROGRESSIF : Augmenter le délai pour la prochaine fois
+                    # Chaque échec augmente l'index jusqu'à atteindre le max (30s)
+                    # Exemple : index 0 → 1s, index 1 → 2s, index 2 → 5s, etc.
+                    if self.current_delay_index < len(self.reconnect_delays) - 1:
+                        self.current_delay_index += 1
+                else:
+                    break
+        finally:
+            # CORRECTIF : Garantir le nettoyage même en cas d'exception
+            self._cleanup()
+
+    def _cleanup(self):
+        """
+        Nettoie toutes les ressources (WebSocket et callbacks).
+        
+        CORRECTIF : Méthode centralisée pour garantir le nettoyage
+        même en cas d'exception dans run().
+        """
+        # Fermer la WebSocket si elle existe
         if self.ws:
             try:
                 # Fermeture immédiate
                 self.ws.close()
                 # Attendre très peu pour que la fermeture se propage
-                import time
-
-                time.sleep(0.1)  # Augmenté pour permettre la fermeture
+                from config.timeouts import TimeoutConfig
+                time.sleep(TimeoutConfig.SHORT_SLEEP)
             except Exception:
                 pass
             finally:
@@ -259,7 +440,7 @@ class PublicWSClient:
                         self.ws.sock.close()
                 except Exception:
                     pass
-
+        
         # Nettoyer les références pour éviter les fuites mémoire
         self.ws = None
         self.on_ticker_callback = None
@@ -267,20 +448,12 @@ class PublicWSClient:
         self.on_close_callback = None
         self.on_error_callback = None
 
-    def set_callbacks(
-        self,
-        on_open: Optional[Callable] = None,
-        on_close: Optional[Callable] = None,
-        on_error: Optional[Callable] = None,
-    ):
+    def close(self):
         """
-        Définit des callbacks optionnels pour les événements de connexion.
+        Ferme proprement la connexion WebSocket.
+        
+        CORRECTIF : Utilise _cleanup() pour garantir le nettoyage.
+        """
+        self.running = False
+        self._cleanup()
 
-        Args:
-            on_open (Callable, optional): Appelé à l'ouverture de la connexion
-            on_close (Callable, optional): Appelé à la fermeture (code, reason)
-            on_error (Callable, optional): Appelé en cas d'erreur (error)
-        """
-        self.on_open_callback = on_open
-        self.on_close_callback = on_close
-        self.on_error_callback = on_error

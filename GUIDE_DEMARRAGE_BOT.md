@@ -336,9 +336,9 @@ DataManager.load_watchlist_data()
 
 Si vous êtes **nouveau sur le projet** :
 
-1. **Commencer par** : `ARCHITECTURE.md`
+1. **Commencer par** : `README.md`
    - Vue d'ensemble complète
-   - Diagrammes clairs
+   - Configuration et structure
    - 15 minutes de lecture
 
 2. **Ensuite** : `GUIDE_DEMARRAGE_BOT.md` (ce fichier)
@@ -427,9 +427,8 @@ Si vous êtes **nouveau sur le projet** :
 
 ## 📚 Documents connexes
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) - Vue d'ensemble complète de l'architecture
 - [`README.md`](README.md) - Documentation utilisateur et configuration
-- [`JOURNAL.md`](JOURNAL.md) - Historique des changements
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - Règles de développement
 
 ---
 

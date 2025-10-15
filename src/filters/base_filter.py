@@ -66,53 +66,7 @@ class BaseFilter(ABC):
             "La méthode get_name() doit être implémentée par les classes dérivées"
         )
 
-    def get_description(self) -> str:
-        """
-        Retourne une description du filtre.
 
-        Returns:
-            Description du filtre (optionnel, peut être surchargée)
-        """
-        return f"Filtre {self.get_name()}"
-
-    def validate_config(self, config: Dict[str, Any]) -> bool:
-        """
-        Valide la configuration du filtre.
-
-        Args:
-            config: Configuration à valider
-
-        Returns:
-            True si la configuration est valide, False sinon
-
-        Note:
-            Cette méthode peut être surchargée par les classes dérivées
-            pour ajouter une validation spécifique.
-        """
-        if not isinstance(config, dict):
-            self.logger.warning(
-                f"Configuration invalide pour {self.get_name()}: "
-                f"doit être un dictionnaire"
-            )
-            return False
-        return True
-
-    def log_filter_result(
-        self, input_count: int, output_count: int, config: Dict[str, Any]
-    ):
-        """
-        Log le résultat de l'application du filtre.
-
-        Args:
-            input_count: Nombre de symboles en entrée
-            output_count: Nombre de symboles en sortie
-            config: Configuration utilisée
-        """
-        rejected_count = input_count - output_count
-        self.logger.info(
-            f"✅ {self.get_description()}: "
-            f"entrée={input_count} | sortie={output_count} | rejetés={rejected_count}"
-        )
 
     def __str__(self) -> str:
         """Représentation textuelle du filtre."""

@@ -4,6 +4,7 @@ import threading
 from typing import Optional
 from metrics import get_metrics_summary
 from logging_setup import setup_logging
+from config.timeouts import TimeoutConfig
 
 
 class MetricsMonitor:
@@ -47,8 +48,8 @@ class MetricsMonitor:
         self._stop_event.set()
 
         if self.monitor_thread and self.monitor_thread.is_alive():
-            # Attendre l'arrêt propre avec timeout plus court
-            self.monitor_thread.join(timeout=3)  # Timeout réduit à 3s
+            # Attendre l'arrêt propre avec timeout
+            self.monitor_thread.join(timeout=TimeoutConfig.ASYNC_TASK_SHUTDOWN)
 
             # Si le thread ne s'est pas arrêté, forcer l'arrêt
             if self.monitor_thread.is_alive():
@@ -81,12 +82,62 @@ class MetricsMonitor:
         try:
             metrics = get_metrics_summary()
 
-            # Formatage des métriques pour les logs
-            metrics["uptime_seconds"] / 3600
+            # Calculer l'uptime en heures/minutes
+            uptime_hours = metrics["uptime_seconds"] / 3600
+            uptime_minutes = (metrics["uptime_seconds"] % 3600) / 60
 
-            # Métriques bot
-
-            # Détails par filtre
+            # Afficher le résumé des métriques du bot
+            self.logger.info("=" * 70)
+            self.logger.info("📊 RÉSUMÉ DES MÉTRIQUES DU BOT")
+            self.logger.info("=" * 70)
+            
+            # Uptime
+            self.logger.info(
+                f"⏱️  Uptime: {int(uptime_hours)}h {int(uptime_minutes)}m "
+                f"({metrics['uptime_seconds']:.0f}s)"
+            )
+            
+            # Métriques API
+            self.logger.info(
+                f"📡 API: {metrics['api_calls_total']} appels | "
+                f"{metrics['api_errors_total']} erreurs | "
+                f"Taux erreur: {metrics['api_error_rate_percent']:.1f}% | "
+                f"Latence moy: {metrics['api_avg_latency_ms']:.1f}ms"
+            )
+            
+            # Métriques de filtrage
+            total_pairs = metrics['pairs_kept_total'] + metrics['pairs_rejected_total']
+            self.logger.info(
+                f"🔍 Filtrage: {metrics['pairs_kept_total']} gardées | "
+                f"{metrics['pairs_rejected_total']} rejetées | "
+                f"Total: {total_pairs} | "
+                f"Taux succès: {metrics['filter_success_rate_percent']:.1f}%"
+            )
+            
+            # Métriques WebSocket
+            self.logger.info(
+                f"🌐 WebSocket: {metrics['ws_connections']} connexions | "
+                f"{metrics['ws_reconnects']} reconnexions | "
+                f"{metrics['ws_errors']} erreurs"
+            )
+            
+            # Détails par filtre (si disponibles)
+            filter_stats = metrics.get('filter_stats', {})
+            if filter_stats:
+                self.logger.info("-" * 70)
+                self.logger.info("📋 Détails par filtre:")
+                for filter_name, stats in filter_stats.items():
+                    kept = stats.get('kept', 0)
+                    rejected = stats.get('rejected', 0)
+                    total = kept + rejected
+                    success_rate = (kept / total * 100) if total > 0 else 0
+                    self.logger.info(
+                        f"   • {filter_name}: {kept} gardées | "
+                        f"{rejected} rejetées | "
+                        f"Taux: {success_rate:.1f}%"
+                    )
+            
+            self.logger.info("=" * 70)
 
         except Exception as e:
             self.logger.error(f"❌ Erreur lors du formatage des métriques: {e}")

@@ -22,33 +22,6 @@ def mock_env_vars():
     }):
         yield
 
-@pytest.fixture
-def mock_bybit_response():
-    """Mock d'une réponse API Bybit typique."""
-    return {
-        "retCode": 0,
-        "retMsg": "OK",
-        "result": {
-            "list": [
-                {
-                    "symbol": "BTCUSDT",
-                    "fundingRate": "0.0001",
-                    "volume24h": "1000000.0",
-                    "nextFundingTime": "1640995200000",
-                    "bid1Price": "50000.0",
-                    "ask1Price": "50001.0"
-                },
-                {
-                    "symbol": "ETHUSDT", 
-                    "fundingRate": "0.0002",
-                    "volume24h": "2000000.0",
-                    "nextFundingTime": "1640995200000",
-                    "bid1Price": "3000.0",
-                    "ask1Price": "3001.0"
-                }
-            ]
-        }
-    }
 
 @pytest.fixture
 def mock_wallet_balance_response():

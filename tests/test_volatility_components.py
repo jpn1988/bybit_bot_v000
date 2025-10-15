@@ -6,11 +6,10 @@ Tests pour les composants de volatilité refactorisés.
 import pytest
 import asyncio
 import time
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock
 from async_rate_limiter import AsyncRateLimiter, get_async_rate_limiter
-from volatility_computer import VolatilityComputer, get_volatility_cache_key
+from volatility import VolatilityCalculator, is_cache_valid, get_volatility_cache_key
 from volatility_filter import VolatilityFilter
-from volatility import VolatilityCalculator, is_cache_valid
 
 
 class TestAsyncRateLimiter:
@@ -90,32 +89,32 @@ class TestAsyncRateLimiter:
         assert limiter.window_seconds == 2.0
 
 
-class TestVolatilityComputer:
-    """Tests pour VolatilityComputer"""
+class TestVolatilityCalculatorInternals:
+    """Tests pour les méthodes internes de VolatilityCalculator (anciennement VolatilityComputer)"""
 
     def test_init_sets_parameters(self):
         """Test que l'initialisation configure correctement les paramètres"""
-        computer = VolatilityComputer(timeout=15)
-        assert computer.timeout == 15
-        assert computer._symbol_categories == {}
+        calculator = VolatilityCalculator(timeout=15)
+        assert calculator.timeout == 15
+        assert calculator._symbol_categories == {}
 
     def test_set_symbol_categories(self):
         """Test que set_symbol_categories définit les catégories"""
-        computer = VolatilityComputer()
+        calculator = VolatilityCalculator()
         categories = {"BTCUSDT": "linear", "BTCUSD": "inverse"}
-        computer.set_symbol_categories(categories)
-        assert computer._symbol_categories == categories
+        calculator.set_symbol_categories(categories)
+        assert calculator._symbol_categories == categories
 
     @pytest.mark.asyncio
     async def test_compute_batch_empty_list(self):
-        """Test que compute_batch retourne {} pour une liste vide"""
-        computer = VolatilityComputer()
-        result = await computer.compute_batch("http://test", [])
+        """Test que _compute_batch retourne {} pour une liste vide"""
+        calculator = VolatilityCalculator()
+        result = await calculator._compute_batch("http://test", [])
         assert result == {}
 
     def test_calculate_volatility_valid_data(self):
         """Test le calcul de volatilité avec des données valides"""
-        computer = VolatilityComputer()
+        calculator = VolatilityCalculator()
         
         # Créer des klines fictives : [timestamp, open, high, low, close, volume, turnover]
         klines = [
@@ -126,7 +125,7 @@ class TestVolatilityComputer:
             ["1234567850000", "51500", "52000", "51200", "51800", "100", "5000000"],
         ]
         
-        result = computer._calculate_volatility(klines)
+        result = calculator._calculate_volatility(klines)
         
         # Vérifier qu'on a un résultat
         assert result is not None
@@ -135,7 +134,7 @@ class TestVolatilityComputer:
 
     def test_calculate_volatility_insufficient_data(self):
         """Test que calculate_volatility retourne None si pas assez de données"""
-        computer = VolatilityComputer()
+        calculator = VolatilityCalculator()
         
         # Seulement 2 klines (moins que le minimum de 3)
         klines = [
@@ -143,7 +142,7 @@ class TestVolatilityComputer:
             ["1234567880000", "50500", "52000", "50000", "51000", "100", "5000000"],
         ]
         
-        result = computer._calculate_volatility(klines)
+        result = calculator._calculate_volatility(klines)
         assert result is None
 
     def test_get_volatility_cache_key(self):
@@ -279,26 +278,24 @@ class TestVolatilityFilter:
         assert abs(stats["average"] - 0.10) < 0.0001  # Comparaison approximative
 
 
-class TestVolatilityCalculatorRefactored:
-    """Tests pour VolatilityCalculator refactorisé"""
+class TestVolatilityCalculatorPublicAPI:
+    """Tests pour l'API publique de VolatilityCalculator"""
 
     def test_init_sets_parameters(self):
         """Test que l'initialisation configure correctement les paramètres"""
         calc = VolatilityCalculator(testnet=False, timeout=15)
         assert calc.testnet is False
         assert calc.timeout == 15
-        assert calc.computer is not None
         assert calc.filter is not None
 
-    def test_set_symbol_categories_propagates(self):
-        """Test que set_symbol_categories propage aux composants"""
+    def test_set_symbol_categories_configures_internal_state(self):
+        """Test que set_symbol_categories configure l'état interne"""
         calc = VolatilityCalculator()
         categories = {"BTCUSDT": "linear"}
         
         calc.set_symbol_categories(categories)
         
         assert calc._symbol_categories == categories
-        assert calc.computer._symbol_categories == categories
 
     @pytest.mark.asyncio
     async def test_compute_volatility_batch_empty(self):

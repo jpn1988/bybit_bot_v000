@@ -2,7 +2,7 @@
 
 import pytest
 import httpx
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from data_manager import DataManager
 from data_storage import DataStorage
 from data_fetcher import DataFetcher

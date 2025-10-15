@@ -21,6 +21,7 @@ from data_fetcher import DataFetcher
 from data_storage import DataStorage
 from data_validator import DataValidator
 from models.funding_data import FundingData
+from factories.funding_factory import FundingDataFactory
 
 
 class DataManager:
@@ -219,44 +220,16 @@ class DataManager:
         """Met à jour les données de funding dans le stockage (utilise Value Objects)."""
         for symbol, data in funding_data.items():
             try:
-                # Créer un FundingData Value Object
-                if isinstance(data, (list, tuple)) and len(data) >= 4:
-                    # Format tuple: (funding, volume, funding_time, spread, volatility?)
-                    funding, volume, funding_time, spread = data[:4]
-                    volatility = data[4] if len(data) > 4 else None
-                    
-                    funding_obj = FundingData(
-                        symbol=symbol,
-                        funding_rate=funding,
-                        volume_24h=volume,
-                        next_funding_time=funding_time,
-                        spread_pct=spread,
-                        volatility_pct=volatility
-                    )
-                    
-                elif isinstance(data, dict):
-                    # Format dict: {funding, volume, funding_time_remaining, spread_pct, volatility_pct}
-                    funding = data.get("funding", 0.0)
-                    volume = data.get("volume", 0.0)
-                    funding_time = data.get("funding_time_remaining", "-")
-                    spread = data.get("spread_pct", 0.0)
-                    volatility = data.get("volatility_pct", None)
-                    
-                    funding_obj = FundingData(
-                        symbol=symbol,
-                        funding_rate=funding,
-                        volume_24h=volume,
-                        next_funding_time=funding_time,
-                        spread_pct=spread,
-                        volatility_pct=volatility
-                    )
+                # Utiliser la factory centralisée pour créer FundingData
+                funding_obj = FundingDataFactory.from_raw_data(symbol, data)
+                
+                if funding_obj is not None:
+                    # Stocker le Value Object
+                    self.storage.set_funding_data_object(funding_obj)
                 else:
-                    continue
+                    self.logger.warning(f"⚠️ Données invalides pour {symbol}: format non supporté")
                 
-                # Stocker le Value Object
-                self.storage.set_funding_data_object(funding_obj)
-                
-            except (ValueError, TypeError) as e:
+            except Exception as e:
                 self.logger.warning(f"⚠️ Erreur création FundingData pour {symbol}: {e}")
 
     def _update_original_funding_data(self, watchlist_manager):
@@ -284,23 +257,40 @@ class DataManager:
             linear_symbols, inverse_symbols, funding_data
         )
 
-    def get_loading_summary(self) -> Dict[str, Any]:
+    def update_funding_data_from_dict(self, funding_data: Dict):
         """
-        Retourne un résumé du chargement des données (utilise Value Objects).
-
-        Returns:
-            Dict[str, Any]: Résumé des données chargées
-        """
-        linear_symbols = self.storage.get_linear_symbols()
-        inverse_symbols = self.storage.get_inverse_symbols()
-        funding_data_objects = self.storage.get_all_funding_data_objects()
+        Met à jour les données de funding depuis un dictionnaire externe.
         
-        # Convertir les Value Objects en tuples pour le résumé (compatibilité)
-        funding_data = {
-            symbol: obj.to_tuple() 
-            for symbol, obj in funding_data_objects.items()
-        }
+        Cette méthode publique permet aux autres managers de mettre à jour
+        les données de funding sans accéder aux méthodes privées.
+        
+        Args:
+            funding_data: Dictionnaire des données de funding à mettre à jour
+        """
+        self._update_funding_data(funding_data)
 
-        return self.validator.get_loading_summary(
-            linear_symbols, inverse_symbols, funding_data
-        )
+    def update_symbol_lists_from_opportunities(
+        self, 
+        linear_symbols: List[str], 
+        inverse_symbols: List[str]
+    ):
+        """
+        Met à jour les listes de symboles avec de nouvelles opportunités.
+        
+        Cette méthode publique permet aux autres managers de mettre à jour
+        les listes de symboles sans accéder aux méthodes privées.
+        
+        Args:
+            linear_symbols: Nouveaux symboles linear
+            inverse_symbols: Nouveaux symboles inverse
+        """
+        # Récupérer les symboles existants
+        existing_linear = set(self.storage.get_linear_symbols())
+        existing_inverse = set(self.storage.get_inverse_symbols())
+        
+        # Fusionner les listes
+        all_linear = list(existing_linear | set(linear_symbols))
+        all_inverse = list(existing_inverse | set(inverse_symbols))
+        
+        # Mettre à jour dans le storage
+        self.storage.set_symbol_lists(all_linear, all_inverse)

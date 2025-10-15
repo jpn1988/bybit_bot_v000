@@ -10,7 +10,7 @@ Cette classe gère uniquement :
 
 import time
 import threading
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any
 from logging_setup import setup_logging
 from models.funding_data import FundingData
 from models.ticker_data import TickerData

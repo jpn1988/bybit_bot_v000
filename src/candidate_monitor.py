@@ -12,6 +12,7 @@ from logging_setup import setup_logging
 from data_manager import DataManager
 from watchlist_manager import WatchlistManager
 from instruments import category_of_symbol
+from config.timeouts import TimeoutConfig
 
 
 class CandidateMonitor:
@@ -103,7 +104,7 @@ class CandidateMonitor:
         # Attendre la fin du thread avec timeout
         if self._candidate_ws_thread and self._candidate_ws_thread.is_alive():
             try:
-                self._candidate_ws_thread.join(timeout=10)
+                self._candidate_ws_thread.join(timeout=TimeoutConfig.THREAD_CANDIDATE_SHUTDOWN)
                 if self._candidate_ws_thread.is_alive():
                     self.logger.warning(
                         "⚠️ Thread candidats n'a pas pu être arrêté dans les temps"

@@ -63,6 +63,33 @@ class TestBybitClient:
         )
         assert client.base_url == "https://api.bybit.com"
     
+    def test_init_with_custom_retry_params(self):
+        """Test d'initialisation avec des paramètres de retry personnalisés."""
+        client = BybitClient(
+            testnet=True,
+            timeout=10,
+            api_key="test_key",
+            api_secret="test_secret",
+            max_retries=2,
+            backoff_base=1.0
+        )
+        
+        assert client.max_retries == 2
+        assert client.backoff_base == 1.0
+    
+    def test_init_with_default_retry_params(self):
+        """Test que les paramètres par défaut sont appliqués."""
+        client = BybitClient(
+            testnet=True,
+            timeout=10,
+            api_key="test_key",
+            api_secret="test_secret"
+        )
+        
+        # Vérifier les valeurs par défaut
+        assert client.max_retries == 4
+        assert client.backoff_base == 0.5
+    
     def test_get_wallet_balance_success(self, mock_wallet_balance_response):
         """Test de récupération du solde avec succès."""
         client = BybitClient(
@@ -188,11 +215,14 @@ class TestBybitClient:
     def test_execute_request_http_429_retry_after_then_success(self, monkeypatch):
         client = BybitClient(testnet=True, timeout=5, api_key="k", api_secret="s")
 
+        # Créer une instance partagée de _SeqClient
+        seq_client = _SeqClient([
+            _MockResponse(status_code=429, headers={"Retry-After": "0"}),
+            _MockResponse(status_code=200, json_data={"retCode": 0, "result": {"ok": True}}),
+        ])
+
         def _mock_http_client(timeout):
-            return _SeqClient([
-                _MockResponse(status_code=429, headers={"Retry-After": "0"}),
-                _MockResponse(status_code=200, json_data={"retCode": 0, "result": {"ok": True}}),
-            ])
+            return seq_client
 
         sleeps = []
         monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
@@ -228,11 +258,14 @@ class TestBybitClient:
         client = BybitClient(testnet=True, timeout=5, api_key="k", api_secret="s")
 
         # Première réponse retCode 10016 (rate limit), puis succès
+        # Créer une instance partagée de _SeqClient
+        seq_client = _SeqClient([
+            _MockResponse(status_code=200, json_data={"retCode": 10016}),
+            _MockResponse(status_code=200, json_data={"retCode": 0, "result": {"ok": True}}),
+        ])
+
         def _mk(timeout):
-            return _SeqClient([
-                _MockResponse(status_code=200, json_data={"retCode": 10016}),
-                _MockResponse(status_code=200, json_data={"retCode": 0, "result": {"ok": True}}),
-            ])
+            return seq_client
 
         sleeps = []
         monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
@@ -274,14 +307,15 @@ class TestBybitClient:
     def test_robustness_timeouts_and_request_errors(self, monkeypatch):
         client = BybitClient(testnet=True, timeout=5, api_key="k", api_secret="s")
 
-        seq = [
+        # Créer une instance partagée de _SeqClient
+        seq_client = _SeqClient([
             httpx.TimeoutException("t1"),
             httpx.RequestError("r1", request=None),
             _MockResponse(status_code=200, json_data={"retCode": 0, "result": {"ok": True}}),
-        ]
+        ])
 
         def _mk(timeout):
-            return _SeqClient(seq.copy())
+            return seq_client
 
         monkeypatch.setattr("bybit_client.get_http_client", _mk)
         monkeypatch.setattr("time.sleep", lambda s: None)

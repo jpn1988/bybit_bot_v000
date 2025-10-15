@@ -167,18 +167,3 @@ class BotHealthMonitor:
             ),
         }
 
-    def reset_memory_counter(self):
-        """Remet à zéro le compteur de vérification mémoire."""
-        self._memory_check_counter = 0
-
-    def set_memory_check_interval(self, interval: int):
-        """
-        Définit l'intervalle de vérification mémoire.
-
-        Args:
-            interval: Intervalle en secondes
-        """
-        self._memory_check_interval = interval
-        self.logger.info(
-            f"📊 Intervalle de vérification mémoire défini à {interval} secondes"
-        )

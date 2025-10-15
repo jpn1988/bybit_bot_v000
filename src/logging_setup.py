@@ -1,5 +1,6 @@
 """Configuration du système de logging avec loguru."""
 
+import re
 import sys
 from datetime import datetime
 from loguru import logger
@@ -12,6 +13,41 @@ except ImportError:
 # Variable globale pour éviter les reentrant calls
 _shutdown_logging_active = False
 _logging_disabled = False
+
+
+class SensitiveDataFilter:
+    """Filtre qui masque les credentials sensibles dans les logs."""
+    
+    # Patterns pour détecter et masquer les credentials
+    PATTERNS = [
+        # API keys et secrets
+        (r'(api[_-]?key["\s:=]+)([a-zA-Z0-9-_]{10,})', r'\1***MASKED_API_KEY***'),
+        (r'(api[_-]?secret["\s:=]+)([a-zA-Z0-9-_]{10,})', r'\1***MASKED_API_SECRET***'),
+        (r'(\'api_key\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_API_KEY***'),
+        (r'(\'api_secret\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_API_SECRET***'),
+        
+        # Headers Bybit
+        (r'(X-BAPI-API-KEY["\s:=]+)([^"\s,}]+)', r'\1***MASKED_BAPI_KEY***'),
+        (r'(X-BAPI-SIGN["\s:=]+)([^"\s,}]+)', r'\1***MASKED_SIGNATURE***'),
+        (r'(\'X-BAPI-API-KEY\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_BAPI_KEY***'),
+        (r'(\'X-BAPI-SIGN\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_SIGNATURE***'),
+        
+        # Variables d'environnement
+        (r'(BYBIT_API_KEY["\s:=]+)([^"\s,}]+)', r'\1***MASKED***'),
+        (r'(BYBIT_API_SECRET["\s:=]+)([^"\s,}]+)', r'\1***MASKED***'),
+    ]
+    
+    def __call__(self, record):
+        """Filtre les credentials dans le message de log."""
+        try:
+            message = record["message"]
+            for pattern, replacement in self.PATTERNS:
+                message = re.sub(pattern, replacement, message, flags=re.IGNORECASE)
+            record["message"] = message
+        except Exception:
+            # Si erreur de filtrage, ne pas casser le logging
+            pass
+        return True
 
 
 def disable_logging():
@@ -56,8 +92,11 @@ def setup_logging():
     retention = os.getenv("LOG_RETENTION", "7 days")
     compression = os.getenv("LOG_COMPRESSION", "zip")
 
+    # CORRECTIF CRIT-3: Créer le filtre de masquage des credentials
+    sensitive_filter = SensitiveDataFilter()
+
     # Ajouter un handler avec le format spécifié et protection contre
-    # les reentrant calls
+    # les reentrant calls + filtre de sécurité
     logger.add(
         sys.stdout,
         format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}",
@@ -66,6 +105,7 @@ def setup_logging():
         enqueue=False,  # Éviter la file d'attente pour stdout
         backtrace=False,
         diagnose=False,
+        filter=sensitive_filter,  # Masquer les credentials
     )
     try:
         os.makedirs(log_dir, exist_ok=True)
@@ -79,6 +119,7 @@ def setup_logging():
             enqueue=True,
             backtrace=False,
             diagnose=False,
+            filter=sensitive_filter,  # Masquer les credentials dans le fichier aussi
         )
     except Exception:
         # Si on ne peut pas créer le fichier, on garde stdout uniquement

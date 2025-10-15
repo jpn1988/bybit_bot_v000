@@ -1,11 +1,119 @@
 #!/usr/bin/env python3
 """
-Gestionnaire d'affichage pour le bot Bybit - Version refactorisée.
+Gestionnaire d'affichage pour le bot Bybit avec mécanisme de fallback intelligent.
 
-Cette classe gère uniquement :
-- L'affichage des données de prix en temps réel
-- La gestion de la boucle d'affichage
-- La coordination avec le TableFormatter
+╔═══════════════════════════════════════════════════════════════════╗
+║                    📖 GUIDE DE LECTURE                            ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+Ce fichier implémente un gestionnaire d'affichage qui affiche les prix en temps réel
+avec un mécanisme de fallback automatique vers les données REST si nécessaire.
+
+🔍 COMPRENDRE CE FICHIER EN 5 MINUTES :
+
+1. Boucle d'affichage (lignes 79-91)
+   └─> Affiche le tableau toutes les N secondes
+
+2. Mécanisme de fallback (lignes 120-180)
+   └─> WebSocket (temps réel) → REST API (si stale)
+
+3. Calcul du staleness (lignes 140-160)
+   └─> Détecte si les données sont trop anciennes
+
+4. Formatage des tableaux (via TableFormatter)
+   └─> Affichage formaté avec colonnes alignées
+
+🔄 MÉCANISME DE FALLBACK INTELLIGENT :
+
+Le DisplayManager utilise un système de fallback à 2 niveaux pour garantir
+l'affichage de données fraîches même si le WebSocket rencontre des problèmes.
+
+Priorité 1 : Données WebSocket (temps réel)
+    ├─> Si disponibles ET récentes (< 120s)
+    └─> Utiliser directement (plus rapides, plus précises)
+
+Priorité 2 : Fallback vers REST API
+    ├─> Si WebSocket stale (> 120s) OU indisponible
+    └─> Récupérer depuis l'API REST (plus lent mais fiable)
+
+Exemple de flux :
+    Temps = 0s → WebSocket reçoit BTCUSDT à $43,500
+    Temps = 10s → Affichage utilise WebSocket ($43,500) ✅ Frais
+    Temps = 60s → Affichage utilise WebSocket ($43,505) ✅ Frais
+    Temps = 130s → WebSocket bloqué, aucune mise à jour
+    Temps = 140s → Affichage détecte staleness (140s > 120s)
+    Temps = 140s → Fallback → Récupère depuis REST API ($43,510) ✅ Frais
+    
+Pourquoi ce mécanisme ?
+- ✅ Résilience : Continue à afficher même si WebSocket down
+- ✅ Précision : Préfère temps réel quand disponible
+- ✅ Fiabilité : Garantit des données récentes (< 120s)
+
+⏱️ GESTION DU STALENESS (FRAÎCHEUR DES DONNÉES) :
+
+Le staleness mesure l'ancienneté des données pour décider du fallback.
+
+Calcul :
+    staleness = now() - timestamp_dernière_mise_à_jour
+    
+Exemple :
+    Dernière mise à jour : 10:00:00
+    Heure actuelle : 10:02:30
+    Staleness : 150 secondes → ⚠️ STALE (> 120s)
+
+Seuils :
+- < 120s : ✅ Données FRAÎCHES (utiliser WebSocket)
+- >= 120s : ⚠️ Données STALES (fallback REST)
+
+Configuration :
+- price_ttl_sec (défaut: 120s) : Seuil de staleness
+- Modifiable via set_price_ttl()
+
+📊 INTERVALLE D'AFFICHAGE :
+
+L'affichage est rafraîchi périodiquement dans une boucle asyncio :
+
+display_interval_seconds = 10  # Afficher toutes les 10 secondes (défaut)
+
+Ajustable via set_display_interval() :
+- Trop court (< 1s) : Charge CPU, spam de logs
+- Trop long (> 60s) : Données semblent figées
+- Recommandé : 5-15 secondes
+
+📚 EXEMPLE D'UTILISATION :
+
+```python
+from display_manager import DisplayManager
+
+# Créer le manager
+display = DisplayManager(data_manager=dm)
+
+# Configurer
+display.set_display_interval(10)  # Afficher toutes les 10s
+display.set_price_ttl(120)  # Fallback si > 120s
+
+# Démarrer l'affichage (asynchrone)
+await display.start_display_loop()
+
+# Attendre...
+await asyncio.sleep(300)
+
+# Arrêter
+await display.stop_display_loop()
+```
+
+🎨 FORMAT DU TABLEAU :
+
+Le tableau affiché contient les colonnes suivantes :
+- Symbole : Nom du contrat (BTCUSDT, ETHUSDT, etc.)
+- Funding % : Taux de funding (ex: +0.0100%)
+- Volume M$ : Volume 24h en millions de dollars
+- Spread % : Écart bid/ask en pourcentage
+- Volatilité % : Volatilité 5 minutes
+- Temps restant : Temps avant le prochain funding
+
+📖 RÉFÉRENCES :
+- asyncio tasks: https://docs.python.org/3/library/asyncio-task.html
 """
 
 import asyncio
@@ -13,16 +121,55 @@ from typing import Optional
 from logging_setup import setup_logging
 from data_manager import DataManager
 from table_formatter import TableFormatter
+from config.timeouts import TimeoutConfig
 
 
 class DisplayManager:
     """
-    Gestionnaire d'affichage pour le bot Bybit - Version refactorisée.
-
+    Gestionnaire d'affichage avec fallback intelligent WebSocket → REST API.
+    
+    Ce gestionnaire affiche périodiquement un tableau des symboles suivis avec
+    leurs données en temps réel. Il utilise un mécanisme de fallback automatique
+    pour garantir la fraîcheur des données affichées.
+    
+    Stratégie de données :
+    1. Priorité : Données WebSocket (temps réel) si récentes
+    2. Fallback : Données REST API si WebSocket stale ou indisponible
+    3. Seuil : 120 secondes par défaut (configurable)
+    
     Responsabilités :
-    - Affichage des données de prix en temps réel
-    - Gestion de la boucle d'affichage périodique
-    - Coordination avec le TableFormatter
+    - Afficher le tableau des symboles périodiquement
+    - Détecter et gérer les données stales (anciennes)
+    - Fallback automatique vers REST API si nécessaire
+    - Formater les données via TableFormatter
+    
+    Attributes:
+        data_manager (DataManager): Gestionnaire de données
+        logger: Logger pour les messages
+        display_interval_seconds (int): Intervalle d'affichage (défaut: 10s)
+        price_ttl_sec (int): Seuil de staleness pour fallback (défaut: 120s)
+        _running (bool): État de la boucle d'affichage
+        _display_task (asyncio.Task): Tâche d'affichage en cours
+        _formatter (TableFormatter): Formateur de tableaux
+        
+    Example:
+        ```python
+        # Créer et configurer
+        display = DisplayManager(data_manager=dm)
+        display.set_display_interval(10)  # Afficher toutes les 10s
+        display.set_price_ttl(120)  # Fallback si > 120s stale
+        
+        # Démarrer
+        await display.start_display_loop()
+        
+        # Arrêter
+        await display.stop_display_loop()
+        ```
+        
+    Note:
+        - La boucle d'affichage est non-bloquante (asyncio.Task)
+        - Le fallback est transparent pour l'utilisateur
+        - Les données REST sont mises en cache dans DataStorage
     """
 
     def __init__(self, data_manager: DataManager, logger=None):
@@ -30,14 +177,27 @@ class DisplayManager:
         Initialise le gestionnaire d'affichage.
 
         Args:
-            data_manager: Gestionnaire de données
-            logger: Logger pour les messages (optionnel)
+            data_manager (DataManager): Gestionnaire de données unifié
+                                       Contient storage (WebSocket + REST)
+            logger: Logger pour tracer les événements
+                   Recommandé : logging.getLogger(__name__)
+                   
+        Note:
+            - display_interval_seconds contrôle la fréquence d'affichage
+            - price_ttl_sec contrôle le seuil de fallback
+            - Les deux sont configurables via les setters
         """
         self.data_manager = data_manager
         self.logger = logger or setup_logging()
 
         # Configuration d'affichage
+        # Intervalle entre chaque affichage du tableau (en secondes)
+        # Valeur recommandée : 5-15s (équilibre entre fraîcheur et spam)
         self.display_interval_seconds = 10
+        
+        # Seuil de staleness pour le fallback (en secondes)
+        # Si les données WebSocket ont plus de 120s, on bascule sur REST
+        # TTL = Time To Live = durée de validité des données
         self.price_ttl_sec = 120
 
         # État d'affichage
@@ -101,7 +261,7 @@ class DisplayManager:
                 self._display_task.cancel()
                 # Attendre l'annulation avec timeout
                 try:
-                    await asyncio.wait_for(self._display_task, timeout=2.0)
+                    await asyncio.wait_for(self._display_task, timeout=TimeoutConfig.DISPLAY_OPERATION)
                 except asyncio.TimeoutError:
                     self.logger.warning(
                         "⚠️ Tâche d'affichage n'a pas pu être annulée dans les temps"

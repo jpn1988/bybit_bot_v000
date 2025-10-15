@@ -6,7 +6,7 @@ Bot de trading automatisé pour Bybit avec WebSocket et API REST, incluant un sy
 
 **Nouveau développeur ?** Consultez ces guides dans cet ordre :
 
-1. [`ARCHITECTURE.md`](ARCHITECTURE.md) - **Vue d'ensemble** (5 minutes) :
+1. [`GUIDE_DEMARRAGE_BOT.md`](GUIDE_DEMARRAGE_BOT.md) - **Vue d'ensemble** (10 minutes) :
    - 🎯 4 couches principales (Orchestration, Données, Monitoring, Connexions)
    - 📊 Responsabilités de chaque "Manager"
    - 🔄 Flux de données complet
@@ -130,7 +130,7 @@ REXUSDT  |     +0.4951% |      121.9 |    +0.050% |     +0.320% |          45m
 
 ## 📁 Structure du projet
 
-> **💡 Pour comprendre l'architecture complète, consultez [`ARCHITECTURE.md`](ARCHITECTURE.md)**
+> **💡 Pour comprendre l'architecture complète, consultez [`GUIDE_DEMARRAGE_BOT.md`](GUIDE_DEMARRAGE_BOT.md)**
 
 ### Scripts principaux
 - `src/bot.py` - **ORCHESTRATEUR PRINCIPAL** : Watchlist (REST) + suivi temps réel (WS)
@@ -202,10 +202,10 @@ REXUSDT  |     +0.4951% |      121.9 |    +0.050% |     +0.320% |          45m
 - `src/error_handler.py` - Gestion centralisée des erreurs
 - `src/pagination_handler.py` - Gestion de la pagination API
 
-## 🗒️ Journal de bord & Workflow
-- Toutes les modifications importantes doivent être **documentées** dans `JOURNAL.md` (voir modèle).
+## 🗒️ Workflow de développement
+- Toutes les modifications importantes doivent être **documentées** avec des messages de commit clairs.
 - Avant de merger un changement :
-  1. Mettre à jour `JOURNAL.md` (nouvelle entrée).
+  1. Tester les fonctionnalités modifiées.
   2. Supprimer/renommer **tout code devenu inutile**.
   3. Vérifier les logs (simples, compréhensibles).
 

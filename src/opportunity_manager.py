@@ -1,41 +1,140 @@
 #!/usr/bin/env python3
 """
-Gestionnaire d'opportunités pour le bot Bybit.
+Gestionnaire d'opportunités pour le bot Bybit - Version refactorisée.
 
-Cette classe gère uniquement :
-- La détection de nouvelles opportunités
-- L'intégration des opportunités dans la watchlist
-- La gestion des symboles candidats
+Cette classe coordonne les composants spécialisés :
+- OpportunityScanner : Détection des nouvelles opportunités
+- OpportunityIntegrator : Intégration dans la watchlist
+- Gestion des callbacks et notifications
+
+Responsabilité unique : Coordination entre les composants d'opportunités.
 """
 
-from typing import List
+import asyncio
+from typing import List, Dict, Optional, Callable
 from logging_setup import setup_logging
 from data_manager import DataManager
 from watchlist_manager import WatchlistManager
-from instruments import category_of_symbol
-from models.funding_data import FundingData
+from volatility_tracker import VolatilityTracker
+from opportunity_scanner import OpportunityScanner
+from opportunity_integrator import OpportunityIntegrator
 
 
 class OpportunityManager:
     """
-    Gestionnaire d'opportunités pour le bot Bybit.
+    Gestionnaire d'opportunités pour le bot Bybit - Version refactorisée.
 
-    Responsabilités :
-    - Détection de nouvelles opportunités
-    - Intégration des opportunités dans la watchlist
-    - Gestion des symboles candidats
+    Cette classe coordonne les composants spécialisés :
+    - OpportunityScanner : Détection des nouvelles opportunités
+    - OpportunityIntegrator : Intégration dans la watchlist
+    - Gestion des callbacks et notifications
+
+    Responsabilité unique : Coordination entre les composants d'opportunités.
     """
 
-    def __init__(self, data_manager: DataManager, logger=None):
+    def __init__(
+        self,
+        data_manager: DataManager,
+        watchlist_manager: WatchlistManager = None,
+        volatility_tracker: VolatilityTracker = None,
+        testnet: bool = True,
+        logger=None,
+    ):
         """
         Initialise le gestionnaire d'opportunités.
 
         Args:
             data_manager: Gestionnaire de données
+            watchlist_manager: Gestionnaire de watchlist (optionnel)
+            volatility_tracker: Tracker de volatilité (optionnel)
+            testnet: Utiliser le testnet (True) ou le marché réel (False)
             logger: Logger pour les messages (optionnel)
         """
         self.data_manager = data_manager
+        self.watchlist_manager = watchlist_manager
+        self.volatility_tracker = volatility_tracker
+        self.testnet = testnet
         self.logger = logger or setup_logging()
+
+        # Référence au WebSocket pour optimisation
+        self.ws_manager = None
+
+        # Callback pour les nouvelles opportunités
+        self._on_new_opportunity_callback: Optional[Callable] = None
+
+        # Initialiser les composants spécialisés
+        self._initialize_components()
+
+    def _initialize_components(self):
+        """Initialise les composants spécialisés."""
+        self.scanner = OpportunityScanner(
+            watchlist_manager=self.watchlist_manager,
+            volatility_tracker=self.volatility_tracker,
+            testnet=self.testnet,
+            logger=self.logger,
+        )
+
+        self.integrator = OpportunityIntegrator(
+            data_manager=self.data_manager,
+            watchlist_manager=self.watchlist_manager,
+            logger=self.logger,
+        )
+
+    # ===== MÉTHODES DE CONFIGURATION =====
+
+    def set_ws_manager(self, ws_manager):
+        """
+        Définit le gestionnaire WebSocket principal.
+
+        Args:
+            ws_manager: Gestionnaire WebSocket principal
+        """
+        self.ws_manager = ws_manager
+        # Transférer au scanner pour optimisation
+        self.scanner.set_ws_manager(ws_manager)
+
+    def set_on_new_opportunity_callback(self, callback: Callable):
+        """
+        Définit le callback pour les nouvelles opportunités.
+
+        Args:
+            callback: Fonction à appeler lors de nouvelles opportunités
+        """
+        self._on_new_opportunity_callback = callback
+        # Transférer à l'intégrateur
+        self.integrator.set_on_new_opportunity_callback(callback)
+
+    # ===== MÉTHODES DE SCAN ET DÉTECTION =====
+
+    def scan_for_opportunities(
+        self, base_url: str, perp_data: Dict
+    ) -> Optional[Dict]:
+        """
+        Scanne le marché pour trouver de nouvelles opportunités.
+
+        Délègue au composant OpportunityScanner spécialisé.
+
+        Args:
+            base_url: URL de base de l'API
+            perp_data: Données des perpétuels
+
+        Returns:
+            Dict avec les opportunités trouvées ou None
+        """
+        return self.scanner.scan_for_opportunities(base_url, perp_data)
+
+    def integrate_opportunities(self, opportunities: Dict):
+        """
+        Intègre les nouvelles opportunités détectées.
+
+        Délègue au composant OpportunityIntegrator spécialisé.
+
+        Args:
+            opportunities: Dict avec les opportunités à intégrer
+        """
+        self.integrator.integrate_opportunities(opportunities)
+
+    # ===== MÉTHODES DE GESTION DES OPPORTUNITÉS =====
 
     def on_new_opportunity(
         self,
@@ -64,8 +163,61 @@ class OpportunityManager:
                     f"(WebSocket déjà actif)"
                 )
             else:
-                # Démarrer les connexions WebSocket pour les nouvelles opportunités
-                self._start_websocket_connections(
+                # CORRECTIF ARCH-001: Utiliser create_task directement depuis le bon contexte
+                import asyncio
+                try:
+                    # Essayer d'obtenir la boucle actuelle et créer une tâche
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        self.start_websocket_connections_async(
+                            ws_manager, linear_symbols, inverse_symbols
+                        )
+                    )
+                    self.logger.info(
+                        f"🎯 Nouvelles opportunités intégrées: "
+                        f"{len(linear_symbols)} linear, {len(inverse_symbols)} inverse"
+                    )
+                except RuntimeError:
+                    # Pas de loop en cours = contexte synchrone, logger un warning
+                    self.logger.warning(
+                        "⚠️ ARCH-001: Impossible de démarrer WebSocket depuis contexte sync.\n"
+                        "Nouvelles opportunités détectées mais WebSocket non démarré.\n"
+                        "Utilisez on_new_opportunity_async() depuis un contexte await."
+                    )
+        except Exception as e:
+            self.logger.warning(
+                f"⚠️ Erreur intégration nouvelles opportunités: {e}"
+            )
+
+    async def on_new_opportunity_async(
+        self,
+        linear_symbols: List[str],
+        inverse_symbols: List[str],
+        ws_manager,
+        watchlist_manager: WatchlistManager,
+    ):
+        """
+        Version async pure pour nouvelles opportunités.
+        
+        CORRECTIF ARCH-001: Cette méthode utilise async/await pur sans
+        tentatives de création d'event loops imbriquées.
+
+        Args:
+            linear_symbols: Nouveaux symboles linear
+            inverse_symbols: Nouveaux symboles inverse
+            ws_manager: Gestionnaire WebSocket
+            watchlist_manager: Gestionnaire de watchlist
+        """
+        try:
+            if ws_manager.running:
+                self.logger.info(
+                    f"🎯 Nouvelles opportunités détectées: "
+                    f"{len(linear_symbols)} linear, {len(inverse_symbols)} inverse "
+                    f"(WebSocket déjà actif)"
+                )
+            else:
+                # Démarrer WebSocket avec await (contexte async garanti)
+                await self.start_websocket_connections_async(
                     ws_manager, linear_symbols, inverse_symbols
                 )
                 self.logger.info(
@@ -73,41 +225,54 @@ class OpportunityManager:
                     f"{len(linear_symbols)} linear, {len(inverse_symbols)} inverse"
                 )
         except Exception as e:
-            self.logger.warning(
-                f"⚠️ Erreur intégration nouvelles opportunités: {e}"
+            self.logger.warning(f"⚠️ Erreur intégration opportunités: {e}")
+
+    def _handle_task_exception(self, task):
+        """
+        Gère les exceptions des tâches asyncio.
+        
+        CORRECTIF : Capture les erreurs des tâches fire-and-forget
+        pour éviter les erreurs silencieuses.
+
+        Args:
+            task: Tâche asyncio terminée
+        """
+        try:
+            # Récupérer le résultat de la tâche
+            # Cela lèvera l'exception si la tâche a échoué
+            task.result()
+        except asyncio.CancelledError:
+            # Annulation normale, pas d'erreur
+            pass
+        except Exception as e:
+            # Capturer et logger toute exception
+            self.logger.error(
+                f"❌ Erreur dans la tâche WebSocket: {e}",
+                exc_info=True
             )
 
-    def _start_websocket_connections(
+    async def start_websocket_connections_async(
         self, ws_manager, linear_symbols: List[str], inverse_symbols: List[str]
     ):
         """
-        Démarre les connexions WebSocket de manière sécurisée.
-
-        Cette méthode gère automatiquement les différents contextes d'exécution :
-        - Depuis un contexte synchrone (crée une nouvelle event loop)
-        - Depuis un contexte asynchrone (utilise la loop existante)
-
+        Version async pure pour démarrer les connexions WebSocket.
+        
         Args:
             ws_manager: Gestionnaire WebSocket
             linear_symbols: Symboles linear à surveiller
             inverse_symbols: Symboles inverse à surveiller
+            
+        Returns:
+            asyncio.Task: Tâche créée pour les connexions WebSocket
         """
         import asyncio
+        
+        task = asyncio.create_task(
+            ws_manager.start_connections(linear_symbols, inverse_symbols)
+        )
+        task.add_done_callback(self._handle_task_exception)
+        return task
 
-        try:
-            # Tenter d'obtenir la loop en cours d'exécution
-            loop = asyncio.get_running_loop()
-            # Si on arrive ici, on est dans un contexte async
-            # Créer une tâche dans la boucle existante
-            asyncio.create_task(
-                ws_manager.start_connections(linear_symbols, inverse_symbols)
-            )
-        except RuntimeError:
-            # Pas de loop en cours = contexte synchrone
-            # Créer une nouvelle event loop pour exécuter la coroutine
-            asyncio.run(
-                ws_manager.start_connections(linear_symbols, inverse_symbols)
-            )
 
     def on_candidate_ticker(
         self,
@@ -118,97 +283,14 @@ class OpportunityManager:
         """
         Callback appelé pour les tickers des candidats.
 
+        Délègue au composant OpportunityIntegrator spécialisé.
+
         Args:
             symbol: Symbole candidat
             ticker_data: Données du ticker
             watchlist_manager: Gestionnaire de watchlist
         """
-        try:
-            # Ajouter le symbole à la watchlist principale
-            self._add_symbol_to_main_watchlist(
-                symbol, ticker_data, watchlist_manager
-            )
-        except Exception as e:
-            self.logger.warning(f"⚠️ Erreur traitement candidat {symbol}: {e}")
+        self.integrator.add_symbol_to_watchlist(
+            symbol, ticker_data, watchlist_manager
+        )
 
-    def _add_symbol_to_main_watchlist(
-        self,
-        symbol: str,
-        ticker_data: dict,
-        watchlist_manager: WatchlistManager,
-    ):
-        """
-        Ajoute un symbole à la watchlist principale.
-
-        Args:
-            symbol: Symbole à ajouter
-            ticker_data: Données du ticker
-            watchlist_manager: Gestionnaire de watchlist
-        """
-        try:
-            # Vérifier que le symbole n'est pas déjà dans la watchlist
-            if self.data_manager.storage.get_funding_data_object(symbol):
-                return  # Déjà présent
-
-            # Construire les données du symbole
-            funding_rate = ticker_data.get("fundingRate")
-            volume24h = ticker_data.get("volume24h")
-            next_funding_time = ticker_data.get("nextFundingTime")
-
-            if funding_rate is not None:
-                funding = float(funding_rate)
-                volume = float(volume24h) if volume24h is not None else 0.0
-                funding_time_remaining = (
-                    watchlist_manager.calculate_funding_time_remaining(
-                        next_funding_time
-                    )
-                )
-
-                # Calculer le spread si disponible
-                spread_pct = 0.0
-                bid1_price = ticker_data.get("bid1Price")
-                ask1_price = ticker_data.get("ask1Price")
-                if bid1_price and ask1_price:
-                    try:
-                        bid = float(bid1_price)
-                        ask = float(ask1_price)
-                        if bid > 0 and ask > 0:
-                            mid = (ask + bid) / 2
-                            if mid > 0:
-                                spread_pct = (ask - bid) / mid
-                    except (ValueError, TypeError):
-                        pass
-
-                # Créer un FundingData Value Object
-                funding_obj = FundingData(
-                    symbol=symbol,
-                    funding_rate=funding,
-                    volume_24h=volume,
-                    next_funding_time=funding_time_remaining,
-                    spread_pct=spread_pct,
-                    volatility_pct=None
-                )
-
-                # Ajouter à la watchlist via le DataStorage
-                self.data_manager.storage.set_funding_data_object(funding_obj)
-
-                # Ajouter aux listes par catégorie
-                category = category_of_symbol(
-                    symbol, self.data_manager.storage.symbol_categories
-                )
-                self.data_manager.storage.add_symbol_to_category(symbol, category)
-
-                # Mettre à jour les données originales
-                if next_funding_time:
-                    self.data_manager.storage.update_original_funding_data(
-                        symbol, next_funding_time
-                    )
-
-                self.logger.info(
-                    f"✅ Symbole {symbol} ajouté à la watchlist principale"
-                )
-
-        except (ValueError, TypeError) as e:
-            self.logger.error(f"❌ Erreur création FundingData pour {symbol}: {e}")
-        except Exception as e:
-            self.logger.error(f"❌ Erreur ajout symbole {symbol}: {e}")

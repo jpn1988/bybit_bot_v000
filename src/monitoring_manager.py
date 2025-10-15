@@ -26,8 +26,8 @@ les composants spécialisés sans implémenter directement la logique métier.
    └─> Arrête tous les composants et nettoie les callbacks
 
 🎯 COMPOSANTS COORDONNÉS :
-- MarketScanner : Scan périodique pour détecter de nouvelles opportunités
-- OpportunityDetector : Analyse et intègre les opportunités trouvées
+- Scan périodique intégré : Détecte périodiquement de nouvelles opportunités
+- OpportunityManager : Analyse et intègre les opportunités trouvées
 - CandidateMonitor : Surveille les symboles proches des critères
 
 📚 FLUX TYPIQUE :
@@ -42,15 +42,15 @@ les composants spécialisés sans implémenter directement la logique métier.
 """
 
 import asyncio
+import time
 from typing import List, Dict, Optional, Callable
 from logging_setup import setup_logging
 from data_manager import DataManager
 from watchlist_manager import WatchlistManager
 from volatility_tracker import VolatilityTracker
-from market_scanner import MarketScanner
-from opportunity_detector import OpportunityDetector
+from opportunity_manager import OpportunityManager
 from candidate_monitor import CandidateMonitor
-from config.timeouts import ScanIntervalConfig
+from config.timeouts import ScanIntervalConfig, TimeoutConfig
 
 
 class MonitoringManager:
@@ -68,8 +68,8 @@ class MonitoringManager:
         data_manager: DataManager,
         testnet: bool = True,
         logger=None,
-        market_scanner: Optional[MarketScanner] = None,
-        opportunity_detector: Optional[OpportunityDetector] = None,
+        scan_interval: int = None,
+        opportunity_manager: Optional[OpportunityManager] = None,
         candidate_monitor: Optional[CandidateMonitor] = None,
     ):
         """
@@ -79,9 +79,8 @@ class MonitoringManager:
             data_manager: Gestionnaire de données
             testnet: Utiliser le testnet (True) ou le marché réel (False)
             logger: Logger pour les messages (optionnel)
-            market_scanner: Scanner de marché (optionnel, créé
-            automatiquement si non fourni lors de l'initialisation)
-            opportunity_detector: Détecteur d'opportunités (optionnel, créé
+            scan_interval: Intervalle entre chaque scan en secondes (utilise ScanIntervalConfig.MARKET_SCAN par défaut)
+            opportunity_manager: Gestionnaire d'opportunités (optionnel, créé
             automatiquement si non fourni lors de l'initialisation)
             candidate_monitor: Moniteur de candidats (optionnel, créé
             automatiquement si non fourni lors de l'initialisation)
@@ -98,9 +97,14 @@ class MonitoringManager:
         self.volatility_tracker: Optional[VolatilityTracker] = None
         self.ws_manager = None  # Référence au WebSocket principal
 
+        # Scan périodique intégré (anciennement dans MarketScanner)
+        self._scan_interval = scan_interval if scan_interval is not None else ScanIntervalConfig.MARKET_SCAN
+        self._scan_running = False
+        self._scan_task: Optional[asyncio.Task] = None
+        self._last_scan_time = 0
+
         # Composants de surveillance (injection avec initialisation paresseuse)
-        self.market_scanner: Optional[MarketScanner] = market_scanner
-        self.opportunity_detector: Optional[OpportunityDetector] = opportunity_detector
+        self.opportunity_manager: Optional[OpportunityManager] = opportunity_manager
         self.candidate_monitor: Optional[CandidateMonitor] = candidate_monitor
 
         # Callbacks externes
@@ -213,13 +217,12 @@ class MonitoringManager:
         errors = []
 
         # Arrêter le scan du marché
-        if self.market_scanner:
-            try:
-                await self.market_scanner.stop_scanning()
-                self.logger.debug("✓ MarketScanner arrêté")
-            except Exception as e:
-                errors.append(f"MarketScanner: {e}")
-                self.logger.warning(f"⚠️ Erreur arrêt MarketScanner : {e}")
+        try:
+            await self._stop_market_scanning()
+            self.logger.debug("✓ Scan de marché arrêté")
+        except Exception as e:
+            errors.append(f"Scan marché: {e}")
+            self.logger.warning(f"⚠️ Erreur arrêt scan marché : {e}")
 
         # Arrêter la surveillance des candidats
         if self.candidate_monitor:
@@ -255,8 +258,7 @@ class MonitoringManager:
         self._validate_required_dependencies()
 
         # Initialiser chaque composant de manière indépendante
-        self._init_market_scanner()
-        self._init_opportunity_detector()
+        self._init_opportunity_manager()
         self._init_candidate_monitor()
 
         self.logger.debug("✓ Composants de surveillance initialisés")
@@ -274,25 +276,13 @@ class MonitoringManager:
         if not self.volatility_tracker:
             raise ValueError("VolatilityTracker doit être configuré via set_volatility_tracker()")
 
-    def _init_market_scanner(self):
-        """Initialise le scanner de marché si nécessaire."""
-        if self.market_scanner:
-            self.logger.debug("→ MarketScanner déjà initialisé, réutilisation")
+    def _init_opportunity_manager(self):
+        """Initialise le gestionnaire d'opportunités si nécessaire."""
+        if self.opportunity_manager:
+            self.logger.debug("→ OpportunityManager déjà initialisé, réutilisation")
             return
 
-        self.market_scanner = MarketScanner(
-            scan_interval=ScanIntervalConfig.MARKET_SCAN, logger=self.logger
-        )
-        self.market_scanner.set_scan_callback(self._on_market_scan)
-        self.logger.debug(f"→ MarketScanner créé (intervalle: {ScanIntervalConfig.MARKET_SCAN}s)")
-
-    def _init_opportunity_detector(self):
-        """Initialise le détecteur d'opportunités si nécessaire."""
-        if self.opportunity_detector:
-            self.logger.debug("→ OpportunityDetector déjà initialisé, réutilisation")
-            return
-
-        self.opportunity_detector = OpportunityDetector(
+        self.opportunity_manager = OpportunityManager(
             data_manager=self.data_manager,
             watchlist_manager=self.watchlist_manager,
             volatility_tracker=self.volatility_tracker,
@@ -300,11 +290,11 @@ class MonitoringManager:
             logger=self.logger,
         )
         # Configurer les références
-        self.opportunity_detector.set_ws_manager(self.ws_manager)
-        self.opportunity_detector.set_on_new_opportunity_callback(
+        self.opportunity_manager.set_ws_manager(self.ws_manager)
+        self.opportunity_manager.set_on_new_opportunity_callback(
             self._on_new_opportunity_callback
         )
-        self.logger.debug("→ OpportunityDetector créé et configuré")
+        self.logger.debug("→ OpportunityManager créé et configuré")
 
     def _init_candidate_monitor(self):
         """Initialise le moniteur de candidats si nécessaire."""
@@ -326,28 +316,127 @@ class MonitoringManager:
 
     async def _start_market_scanning(self, base_url: str, perp_data: Dict):
         """Démarre le scan périodique du marché."""
-        if self.market_scanner:
-            await self.market_scanner.start_scanning(base_url, perp_data)
+        if self._scan_task and not self._scan_task.done():
+            self.logger.warning("⚠️ Scan du marché déjà actif")
+            return
 
-    async def _on_market_scan(self, base_url: str, perp_data: Dict):
+        self._scan_running = True
+        self._scan_task = asyncio.create_task(
+            self._scanning_loop(base_url, perp_data)
+        )
+        self.logger.info("🔍 Scanner de marché démarré")
+
+    async def _stop_market_scanning(self):
+        """Arrête le scan périodique du marché."""
+        if not self._scan_running:
+            return
+
+        self._scan_running = False
+
+        # Annuler la tâche de surveillance
+        if self._scan_task and not self._scan_task.done():
+            try:
+                self._scan_task.cancel()
+                try:
+                    await asyncio.wait_for(self._scan_task, timeout=TimeoutConfig.ASYNC_TASK_SHUTDOWN)
+                except asyncio.TimeoutError:
+                    self.logger.warning(
+                        "⚠️ Tâche scan n'a pas pu être annulée dans les temps"
+                    )
+                except asyncio.CancelledError:
+                    pass  # Annulation normale
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erreur annulation tâche scan: {e}")
+
+        self._scan_task = None
+        self.logger.info("🔍 Scanner de marché arrêté")
+
+    async def _scanning_loop(self, base_url: str, perp_data: Dict):
+        """Boucle de surveillance périodique asynchrone."""
+        while self._scan_running:
+            try:
+                # Vérification immédiate pour arrêt rapide
+                if not self._scan_running:
+                    self.logger.info("🛑 Arrêt du scanner demandé")
+                    break
+
+                current_time = time.time()
+
+                # Effectuer un scan si l'intervalle est écoulé
+                if self._should_perform_scan(current_time):
+                    await self._perform_scan(base_url, perp_data)
+                    self._last_scan_time = current_time
+
+                    # Vérifier après le scan pour arrêt rapide
+                    if not self._scan_running:
+                        break
+
+                # Attendre avec vérification d'interruption
+                await self._wait_with_interrupt_check(10)
+
+            except asyncio.CancelledError:
+                self.logger.info("🛑 Scanner annulé")
+                break
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erreur dans la boucle de scan: {e}")
+                if not self._scan_running:
+                    break
+                # Attendre avant de continuer pour éviter une boucle d'erreur
+                await asyncio.sleep(10)
+                continue
+
+    def _should_perform_scan(self, current_time: float) -> bool:
+        """Vérifie s'il est temps d'effectuer un nouveau scan."""
+        return self._scan_running and (
+            current_time - self._last_scan_time >= self._scan_interval
+        )
+
+    async def _wait_with_interrupt_check(self, seconds: int):
         """
-        Callback appelé par le MarketScanner lors de chaque scan.
+        Attend avec vérification d'interruption.
+        
+        CORRECTIF PERF-002: Optimisation pour réduire les cycles CPU en utilisant
+        des délais plus longs entre les vérifications.
+        """
+        # CORRECTIF PERF-002: Vérifier toutes les 2 secondes au lieu d'1 seconde
+        # pour réduire les cycles CPU tout en gardant une bonne réactivité
+        check_interval = 2
+        remaining_seconds = seconds
+        
+        while remaining_seconds > 0 and self._scan_running:
+            sleep_time = min(check_interval, remaining_seconds)
+            try:
+                await asyncio.sleep(sleep_time)
+                remaining_seconds -= sleep_time
+            except asyncio.CancelledError:
+                # Annulation normale - permettre la propagation pour arrêt propre
+                raise
+
+    async def _perform_scan(self, base_url: str, perp_data: Dict):
+        """
+        Effectue un scan complet du marché.
         
         Args:
             base_url: URL de base de l'API
             perp_data: Données des perpétuels
         """
-        if not self.opportunity_detector:
+        if not self._scan_running or not self.opportunity_manager:
             return
 
-        # Scanner les opportunités
-        new_opportunities = self.opportunity_detector.scan_for_opportunities(
-            base_url, perp_data
-        )
+        try:
+            # Scanner les opportunités
+            new_opportunities = self.opportunity_manager.scan_for_opportunities(
+                base_url, perp_data
+            )
 
-        # Intégrer les opportunités si trouvées
-        if new_opportunities:
-            self.opportunity_detector.integrate_opportunities(new_opportunities)
+            # Intégrer les opportunités si trouvées
+            if new_opportunities:
+                self.opportunity_manager.integrate_opportunities(new_opportunities)
+            
+        except Exception as e:
+            # Ne pas logger si on est en train de s'arrêter
+            if self._scan_running:
+                self.logger.warning(f"⚠️ Erreur lors du scan: {e}")
 
     def _setup_candidate_monitoring(self, base_url: str, perp_data: Dict):
         """
@@ -379,9 +468,7 @@ class MonitoringManager:
         Returns:
             True si en cours d'exécution
         """
-        scanner_running = (
-            self.market_scanner.is_running() if self.market_scanner else False
-        )
+        scanner_running = self._scan_running
         monitor_running = (
             self.candidate_monitor.is_running()
             if self.candidate_monitor
@@ -436,8 +523,7 @@ class MonitoringManager:
         """
         try:
             # Tenter d'arrêter les composants déjà démarrés
-            if self.market_scanner:
-                await self.market_scanner.stop_scanning()
+            await self._stop_market_scanning()
             if self.candidate_monitor:
                 self.candidate_monitor.stop_monitoring()
         except Exception as e:
@@ -459,15 +545,11 @@ class MonitoringManager:
             "running": self._running,
             "components": {
                 "market_scanner": {
-                    "initialized": self.market_scanner is not None,
-                    "running": (
-                        self.market_scanner.is_running()
-                        if self.market_scanner
-                        else False
-                    ),
+                    "initialized": True,  # Intégré directement
+                    "running": self._scan_running,
                 },
-                "opportunity_detector": {
-                    "initialized": self.opportunity_detector is not None,
+                "opportunity_manager": {
+                    "initialized": self.opportunity_manager is not None,
                 },
                 "candidate_monitor": {
                     "initialized": self.candidate_monitor is not None,
@@ -486,50 +568,3 @@ class MonitoringManager:
             },
         }
 
-    def get_monitoring_stats(self) -> Dict[str, any]:
-        """
-        Retourne les statistiques de surveillance.
-
-        Returns:
-            Dict contenant les statistiques détaillées
-        """
-        stats = {
-            "is_running": self._running,
-            "candidate_symbols_count": len(self.candidate_symbols),
-        }
-
-        # Ajouter les stats du scanner si disponible
-        if self.market_scanner and hasattr(
-            self.market_scanner, "get_scan_stats"
-        ):
-            stats["market_scanner"] = self.market_scanner.get_scan_stats()
-
-        # Ajouter les stats du détecteur si disponible
-        if self.opportunity_detector and hasattr(
-            self.opportunity_detector, "get_detection_stats"
-        ):
-            stats["opportunity_detector"] = (
-                self.opportunity_detector.get_detection_stats()
-            )
-
-        return stats
-
-    def check_components_health(self) -> bool:
-        """
-        Vérifie que tous les composants critiques sont en bonne santé.
-
-        Returns:
-            True si tous les composants sont opérationnels
-        """
-        if not self._running:
-            return False
-
-        # Vérifier le scanner de marché
-        if self.market_scanner and not self.market_scanner.is_running():
-            self.logger.warning("⚠️ MarketScanner non opérationnel")
-            return False
-
-        # Vérifier le moniteur de candidats (optionnel)
-        # Note : le CandidateMonitor peut ne pas être actif si pas de candidats
-
-        return True

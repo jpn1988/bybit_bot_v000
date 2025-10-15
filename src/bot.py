@@ -62,6 +62,7 @@ from bot_starter import BotStarter
 from bot_health_monitor import BotHealthMonitor
 from shutdown_manager import ShutdownManager
 from thread_manager import ThreadManager
+from thread_exception_handler import install_global_exception_handlers, install_asyncio_handler_if_needed
 
 
 class BotOrchestrator:
@@ -104,6 +105,10 @@ class BotOrchestrator:
         """
         self.logger = logger or setup_logging()
         self.running = True
+
+        # Installer les handlers globaux pour exceptions non capturées
+        # IMPORTANT : À faire avant de créer des threads ou tâches asyncio
+        install_global_exception_handlers(self.logger)
 
         # S'assurer que les clients HTTP sont fermés à l'arrêt
         atexit.register(close_all_http_clients)
@@ -160,6 +165,9 @@ class BotOrchestrator:
 
     async def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""
+        # Installer le handler asyncio pour la boucle événementielle actuelle
+        install_asyncio_handler_if_needed()
+        
         try:
             # 1. Charger et valider la configuration
             config = self._configurator.load_and_validate_config(
@@ -265,7 +273,7 @@ class BotOrchestrator:
             ),
         }
 
-    def stop(self):
+    async def stop(self):
         """Arrête le bot de manière propre via ShutdownManager."""
         self.logger.info("🛑 Arrêt du bot...")
         self.running = False
@@ -282,9 +290,9 @@ class BotOrchestrator:
             }
 
             # Utiliser ShutdownManager pour l'arrêt asynchrone
-            asyncio.run(
-                self._shutdown_manager.stop_all_managers_async(managers)
-            )
+            # CORRECTIF : Utiliser await au lieu d'asyncio.run()
+            # pour éviter de créer une nouvelle event loop imbriquée
+            await self._shutdown_manager.stop_all_managers_async(managers)
 
             self.logger.info("✅ Bot arrêté proprement via ShutdownManager")
 
@@ -336,7 +344,8 @@ class AsyncBotRunner:
             self.running = False
             self.logger.info("Signal d'arrêt reçu, arrêt propre du bot...")
             # Utiliser la nouvelle méthode stop() du orchestrateur refactorisé
-            self.orchestrator.stop()
+            # CORRECTIF : Utiliser await car stop() est maintenant asynchrone
+            await self.orchestrator.stop()
             # Annuler toutes les tâches restantes pour permettre l'arrêt de l'event loop
             tasks = [
                 t
@@ -351,6 +360,9 @@ class AsyncBotRunner:
 
 
 async def main_async():
+    # Installer le handler asyncio au point d'entrée principal
+    install_asyncio_handler_if_needed()
+    
     runner = AsyncBotRunner()
     await runner.start()
 
