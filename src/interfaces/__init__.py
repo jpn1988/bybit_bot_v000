@@ -8,8 +8,12 @@ du bot, permettant une meilleure testabilité et une architecture plus flexible.
 
 from .bybit_client_interface import BybitClientInterface
 from .websocket_manager_interface import WebSocketManagerInterface
+from .callback_manager_interface import CallbackManagerInterface
+from .monitoring_manager_interface import MonitoringManagerInterface
 
 __all__ = [
     "BybitClientInterface",
     "WebSocketManagerInterface",
+    "CallbackManagerInterface",
+    "MonitoringManagerInterface",
 ]

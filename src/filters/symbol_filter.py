@@ -539,6 +539,7 @@ class SymbolFilter(BaseFilter):
                 volatility_pct = (
                     symbol_data[5] if len(symbol_data) > 5 else None
                 )
+                weight = symbol_data[6] if len(symbol_data) > 6 else None
 
                 funding_data[symbol] = {
                     "funding": funding,
@@ -546,6 +547,7 @@ class SymbolFilter(BaseFilter):
                     "funding_time_remaining": funding_time_remaining,
                     "spread_pct": spread_pct,
                     "volatility_pct": volatility_pct,
+                    "weight": weight,  # Ajouter le poids calculé
                 }
 
         return funding_data

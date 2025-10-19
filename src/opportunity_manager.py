@@ -163,16 +163,18 @@ class OpportunityManager:
                     f"(WebSocket déjà actif)"
                 )
             else:
-                # CORRECTIF ARCH-001: Utiliser create_task directement depuis le bon contexte
+                # CORRECTIF ARCH-001: Utiliser create_task avec gestion d'exceptions
                 import asyncio
                 try:
                     # Essayer d'obtenir la boucle actuelle et créer une tâche
                     loop = asyncio.get_running_loop()
-                    loop.create_task(
+                    task = loop.create_task(
                         self.start_websocket_connections_async(
                             ws_manager, linear_symbols, inverse_symbols
                         )
                     )
+                    # CORRECTIF: Ajouter un callback pour gérer les exceptions
+                    task.add_done_callback(self._handle_task_exception)
                     self.logger.info(
                         f"🎯 Nouvelles opportunités intégrées: "
                         f"{len(linear_symbols)} linear, {len(inverse_symbols)} inverse"
@@ -243,13 +245,17 @@ class OpportunityManager:
             task.result()
         except asyncio.CancelledError:
             # Annulation normale, pas d'erreur
-            pass
+            self.logger.debug("🔄 Tâche WebSocket annulée normalement")
         except Exception as e:
-            # Capturer et logger toute exception
+            # Capturer et logger toute exception avec contexte
             self.logger.error(
-                f"❌ Erreur dans la tâche WebSocket: {e}",
+                f"❌ Erreur critique dans la tâche WebSocket: {e}\n"
+                f"   Type: {type(e).__name__}\n"
+                f"   Tâche: {task.get_name() if hasattr(task, 'get_name') else 'Unknown'}",
                 exc_info=True
             )
+            # Optionnel: Notifier un système de monitoring externe
+            # self._notify_monitoring_system(e)
 
     async def start_websocket_connections_async(
         self, ws_manager, linear_symbols: List[str], inverse_symbols: List[str]

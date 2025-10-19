@@ -59,6 +59,7 @@ class WatchlistDataPreparer:
             "funding_time_max_minutes": config.get(
                 "funding_time_max_minutes"
             ),
+            "weights": config.get("weights", {}),  # Configuration des poids
         }
 
     def fetch_funding_data(

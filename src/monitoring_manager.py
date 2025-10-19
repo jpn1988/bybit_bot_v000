@@ -43,17 +43,21 @@ les composants spécialisés sans implémenter directement la logique métier.
 
 import asyncio
 import time
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
 from logging_setup import setup_logging
-from data_manager import DataManager
-from watchlist_manager import WatchlistManager
-from volatility_tracker import VolatilityTracker
-from opportunity_manager import OpportunityManager
-from candidate_monitor import CandidateMonitor
+from interfaces.monitoring_manager_interface import MonitoringManagerInterface
 from config.timeouts import ScanIntervalConfig, TimeoutConfig
 
+# Éviter les imports circulaires avec TYPE_CHECKING
+if TYPE_CHECKING:
+    from data_manager import DataManager
+    from watchlist_manager import WatchlistManager
+    from volatility_tracker import VolatilityTracker
+    from opportunity_manager import OpportunityManager
+    from candidate_monitor import CandidateMonitor
 
-class MonitoringManager:
+
+class MonitoringManager(MonitoringManagerInterface):
     """
     Coordinateur de surveillance pour le bot Bybit.
 
@@ -65,12 +69,12 @@ class MonitoringManager:
 
     def __init__(
         self,
-        data_manager: DataManager,
+        data_manager: Any,
         testnet: bool = True,
         logger=None,
         scan_interval: int = None,
-        opportunity_manager: Optional[OpportunityManager] = None,
-        candidate_monitor: Optional[CandidateMonitor] = None,
+        opportunity_manager: Optional[Any] = None,
+        candidate_monitor: Optional[Any] = None,
     ):
         """
         Initialise le gestionnaire de surveillance unifié.
@@ -104,14 +108,14 @@ class MonitoringManager:
         self._last_scan_time = 0
 
         # Composants de surveillance (injection avec initialisation paresseuse)
-        self.opportunity_manager: Optional[OpportunityManager] = opportunity_manager
-        self.candidate_monitor: Optional[CandidateMonitor] = candidate_monitor
+        self.opportunity_manager: Optional[Any] = opportunity_manager
+        self.candidate_monitor: Optional[Any] = candidate_monitor
 
         # Callbacks externes
         self._on_new_opportunity_callback: Optional[Callable] = None
         self._on_candidate_ticker_callback: Optional[Callable] = None
 
-    def set_watchlist_manager(self, watchlist_manager: WatchlistManager):
+    def set_watchlist_manager(self, watchlist_manager: Any) -> None:
         """
         Définit le gestionnaire de watchlist.
 
@@ -120,7 +124,7 @@ class MonitoringManager:
         """
         self.watchlist_manager = watchlist_manager
 
-    def set_volatility_tracker(self, volatility_tracker: VolatilityTracker):
+    def set_volatility_tracker(self, volatility_tracker: Any) -> None:
         """
         Définit le tracker de volatilité.
 
@@ -138,7 +142,7 @@ class MonitoringManager:
         """
         self.ws_manager = ws_manager
 
-    def set_on_new_opportunity_callback(self, callback: Callable):
+    def set_on_new_opportunity_callback(self, callback: Callable) -> None:
         """
         Définit le callback pour les nouvelles opportunités.
 
@@ -147,7 +151,7 @@ class MonitoringManager:
         """
         self._on_new_opportunity_callback = callback
 
-    def set_on_candidate_ticker_callback(self, callback: Callable):
+    def set_on_candidate_ticker_callback(self, callback: Callable) -> None:
         """
         Définit le callback pour les tickers des candidats.
 
@@ -155,6 +159,24 @@ class MonitoringManager:
             callback: Fonction à appeler pour chaque ticker candidat
         """
         self._on_candidate_ticker_callback = callback
+
+    def set_opportunity_manager(self, opportunity_manager: Any) -> None:
+        """
+        Définit le gestionnaire d'opportunités.
+
+        Args:
+            opportunity_manager: Gestionnaire d'opportunités
+        """
+        self.opportunity_manager = opportunity_manager
+
+    def set_data_manager(self, data_manager: Any) -> None:
+        """
+        Définit le gestionnaire de données.
+
+        Args:
+            data_manager: Gestionnaire de données
+        """
+        self.data_manager = data_manager
 
     async def start_continuous_monitoring(
         self, base_url: str, perp_data: Dict
@@ -282,6 +304,9 @@ class MonitoringManager:
             self.logger.debug("→ OpportunityManager déjà initialisé, réutilisation")
             return
 
+        # Import local pour éviter les imports circulaires
+        from opportunity_manager import OpportunityManager
+        
         self.opportunity_manager = OpportunityManager(
             data_manager=self.data_manager,
             watchlist_manager=self.watchlist_manager,
@@ -302,6 +327,9 @@ class MonitoringManager:
             self.logger.debug("→ CandidateMonitor déjà initialisé, réutilisation")
             return
 
+        # Import local pour éviter les imports circulaires
+        from candidate_monitor import CandidateMonitor
+        
         self.candidate_monitor = CandidateMonitor(
             data_manager=self.data_manager,
             watchlist_manager=self.watchlist_manager,

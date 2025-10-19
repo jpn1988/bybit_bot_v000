@@ -12,9 +12,11 @@ en extrayant les responsabilités de bas niveau :
 from .data_preparer import WatchlistDataPreparer
 from .filter_applier import WatchlistFilterApplier
 from .result_builder import WatchlistResultBuilder
+from .weight_calculator import WeightCalculator
 
 __all__ = [
     "WatchlistDataPreparer",
     "WatchlistFilterApplier",
     "WatchlistResultBuilder",
+    "WeightCalculator",
 ]

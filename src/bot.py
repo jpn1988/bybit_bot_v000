@@ -53,6 +53,7 @@ from logging_setup import setup_logging
 from config import get_settings
 from http_client_manager import close_all_http_clients
 from metrics_monitor import start_metrics_monitoring
+from bybit_client import BybitClient
 
 # Import des composants refactorisés
 from bot_initializer import BotInitializer
@@ -116,6 +117,9 @@ class BotOrchestrator:
         # Configuration
         settings = get_settings()
         self.testnet = settings["testnet"]
+        
+        # Test de connexion Bybit authentifiée (exécuté dans un thread dédié pour éviter PERF-002)
+        self._test_bybit_auth_connection_sync()
 
         # Initialiser les composants spécialisés (injection avec fallback)
         self._initializer = initializer or BotInitializer(self.testnet, self.logger)
@@ -162,6 +166,91 @@ class BotOrchestrator:
         self.watchlist_manager = managers["watchlist_manager"]
         self.callback_manager = managers["callback_manager"]
         self.opportunity_manager = managers["opportunity_manager"]
+
+
+    def _test_bybit_auth_connection_sync(self) -> bool:
+        """
+        Teste la connexion à l'API Bybit avec authentification complète.
+        Vérifie les clés BYBIT_API_KEY/BYBIT_API_SECRET depuis .env
+        et log le statut de la connexion.
+        
+        Utilise concurrent.futures.ThreadPoolExecutor pour exécuter dans un thread dédié
+        et supprimer le warning PERF-002.
+        """
+        settings = get_settings()
+        testnet = settings["testnet"]
+        api_key = settings["api_key"]
+        api_secret = settings["api_secret"]
+
+        if not api_key or not api_secret:
+            self.logger.warning("🔒 Clés API non configurées : connexion authentifiée désactivée.")
+            return False
+
+        try:
+            # Exécuter la logique synchrone dans un thread dédié pour éviter PERF-002
+            def _sync_connection_test():
+                client = BybitClient(
+                    testnet=testnet,
+                    timeout=settings["timeout"],
+                    api_key=api_key,
+                    api_secret=api_secret,
+                )
+                return client.get_wallet_balance(account_type="UNIFIED")
+            
+            # Utiliser concurrent.futures pour éviter les problèmes d'event loop
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(_sync_connection_test)
+                result = future.result()
+            
+            balance = self._extract_usdt_balance(result)
+            self.logger.info(f"✅ Bybit connecté ({'testnet' if testnet else 'mainnet'}) en mode authentifié. Balance : {balance} USDT")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Vérification Bybit authentifiée échouée : {e}")
+            return False
+
+    def _extract_usdt_balance(self, wallet_response: dict) -> str:
+        """
+        Extrait le solde USDT de la réponse de l'API Bybit.
+        
+        Args:
+            wallet_response: Réponse brute de l'API get_wallet_balance
+            
+        Returns:
+            str: Solde USDT formaté ou "N/A" si non trouvé
+        """
+        try:
+            # Structure réelle: list[0].totalWalletBalance ou list[0].coin[].walletBalance
+            # L'API Bybit retourne directement { "list": [...] } sans wrapper "result"
+            account_list = wallet_response.get("list", [])
+            
+            if not account_list:
+                return "N/A"
+            
+            # Prendre le premier compte (généralement UNIFIED)
+            account = account_list[0]
+            
+            # Essayer d'abord totalWalletBalance (solde total du portefeuille)
+            total_balance = account.get("totalWalletBalance")
+            
+            if total_balance and total_balance != "0":
+                return f"{float(total_balance):.2f}"
+            
+            # Sinon, chercher dans le tableau coin pour USDT
+            coins = account.get("coin", [])
+            
+            for coin in coins:
+                if coin.get("coin") == "USDT":
+                    usdt_balance = coin.get("walletBalance", "0")
+                    return f"{float(usdt_balance):.2f}"
+            
+            # Si aucun USDT trouvé, retourner le solde total
+            return f"{float(total_balance or 0):.2f}"
+            
+        except (ValueError, TypeError, KeyError, IndexError) as e:
+            self.logger.debug(f"Erreur extraction solde USDT: {e}")
+            return "N/A"
 
     async def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""

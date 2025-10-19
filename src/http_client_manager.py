@@ -319,8 +319,21 @@ class HTTPClientManager:
             await asyncio.gather(*tasks, return_exceptions=True)
 
 
-# Instance globale du gestionnaire
-_http_manager = HTTPClientManager()
+# Instance lazy du gestionnaire (plus de variable globale)
+_http_manager: Optional[HTTPClientManager] = None
+
+
+def _get_manager() -> HTTPClientManager:
+    """
+    Obtient l'instance du gestionnaire HTTP de manière lazy.
+    
+    Returns:
+        HTTPClientManager: Instance unique du gestionnaire
+    """
+    global _http_manager
+    if _http_manager is None:
+        _http_manager = HTTPClientManager()
+    return _http_manager
 
 
 def get_http_client(timeout: int = 10) -> httpx.Client:
@@ -333,7 +346,7 @@ def get_http_client(timeout: int = 10) -> httpx.Client:
     Returns:
         httpx.Client: Client HTTP synchrone réutilisable
     """
-    return _http_manager.get_sync_client(timeout)
+    return _get_manager().get_sync_client(timeout)
 
 
 def close_all_http_clients():
@@ -341,4 +354,7 @@ def close_all_http_clients():
     Fonction de convenance pour fermer tous les clients HTTP.
     Utile pour un nettoyage explicite.
     """
-    _http_manager.close_all()
+    global _http_manager
+    if _http_manager is not None:
+        _http_manager.close_all()
+        _http_manager = None

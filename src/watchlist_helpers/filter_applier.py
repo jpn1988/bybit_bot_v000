@@ -9,6 +9,7 @@ du WatchlistManager pour améliorer la lisibilité.
 from typing import List, Tuple, Dict, Optional
 from logging_setup import setup_logging
 from instruments import category_of_symbol
+from .weight_calculator import WeightCalculator
 
 
 class WatchlistFilterApplier:
@@ -38,6 +39,7 @@ class WatchlistFilterApplier:
         self.market_data_fetcher = market_data_fetcher
         self.symbol_categories = symbol_categories
         self.logger = logger or setup_logging()
+        self.weight_calculator = WeightCalculator(logger=self.logger)
 
     def apply_funding_volume_time_filters(
         self, perp_data: Dict, funding_map: Dict, config_params: Dict
@@ -223,6 +225,50 @@ class WatchlistFilterApplier:
             final_symbols = final_symbols[:limite]
         return final_symbols, len(final_symbols)
 
+    def apply_weighting_system(
+        self, final_symbols: List, weights_config: Dict
+    ) -> Tuple[List, int]:
+        """
+        Applique le système de poids et tri intelligent.
+
+        Args:
+            final_symbols: Symboles après tous les filtres
+            weights_config: Configuration des poids depuis parameters.yaml
+
+        Returns:
+            Tuple (symboles triés par poids, nombre)
+        """
+        if not final_symbols or not weights_config:
+            return final_symbols, len(final_symbols) if final_symbols else 0
+
+        try:
+            # Appliquer le système de poids complet
+            weighted_opportunities = self.weight_calculator.process_weighted_ranking(
+                final_symbols, weights_config, self.symbol_categories
+            )
+
+            # Convertir les dictionnaires en tuples pour maintenir la compatibilité
+            # Format: (symbol, funding, volume, funding_time, spread, volatility, weight)
+            weighted_tuples = []
+            for opp in weighted_opportunities:
+                weighted_tuple = (
+                    opp['symbol'],
+                    opp['funding'],
+                    opp['volume'],
+                    opp['funding_time'],
+                    opp['spread'],
+                    opp['volatility'],
+                    opp['weight']
+                )
+                weighted_tuples.append(weighted_tuple)
+
+            return weighted_tuples, len(weighted_tuples)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur lors de l'application du système de poids: {e}")
+            # Retourner les symboles originaux en cas d'erreur
+            return final_symbols, len(final_symbols)
+
     def apply_all_filters(
         self,
         perp_data: Dict,
@@ -265,9 +311,14 @@ class WatchlistFilterApplier:
             final_symbols, volatility_tracker, config_params
         )
 
-        # Appliquer la limite finale
+        # Appliquer la limite finale (AVANT le système de poids)
         final_symbols, n3 = self.apply_final_limit(
             final_symbols, config_params["limite"]
+        )
+
+        # Appliquer le système de poids et tri intelligent (NOUVEAU)
+        final_symbols, n4 = self.apply_weighting_system(
+            final_symbols, config_params.get("weights", {})
         )
 
         # Retourner les symboles finaux et les métriques
@@ -278,6 +329,7 @@ class WatchlistFilterApplier:
             "n_before_volatility": n_before_volatility,
             "n_after_volatility": n_after_volatility,
             "n3": n3,
+            "n4": n4,  # Nombre après application du système de poids
         }
 
         return final_symbols, filter_metrics
