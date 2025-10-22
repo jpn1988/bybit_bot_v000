@@ -127,6 +127,7 @@ class ConfigManager:
             "funding_time_min_minutes": None,
             "funding_time_max_minutes": None,
             "display_interval_seconds": 10,
+            "funding_threshold_minutes": 60,  # Seuil par défaut pour le Scheduler
         }
     
     def _load_yaml_config(self, config: Dict) -> None:

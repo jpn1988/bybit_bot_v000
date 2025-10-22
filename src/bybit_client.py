@@ -266,6 +266,38 @@ class BybitClient(BybitClientInterface):
         # Exécuter la requête avec retry (privée = True)
         return self._execute_request_with_retry(url, headers, is_private=True)
 
+    def _post_private(self, path: str, data: dict = None) -> dict:
+        """
+        Effectue une requête POST privée authentifiée.
+
+        Args:
+            path (str): Chemin de l'endpoint
+            data (dict): Données JSON à envoyer dans le body
+
+        Returns:
+            dict: Réponse JSON de l'API
+
+        Raises:
+            RuntimeError: En cas d'erreur HTTP ou API
+        """
+        data = data or {}
+
+        # Pour les requêtes POST, nous devons inclure les données JSON dans la signature
+        import json
+        json_data = json.dumps(data, separators=(',', ':'))  # Format compact sans espaces
+        
+        # Construire les headers d'authentification avec les données JSON
+        headers, query_string = self._build_auth_headers({}, json_data)
+
+        # Construire l'URL complète
+        url = self._build_request_url(path, query_string)
+
+        # Ajouter Content-Type pour POST
+        headers["Content-Type"] = "application/json"
+
+        # Exécuter la requête POST avec retry
+        return self._execute_post_request_with_retry(url, headers, data, is_private=True)
+
     def _get_public(self, path: str, params: dict = None) -> dict:
         """
         Effectue une requête GET publique sans authentification.
@@ -321,7 +353,7 @@ class BybitClient(BybitClientInterface):
             record_api_call(latency, success=False)
             raise RuntimeError(f"Erreur requête publique Bybit: {e}") from e
 
-    def _build_auth_headers(self, params: dict) -> tuple[dict, str]:
+    def _build_auth_headers(self, params: dict, json_data: str = None) -> tuple[dict, str]:
         """
         Construit les headers d'authentification HMAC-SHA256 pour une requête privée Bybit v5.
         
@@ -376,11 +408,19 @@ class BybitClient(BybitClientInterface):
         query_string = "&".join(
             [f"{k}={v}" for k, v in sorted(params.items())]
         )
+        
+        # Pour les requêtes POST, inclure les données JSON dans la signature
+        if json_data:
+            # Pour POST, la signature doit inclure les données JSON
+            payload_data = json_data
+        else:
+            # Pour GET, utiliser la query string
+            payload_data = query_string
 
         # Générer la signature HMAC-SHA256 du payload
         # Le payload est construit selon le format Bybit v5
         signature = self._generate_signature(
-            timestamp, recv_window_ms, query_string
+            timestamp, recv_window_ms, payload_data
         )
 
         # Construire les headers d'authentification
@@ -584,6 +624,162 @@ class BybitClient(BybitClientInterface):
 
         # Échec après tous les retries
         self._handle_final_failure(start_time)
+
+    def _execute_post_request_with_retry(self, url: str, headers: dict, data: dict, is_private: bool = True) -> dict:
+        """
+        Exécute une requête POST HTTP avec mécanisme de retry et Circuit Breaker.
+
+        Args:
+            url: URL de la requête
+            headers: Headers HTTP
+            data: Données JSON à envoyer
+            is_private: Si c'est une requête privée (pour rate limiting)
+
+        Returns:
+            Réponse JSON décodée
+
+        Raises:
+            RuntimeError: En cas d'erreur
+            CircuitBreakerOpen: Si le circuit breaker est ouvert
+        """
+        # CORRECTIF PERF-001: Appliquer rate limiting avant requête
+        self._apply_rate_limiting(is_private)
+        
+        # Wrapper avec Circuit Breaker pour protection contre erreurs répétées
+        try:
+            return self.circuit_breaker.call(
+                self._execute_post_request_internal,
+                url,
+                headers,
+                data
+            )
+        except CircuitBreakerOpen as e:
+            # Circuit ouvert : API temporairement indisponible
+            raise RuntimeError(
+                f"⚠️ API Bybit temporairement indisponible - "
+                f"Circuit Breaker ouvert (trop d'erreurs récentes). "
+                f"Réessayez dans quelques instants."
+            ) from e
+
+    def _execute_post_request_internal(self, url: str, headers: dict, data: dict) -> dict:
+        """
+        Méthode interne pour l'exécution de requête POST (utilisée par Circuit Breaker).
+        
+        Args:
+            url: URL de la requête
+            headers: Headers HTTP
+            data: Données JSON à envoyer
+            
+        Returns:
+            Réponse JSON décodée
+            
+        Raises:
+            RuntimeError: En cas d'erreur
+        """
+        # Utiliser les paramètres configurables de l'instance
+        max_attempts = self.max_retries
+        backoff_base = self.backoff_base
+        start_time = time.time()
+
+        # Exécuter la boucle de retry pour POST
+        result = self._handle_post_retry_loop(
+            url, headers, data, max_attempts, backoff_base, start_time
+        )
+
+        if result is not None:
+            return result
+
+        # Échec après tous les retries
+        self._handle_final_failure(start_time)
+
+    def _handle_post_retry_loop(
+        self,
+        url: str,
+        headers: dict,
+        data: dict,
+        max_attempts: int,
+        backoff_base: float,
+        start_time: float,
+    ) -> dict | None:
+        """Gère la boucle de retry pour les requêtes POST HTTP."""
+        last_error: Exception | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Effectuer la requête POST et traiter la réponse
+                return self._process_successful_post_request(
+                    url,
+                    headers,
+                    data,
+                    attempt,
+                    max_attempts,
+                    backoff_base,
+                    start_time,
+                )
+
+            except (
+                httpx.TimeoutException,
+                httpx.ReadTimeout,
+                httpx.ConnectTimeout,
+            ) as e:
+                last_error = e
+                if not self._should_retry(attempt, max_attempts):
+                    break
+                self._wait_before_retry(attempt, backoff_base)
+
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                last_error = e
+                if not self._should_retry(attempt, max_attempts):
+                    break
+                self._wait_before_retry(attempt, backoff_base)
+
+            except (ValueError, TypeError, KeyError) as e:
+                # Erreurs de données - pas de retry
+                last_error = e
+                break
+
+            except Exception as e:
+                # Propager les erreurs formatées connues
+                if "Erreur" in str(e):
+                    raise
+                last_error = e
+                break
+
+        # Échec - préparer l'erreur finale
+        self._prepare_final_error(last_error)
+        return None
+
+    def _process_successful_post_request(
+        self,
+        url: str,
+        headers: dict,
+        data: dict,
+        attempt: int,
+        max_attempts: int,
+        backoff_base: float,
+        start_time: float,
+    ) -> dict:
+        """Traite une requête POST HTTP réussie."""
+        # Effectuer la requête POST
+        client = get_http_client(timeout=self.timeout)
+        response = client.post(url, headers=headers, json=data)
+
+        # Gérer la réponse HTTP
+        self._handle_http_response(
+            response, attempt, max_attempts, backoff_base
+        )
+
+        # Décoder et valider la réponse API
+        data = response.json()
+        self._handle_api_response(
+            data, response, attempt, max_attempts, backoff_base
+        )
+
+        # Succès - enregistrer les métriques
+        latency = time.time() - start_time
+        record_api_call(latency, success=True)
+
+        return data.get("result", {})
 
     def _handle_retry_loop(
         self,
@@ -1057,6 +1253,45 @@ class BybitClient(BybitClientInterface):
         """Remet à zéro le compteur de rate limiting."""
         self.circuit_breaker.reset()
 
+    def place_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str = "Limit",
+        qty: str = None,
+        price: str = None,
+        category: str = "linear"
+    ) -> Dict[str, Any]:
+        """
+        Place un ordre sur Bybit.
+        
+        Args:
+            symbol: Symbole de la paire (ex: "BTCUSDT")
+            side: "Buy" ou "Sell"
+            order_type: Type d'ordre ("Limit", "Market", etc.)
+            qty: Quantité à trader
+            price: Prix limite (requis pour les ordres Limit)
+            category: Catégorie ("linear", "inverse", "spot")
+            
+        Returns:
+            Dict contenant la réponse de l'API avec l'ID de l'ordre
+            
+        Raises:
+            RuntimeError: En cas d'erreur API
+        """
+        order_data = {
+            "category": category,
+            "symbol": symbol,
+            "side": side,
+            "orderType": order_type,
+            "qty": qty
+        }
+        
+        if order_type == "Limit" and price:
+            order_data["price"] = price
+            
+        return self._post_private("/v5/order/create", order_data)
+
 
 class BybitPublicClient(BybitClientInterface):
     """Client public Bybit v5 (aucune clé requise)."""
@@ -1127,5 +1362,17 @@ class BybitPublicClient(BybitClientInterface):
         raise NotImplementedError("Client public - API privées non supportées")
 
     def get_open_orders(self, category: str = "linear") -> Dict[str, Any]:
+        """Non supporté - le client public n'a pas accès aux API privées."""
+        raise NotImplementedError("Client public - API privées non supportées")
+    
+    def place_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str = "Limit",
+        qty: str = None,
+        price: str = None,
+        category: str = "linear"
+    ) -> Dict[str, Any]:
         """Non supporté - le client public n'a pas accès aux API privées."""
         raise NotImplementedError("Client public - API privées non supportées")

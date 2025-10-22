@@ -63,6 +63,7 @@ from bot_starter import BotStarter
 from bot_health_monitor import BotHealthMonitor
 from shutdown_manager import ShutdownManager
 from thread_manager import ThreadManager
+from scheduler_manager import SchedulerManager
 from thread_exception_handler import install_global_exception_handlers, install_asyncio_handler_if_needed
 
 
@@ -131,6 +132,8 @@ class BotOrchestrator:
         # Initialiser les nouveaux managers
         self._shutdown_manager = shutdown_manager or ShutdownManager(self.logger)
         self._thread_manager = thread_manager or ThreadManager(self.logger)
+        # Scheduler sera initialisé avec la configuration dans start()
+        self.scheduler = None
 
         # Initialiser les managers via l'initialiseur
         self._initialize_components()
@@ -189,13 +192,13 @@ class BotOrchestrator:
         try:
             # Exécuter la logique synchrone dans un thread dédié pour éviter PERF-002
             def _sync_connection_test():
-                client = BybitClient(
+                self.bybit_client = BybitClient(
                     testnet=testnet,
                     timeout=settings["timeout"],
                     api_key=api_key,
                     api_secret=api_secret,
                 )
-                return client.get_wallet_balance(account_type="UNIFIED")
+                return self.bybit_client.get_wallet_balance(account_type="UNIFIED")
             
             # Utiliser concurrent.futures pour éviter les problèmes d'event loop
             import concurrent.futures
@@ -307,8 +310,69 @@ class BotOrchestrator:
             perp_data,
         )
 
-        # 7. Maintenir le bot en vie avec une boucle d'attente
+        # 7. Initialiser et démarrer le Scheduler pour la surveillance du funding
+        funding_threshold = config.get('funding_threshold_minutes', 60)
+        auto_trading_config = config.get('auto_trading', {})
+        self.scheduler = SchedulerManager(
+            self.logger, 
+            funding_threshold, 
+            bybit_client=self.bybit_client,
+            auto_trading_config=auto_trading_config
+        )
+        # Passer une fonction callback pour récupérer les données à jour
+        asyncio.create_task(self.scheduler.run_with_callback(self._get_funding_data_for_scheduler))
+
+        # 8. Maintenir le bot en vie avec une boucle d'attente
         await self._keep_bot_alive()
+
+    def _get_funding_data_for_scheduler(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Récupère les données de funding formatées pour le Scheduler.
+        Calcule dynamiquement le temps restant à partir des timestamps temps réel.
+        
+        Returns:
+            Dict avec les données de funding formatées pour chaque symbole
+        """
+        funding_data = {}
+        selected_symbols = self.watchlist_manager.get_selected_symbols()
+        self.logger.debug(f"[SCHEDULER] Symboles sélectionnés: {len(selected_symbols)}")
+        
+        for symbol in selected_symbols:
+            # Récupérer les données temps réel (mises à jour via WebSocket)
+            realtime_info = self.data_manager.storage.get_realtime_data(symbol)
+            
+            if realtime_info and realtime_info.get("next_funding_time"):
+                # Calculer le temps restant à partir du timestamp temps réel
+                next_funding_timestamp = realtime_info["next_funding_time"]
+                funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(next_funding_timestamp)
+                
+                funding_data[symbol] = {
+                    'next_funding_time': funding_time_str,  # Recalculé dynamiquement
+                    'funding_rate': realtime_info.get('funding_rate'),
+                    'volume_24h': realtime_info.get('volume24h')
+                }
+                self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (temps réel)")
+            else:
+                # Fallback sur les données originales si pas de données temps réel
+                funding_obj = self.data_manager.storage.get_funding_data_object(symbol)
+                if funding_obj:
+                    original_timestamp = self.data_manager.storage.get_original_funding_data(symbol)
+                    if original_timestamp:
+                        funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(original_timestamp)
+                    else:
+                        funding_time_str = funding_obj.next_funding_time
+                        
+                    funding_data[symbol] = {
+                        'next_funding_time': funding_time_str,
+                        'funding_rate': funding_obj.funding_rate,
+                        'volume_24h': funding_obj.volume_24h
+                    }
+                    self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (fallback)")
+                else:
+                    self.logger.debug(f"[SCHEDULER] Aucune donnée pour {symbol}")
+        
+        self.logger.debug(f"[SCHEDULER] Données récupérées: {len(funding_data)} symboles")
+        return funding_data
 
     async def _keep_bot_alive(self):
         """Maintient le bot en vie avec une boucle d'attente et monitoring mémoire."""

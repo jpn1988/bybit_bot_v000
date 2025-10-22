@@ -241,3 +241,32 @@ class BybitClientInterface(ABC):
         Remet à zéro le compteur de rate limiting.
         """
         pass
+    
+    @abstractmethod
+    def place_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str = "Limit",
+        qty: str = None,
+        price: str = None,
+        category: str = "linear"
+    ) -> Dict[str, Any]:
+        """
+        Place un ordre sur Bybit (API privée).
+        
+        Args:
+            symbol: Symbole de la paire (ex: "BTCUSDT")
+            side: "Buy" ou "Sell"
+            order_type: Type d'ordre ("Limit", "Market", etc.)
+            qty: Quantité à trader
+            price: Prix limite (requis pour les ordres Limit)
+            category: Catégorie ("linear", "inverse", "spot")
+            
+        Returns:
+            Dict contenant la réponse de l'API avec l'ID de l'ordre
+            
+        Raises:
+            Exception: En cas d'erreur API ou d'authentification
+        """
+        pass

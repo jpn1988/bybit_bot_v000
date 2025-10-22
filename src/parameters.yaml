@@ -46,3 +46,20 @@ weights:
 # Configuration de l'affichage
 # ============================================
 display_interval_seconds: 1 # Intervalle d'affichage de la watchlist (secondes)
+
+# ============================================
+# Configuration du Scheduler
+# ============================================
+# Seuil de détection du funding imminent (en minutes)
+# Le scheduler alertera quand le funding time est <= à cette valeur
+funding_threshold_minutes: 134  # ex: 60 = alerte 1h avant funding, 10 = 10min avant, 1 = 1min avant
+
+# ============================================
+# Configuration du trading automatique
+# ============================================
+# Paramètres pour le passage d'ordres automatiques via le scheduler
+auto_trading:
+  enabled: true                    # Activer/désactiver le trading automatique
+  order_size_usdt: 10             # Taille de l'ordre en USDT (montant minimum)
+  order_offset_percent: 0.1        # Offset du prix limite (0.1 = 0.1% au-dessus du prix actuel)
+  dry_run: false                   # Mode test (true = ne pas passer d'ordres réels)
