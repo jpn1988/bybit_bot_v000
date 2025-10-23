@@ -64,6 +64,8 @@ from bot_health_monitor import BotHealthMonitor
 from shutdown_manager import ShutdownManager
 from thread_manager import ThreadManager
 from scheduler_manager import SchedulerManager
+from position_monitor import PositionMonitor
+from funding_close_manager import FundingCloseManager
 from thread_exception_handler import install_global_exception_handlers, install_asyncio_handler_if_needed
 
 
@@ -134,6 +136,10 @@ class BotOrchestrator:
         self._thread_manager = thread_manager or ThreadManager(self.logger)
         # Scheduler sera initialisé avec la configuration dans start()
         self.scheduler = None
+        
+        # PositionMonitor pour surveiller les positions
+        self.position_monitor = None
+        self.funding_close_manager = None
 
         # Initialiser les managers via l'initialiseur
         self._initialize_components()
@@ -149,8 +155,11 @@ class BotOrchestrator:
 
         # Stocker la référence au moniteur de métriques pour l'arrêt
         from metrics_monitor import metrics_monitor
-
         self.metrics_monitor = metrics_monitor
+
+    # ============================================================================
+    # MÉTHODES D'INITIALISATION
+    # ============================================================================
 
     def _initialize_components(self):
         """Initialise tous les composants du bot."""
@@ -169,7 +178,6 @@ class BotOrchestrator:
         self.watchlist_manager = managers["watchlist_manager"]
         self.callback_manager = managers["callback_manager"]
         self.opportunity_manager = managers["opportunity_manager"]
-
 
     def _test_bybit_auth_connection_sync(self) -> bool:
         """
@@ -255,6 +263,10 @@ class BotOrchestrator:
             self.logger.debug(f"Erreur extraction solde USDT: {e}")
             return "N/A"
 
+    # ============================================================================
+    # MÉTHODES DE DÉMARRAGE
+    # ============================================================================
+
     async def start(self):
         """Démarre le suivi des prix avec filtrage par funding."""
         # Installer le handler asyncio pour la boucle événementielle actuelle
@@ -311,19 +323,169 @@ class BotOrchestrator:
         )
 
         # 7. Initialiser et démarrer le Scheduler pour la surveillance du funding
+        self._initialize_scheduler(config)
+
+        # 8. Initialiser le PositionMonitor
+        self._initialize_position_monitor()
+        
+        # 9. Initialiser le FundingCloseManager
+        self._initialize_funding_close_manager()
+        
+        # 10. Définir le callback du scheduler après l'initialisation
+        if self.scheduler:
+            self.scheduler.on_position_opened_callback = self._on_position_opened
+
+        # 11. Maintenir le bot en vie avec une boucle d'attente
+        await self._keep_bot_alive()
+
+    def _initialize_scheduler(self, config):
+        """Initialise le SchedulerManager pour la surveillance du funding."""
         funding_threshold = config.get('funding_threshold_minutes', 60)
         auto_trading_config = config.get('auto_trading', {})
         self.scheduler = SchedulerManager(
             self.logger, 
             funding_threshold, 
             bybit_client=self.bybit_client,
-            auto_trading_config=auto_trading_config
+            auto_trading_config=auto_trading_config,
+            on_position_opened_callback=None  # Sera défini après
         )
         # Passer une fonction callback pour récupérer les données à jour
         asyncio.create_task(self.scheduler.run_with_callback(self._get_funding_data_for_scheduler))
 
-        # 8. Maintenir le bot en vie avec une boucle d'attente
-        await self._keep_bot_alive()
+    def _initialize_position_monitor(self):
+        """
+        Initialise le PositionMonitor avec les callbacks appropriés.
+        """
+        try:
+            self.position_monitor = PositionMonitor(
+                testnet=self.testnet,
+                logger=self.logger,
+                on_position_opened=self._on_position_opened,
+                on_position_closed=self._on_position_closed
+            )
+            
+            # Démarrer le PositionMonitor
+            self.position_monitor.start()
+            
+            self.logger.info("🔍 PositionMonitor initialisé")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur initialisation PositionMonitor: {e}")
+            self.position_monitor = None
+
+    def _initialize_funding_close_manager(self):
+        """Initialise le FundingCloseManager pour fermeture automatique après funding."""
+        try:
+            self.funding_close_manager = FundingCloseManager(
+                testnet=self.testnet,
+                logger=self.logger,
+                bybit_client=self.bybit_client,
+                on_position_closed=self._on_position_closed
+            )
+            self.funding_close_manager.start()
+            self.logger.info("💰 FundingCloseManager initialisé")
+        except Exception as e:
+            self.logger.error(f"❌ Erreur initialisation FundingCloseManager: {e}")
+            self.funding_close_manager = None
+
+    # ============================================================================
+    # MÉTHODES DE CALLBACK POUR LES POSITIONS
+    # ============================================================================
+
+    def _on_position_opened(self, symbol: str, position_data: Dict[str, Any]):
+        """
+        Callback appelé lors de l'ouverture d'une position.
+        
+        Args:
+            symbol: Symbole de la position ouverte
+            position_data: Données de la position
+        """
+        try:
+            self.logger.info(f"📈 Position ouverte détectée: {symbol}")
+            
+            # Ajouter la position active
+            if self.monitoring_manager:
+                self.monitoring_manager.add_active_position(symbol)
+            
+            # Basculer vers le symbole unique seulement si c'est la première position
+            if self.ws_manager and len(self.monitoring_manager.get_active_positions()) == 1:
+                self._switch_to_single_symbol(symbol)
+            
+            # Filtrer l'affichage vers le symbole unique
+            if self.display_manager:
+                self.display_manager.set_symbol_filter({symbol})
+            
+            # Ajouter la position à la surveillance du funding
+            if self.funding_close_manager:
+                self.funding_close_manager.add_position_to_monitor(symbol)
+            
+            self.logger.info(f"⏸️ Watchlist en pause - Position ouverte sur {symbol}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur callback position ouverte: {e}")
+
+    def _switch_to_single_symbol(self, symbol: str):
+        """Bascule vers un symbole unique dans le WebSocket."""
+        # Déterminer la catégorie du symbole
+        category = "linear" if symbol.endswith("USDT") else "inverse"
+        
+        # Basculer vers le symbole unique (asynchrone)
+        import asyncio
+        asyncio.create_task(
+            self.ws_manager.switch_to_single_symbol(symbol, category)
+        )
+
+    def _on_position_closed(self, symbol: str, position_data: Dict[str, Any]):
+        """
+        Callback appelé lors de la fermeture d'une position.
+        
+        Args:
+            symbol: Symbole de la position fermée
+            position_data: Données de la position
+        """
+        try:
+            self.logger.info(f"📉 Position fermée détectée: {symbol}")
+            
+            # Retirer la position active
+            if self.monitoring_manager:
+                self.monitoring_manager.remove_active_position(symbol)
+            
+            # Retirer aussi du scheduler
+            if self.scheduler:
+                self.scheduler.remove_position(symbol)
+            
+            # Restaurer la watchlist complète seulement si plus de positions actives
+            if (self.ws_manager and self.data_manager and 
+                not self.monitoring_manager.has_active_positions()):
+                self._restore_full_watchlist()
+            
+            # Restaurer l'affichage de tous les symboles
+            if self.display_manager:
+                self.display_manager.clear_symbol_filter()
+            
+            # Retirer la position de la surveillance du funding
+            if self.funding_close_manager:
+                self.funding_close_manager.remove_position_from_monitor(symbol)
+            
+            self.logger.info("▶️ Watchlist reprise - Position fermée")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur callback position fermée: {e}")
+
+    def _restore_full_watchlist(self):
+        """Restaure la watchlist complète dans le WebSocket."""
+        linear_symbols = self.data_manager.storage.get_linear_symbols()
+        inverse_symbols = self.data_manager.storage.get_inverse_symbols()
+        
+        # Restaurer la watchlist complète (asynchrone)
+        import asyncio
+        asyncio.create_task(
+            self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
+        )
+
+    # ============================================================================
+    # MÉTHODES DE DONNÉES ET MONITORING
+    # ============================================================================
 
     def _get_funding_data_for_scheduler(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -338,41 +500,54 @@ class BotOrchestrator:
         self.logger.debug(f"[SCHEDULER] Symboles sélectionnés: {len(selected_symbols)}")
         
         for symbol in selected_symbols:
-            # Récupérer les données temps réel (mises à jour via WebSocket)
-            realtime_info = self.data_manager.storage.get_realtime_data(symbol)
-            
-            if realtime_info and realtime_info.get("next_funding_time"):
-                # Calculer le temps restant à partir du timestamp temps réel
-                next_funding_timestamp = realtime_info["next_funding_time"]
-                funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(next_funding_timestamp)
-                
-                funding_data[symbol] = {
-                    'next_funding_time': funding_time_str,  # Recalculé dynamiquement
-                    'funding_rate': realtime_info.get('funding_rate'),
-                    'volume_24h': realtime_info.get('volume24h')
-                }
-                self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (temps réel)")
-            else:
-                # Fallback sur les données originales si pas de données temps réel
-                funding_obj = self.data_manager.storage.get_funding_data_object(symbol)
-                if funding_obj:
-                    original_timestamp = self.data_manager.storage.get_original_funding_data(symbol)
-                    if original_timestamp:
-                        funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(original_timestamp)
-                    else:
-                        funding_time_str = funding_obj.next_funding_time
-                        
-                    funding_data[symbol] = {
-                        'next_funding_time': funding_time_str,
-                        'funding_rate': funding_obj.funding_rate,
-                        'volume_24h': funding_obj.volume_24h
-                    }
-                    self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (fallback)")
-                else:
-                    self.logger.debug(f"[SCHEDULER] Aucune donnée pour {symbol}")
+            funding_info = self._get_symbol_funding_data(symbol)
+            if funding_info:
+                funding_data[symbol] = funding_info
         
         self.logger.debug(f"[SCHEDULER] Données récupérées: {len(funding_data)} symboles")
         return funding_data
+
+    def _get_symbol_funding_data(self, symbol: str) -> Dict[str, Any]:
+        """Récupère les données de funding pour un symbole spécifique."""
+        # Récupérer les données temps réel (mises à jour via WebSocket)
+        realtime_info = self.data_manager.storage.get_realtime_data(symbol)
+        
+        if realtime_info and realtime_info.get("next_funding_time"):
+            # Calculer le temps restant à partir du timestamp temps réel
+            next_funding_timestamp = realtime_info["next_funding_time"]
+            funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(next_funding_timestamp)
+            
+            funding_data = {
+                'next_funding_time': funding_time_str,  # Recalculé dynamiquement
+                'funding_rate': realtime_info.get('funding_rate'),
+                'volume_24h': realtime_info.get('volume24h')
+            }
+            self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (temps réel)")
+            return funding_data
+        else:
+            # Fallback sur les données originales si pas de données temps réel
+            return self._get_fallback_funding_data(symbol)
+
+    def _get_fallback_funding_data(self, symbol: str) -> Dict[str, Any]:
+        """Récupère les données de funding en fallback depuis les données originales."""
+        funding_obj = self.data_manager.storage.get_funding_data_object(symbol)
+        if funding_obj:
+            original_timestamp = self.data_manager.storage.get_original_funding_data(symbol)
+            if original_timestamp:
+                funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(original_timestamp)
+            else:
+                funding_time_str = funding_obj.next_funding_time
+                
+            funding_data = {
+                'next_funding_time': funding_time_str,
+                'funding_rate': funding_obj.funding_rate,
+                'volume_24h': funding_obj.volume_24h
+            }
+            self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (fallback)")
+            return funding_data
+        else:
+            self.logger.debug(f"[SCHEDULER] Aucune donnée pour {symbol}")
+            return None
 
     async def _keep_bot_alive(self):
         """Maintient le bot en vie avec une boucle d'attente et monitoring mémoire."""
@@ -404,6 +579,10 @@ class BotOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Erreur dans la boucle principale: {e}")
             self.running = False
+
+    # ============================================================================
+    # MÉTHODES DE STATUT ET ARRÊT
+    # ============================================================================
 
     def get_status(self) -> Dict[str, Any]:
         """
@@ -442,6 +621,9 @@ class BotOrchestrator:
                 "metrics_monitor": self.metrics_monitor,
             }
 
+            # Arrêter les composants spécialisés
+            await self._stop_specialized_components()
+
             # Utiliser ShutdownManager pour l'arrêt asynchrone
             # CORRECTIF : Utiliser await au lieu d'asyncio.run()
             # pour éviter de créer une nouvelle event loop imbriquée
@@ -451,6 +633,24 @@ class BotOrchestrator:
 
         except Exception as e:
             self.logger.error(f"❌ Erreur lors de l'arrêt: {e}")
+
+    async def _stop_specialized_components(self):
+        """Arrête les composants spécialisés (PositionMonitor, FundingCloseManager)."""
+        # Arrêter le PositionMonitor si actif
+        if self.position_monitor:
+            try:
+                self.position_monitor.stop()
+                self.logger.info("🔍 PositionMonitor arrêté")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erreur arrêt PositionMonitor: {e}")
+        
+        # Arrêter le FundingCloseManager si actif
+        if self.funding_close_manager:
+            try:
+                self.funding_close_manager.stop()
+                self.logger.info("💰 FundingCloseManager arrêté")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Erreur arrêt FundingCloseManager: {e}")
 
 
 class AsyncBotRunner:
@@ -468,17 +668,7 @@ class AsyncBotRunner:
         self.logger.info("Démarrage du bot Bybit (mode asynchrone)...")
         try:
             # Configurer le signal handler pour l'arrêt propre (Windows compatible)
-            try:
-                loop = asyncio.get_running_loop()
-                for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.add_signal_handler(
-                        sig, lambda: asyncio.create_task(self.stop())
-                    )
-            except NotImplementedError:
-                # Sur Windows, les signal handlers ne sont pas supportés
-                self.logger.debug(
-                    "Signal handlers non supportés sur cette plateforme"
-                )
+            self._setup_signal_handlers()
 
             await self.orchestrator.start()
         except asyncio.CancelledError:
@@ -491,6 +681,20 @@ class AsyncBotRunner:
         finally:
             self.logger.info("Bot Bybit arrêté.")
 
+    def _setup_signal_handlers(self):
+        """Configure les signal handlers pour l'arrêt propre."""
+        try:
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(
+                    sig, lambda: asyncio.create_task(self.stop())
+                )
+        except NotImplementedError:
+            # Sur Windows, les signal handlers ne sont pas supportés
+            self.logger.debug(
+                "Signal handlers non supportés sur cette plateforme"
+            )
+
     async def stop(self):
         """Arrête le bot de manière asynchrone."""
         if self.running:
@@ -500,16 +704,20 @@ class AsyncBotRunner:
             # CORRECTIF : Utiliser await car stop() est maintenant asynchrone
             await self.orchestrator.stop()
             # Annuler toutes les tâches restantes pour permettre l'arrêt de l'event loop
-            tasks = [
-                t
-                for t in asyncio.all_tasks()
-                if t is not asyncio.current_task()
-            ]
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await self._cancel_remaining_tasks()
             self.logger.info("Toutes les tâches asynchrones ont été annulées.")
             sys.exit(0)  # Forcer la sortie après l'arrêt propre
+
+    async def _cancel_remaining_tasks(self):
+        """Annule toutes les tâches asyncio restantes."""
+        tasks = [
+            t
+            for t in asyncio.all_tasks()
+            if t is not asyncio.current_task()
+        ]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def main_async():

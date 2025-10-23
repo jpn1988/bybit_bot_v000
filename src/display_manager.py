@@ -207,6 +207,9 @@ class DisplayManager:
 
         # Formateur de tableaux
         self._formatter = TableFormatter()
+        
+        # Filtrage des symboles à afficher (pour mode position unique)
+        self._filtered_symbols: Optional[set] = None
 
     def set_volatility_callback(self, callback: callable):
         """
@@ -216,6 +219,26 @@ class DisplayManager:
             callback: Fonction qui retourne la volatilité pour un symbole
         """
         self._formatter.set_volatility_callback(callback)
+
+    def set_symbol_filter(self, symbols: Optional[set]):
+        """
+        Définit les symboles à afficher (filtrage).
+        
+        Args:
+            symbols: Set des symboles à afficher, ou None pour afficher tous
+        """
+        self._filtered_symbols = symbols
+        if symbols:
+            self.logger.info(f"🎯 Affichage filtré vers {len(symbols)} symboles: {list(symbols)}")
+        else:
+            self.logger.info("📊 Affichage de tous les symboles")
+
+    def clear_symbol_filter(self):
+        """
+        Supprime le filtre de symboles (affiche tous les symboles).
+        """
+        self._filtered_symbols = None
+        self.logger.info("📊 Filtre de symboles supprimé - Affichage de tous les symboles")
 
     def set_display_interval(self, interval_seconds: int):
         """
@@ -302,6 +325,17 @@ class DisplayManager:
             if self._first_display:
                 self._first_display = False
             return
+
+        # Appliquer le filtre de symboles si défini
+        if self._filtered_symbols is not None:
+            funding_data_objects = {
+                symbol: data for symbol, data in funding_data_objects.items()
+                if symbol in self._filtered_symbols
+            }
+            if not funding_data_objects:
+                if self._first_display:
+                    self._first_display = False
+                return
 
         # Pour la compatibilité avec calculate_column_widths qui attend un Dict
         funding_data_keys = funding_data_objects

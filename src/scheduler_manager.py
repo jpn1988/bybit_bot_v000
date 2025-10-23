@@ -38,7 +38,7 @@ class SchedulerManager:
     notamment pour le funding sniping et autres tâches programmées.
     """
 
-    def __init__(self, logger, funding_threshold_minutes=60, bybit_client=None, auto_trading_config=None):
+    def __init__(self, logger, funding_threshold_minutes=60, bybit_client=None, auto_trading_config=None, on_position_opened_callback=None):
         """
         Initialise le gestionnaire de planification.
         
@@ -47,20 +47,45 @@ class SchedulerManager:
             funding_threshold_minutes: Seuil de détection du funding imminent (en minutes)
             bybit_client: Client Bybit pour passer des ordres (optionnel)
             auto_trading_config: Configuration du trading automatique (optionnel)
+            on_position_opened_callback: Callback appelé lors de l'ouverture d'une position (optionnel)
         """
         self.logger = logger
         self.scan_interval = 5  # secondes
         self.funding_threshold_minutes = funding_threshold_minutes
         self.bybit_client = bybit_client
         self.auto_trading_config = auto_trading_config or {}
+        self.on_position_opened_callback = on_position_opened_callback
         
         # Tracking des ordres passés pour éviter les doublons
         self.orders_placed = set()
+        
+        # Limite du nombre de positions simultanées
+        self.max_positions = auto_trading_config.get('max_positions', 1)
+        self.current_positions = set()
         
         # Optimisation: éviter les scans trop fréquents
         self.last_scan_time = 0
         
         self.logger.info("🕒 Scheduler initialisé")
+
+    def remove_position(self, symbol: str):
+        """
+        Retire une position de la liste des positions actives.
+        
+        Args:
+            symbol: Symbole de la position fermée
+        """
+        if symbol in self.current_positions:
+            self.current_positions.remove(symbol)
+            self.logger.info(f"📉 Position retirée: {symbol} - Positions restantes: {len(self.current_positions)}/{self.max_positions}")
+
+    def reset_orders(self):
+        """
+        Réinitialise la liste des ordres tentés.
+        Utile pour permettre de retenter des ordres après un redémarrage.
+        """
+        self.orders_placed.clear()
+        self.logger.info("🔄 Liste des ordres tentés réinitialisée")
 
     def set_threshold(self, minutes: float):
         """
@@ -109,8 +134,14 @@ class SchedulerManager:
         if not self.auto_trading_config.get('enabled', False):
             return False
             
+        # Vérifier la limite de positions simultanées
+        if len(self.current_positions) >= self.max_positions:
+            self.logger.debug(f"🚫 Limite de positions atteinte ({self.max_positions}) - Ignorer {symbol}")
+            return False
+            
         # Vérifier si on a déjà passé un ordre pour cette paire
         if symbol in self.orders_placed:
+            self.logger.debug(f"🚫 Ordre déjà tenté pour {symbol} - Ignorer")
             return False
             
         # Trade immédiatement quand une opportunité est détectée
@@ -219,13 +250,38 @@ class SchedulerManager:
                 future = executor.submit(_place_order_sync)
                 response = future.result()
             
-            # Marquer l'ordre comme passé
+            # Vérifier si l'ordre a été accepté
+            # L'API Bybit retourne directement l'objet avec orderId si l'ordre est accepté
+            order_id = response.get('orderId')
+            
+            if not order_id:
+                self.logger.error(f"❌ [TRADING] Ordre rejeté pour {symbol}: response={response}")
+                # Marquer quand même comme tenté pour éviter les tentatives répétées
+                self.orders_placed.add(symbol)
+                return False
+            
+            # Marquer l'ordre comme passé et ajouter à la liste des positions
             self.orders_placed.add(symbol)
+            self.current_positions.add(symbol)
             
             self.logger.info(
                 f"✅ [TRADING] Ordre placé pour {symbol}: {side} {qty} @ {limit_price:.4f} "
-                f"(funding: {funding_rate_float:.4f})"
+                f"(funding: {funding_rate_float:.4f}) - OrderID: {order_id} - Positions actives: {len(self.current_positions)}/{self.max_positions}"
             )
+            
+            # Appeler le callback d'ouverture de position si défini
+            if self.on_position_opened_callback:
+                try:
+                    position_data = {
+                        "symbol": symbol,
+                        "side": side,
+                        "size": qty,
+                        "price": limit_price,
+                        "funding_rate": funding_rate_float
+                    }
+                    self.on_position_opened_callback(symbol, position_data)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Erreur callback position ouverte: {e}")
             
             return True
             

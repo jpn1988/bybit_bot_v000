@@ -95,6 +95,7 @@ class MonitoringManager(MonitoringManagerInterface):
 
         # État de surveillance
         self._running = False
+        self._active_positions = set()  # Set des symboles avec positions actives
 
         # Gestionnaires externes
         self.watchlist_manager: Optional[WatchlistManager] = None
@@ -415,7 +416,7 @@ class MonitoringManager(MonitoringManagerInterface):
 
     def _should_perform_scan(self, current_time: float) -> bool:
         """Vérifie s'il est temps d'effectuer un nouveau scan."""
-        return self._scan_running and (
+        return self._scan_running and len(self._active_positions) == 0 and (
             current_time - self._last_scan_time >= self._scan_interval
         )
 
@@ -595,4 +596,51 @@ class MonitoringManager(MonitoringManagerInterface):
                 is not None,
             },
         }
+
+    def add_active_position(self, symbol: str):
+        """
+        Ajoute une position active à la liste.
+        
+        Args:
+            symbol: Symbole de la position active
+        """
+        self._active_positions.add(symbol)
+        self.logger.info(f"📈 Position active ajoutée: {symbol} (total: {len(self._active_positions)})")
+        
+        # Mettre en pause si c'est la première position
+        if len(self._active_positions) == 1:
+            self.logger.info("⏸️ Surveillance de la watchlist mise en pause")
+
+    def remove_active_position(self, symbol: str):
+        """
+        Retire une position active de la liste.
+        
+        Args:
+            symbol: Symbole de la position fermée
+        """
+        if symbol in self._active_positions:
+            self._active_positions.remove(symbol)
+            self.logger.info(f"📉 Position fermée: {symbol} (restantes: {len(self._active_positions)})")
+            
+            # Reprendre si plus de positions actives
+            if len(self._active_positions) == 0:
+                self.logger.info("▶️ Surveillance de la watchlist reprise")
+
+    def has_active_positions(self) -> bool:
+        """
+        Vérifie s'il y a des positions actives.
+        
+        Returns:
+            True s'il y a au moins une position active
+        """
+        return len(self._active_positions) > 0
+
+    def get_active_positions(self) -> set:
+        """
+        Retourne l'ensemble des positions actives.
+        
+        Returns:
+            Set des symboles avec positions actives
+        """
+        return self._active_positions.copy()
 
