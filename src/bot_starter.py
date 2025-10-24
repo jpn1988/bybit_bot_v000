@@ -93,6 +93,9 @@ class BotStarter:
             # Démarrer les connexions WebSocket
             await self._start_websocket_connections(ws_manager, data_manager)
 
+            # Vérifier les positions existantes au démarrage
+            await self._check_existing_positions(monitoring_manager)
+
             # Configurer la surveillance des candidats
             self._setup_candidate_monitoring(
                 monitoring_manager, base_url, perp_data
@@ -110,6 +113,47 @@ class BotStarter:
     def _start_volatility_tracker(self, volatility_tracker: VolatilityTracker):
         """Démarre le tracker de volatilité."""
         volatility_tracker.start_refresh_task()
+
+    async def _check_existing_positions(self, monitoring_manager: MonitoringManager):
+        """
+        Vérifie les positions existantes au démarrage.
+        
+        Args:
+            monitoring_manager: Gestionnaire de surveillance
+        """
+        try:
+            self.logger.info("🔍 Vérification des positions existantes au démarrage...")
+            
+            # Vérifier si le monitoring_manager a un bybit_client
+            if hasattr(monitoring_manager, 'bybit_client') and monitoring_manager.bybit_client:
+                # Récupérer les positions existantes
+                positions = monitoring_manager.bybit_client.get_positions(category="linear", settleCoin="USDT")
+                
+                if positions and positions.get("result", {}).get("list"):
+                    existing_positions = positions["result"]["list"]
+                    active_positions = [pos for pos in existing_positions if float(pos.get("size", 0)) > 0]
+                    
+                    if active_positions:
+                        self.logger.info(f"📈 {len(active_positions)} position(s) existante(s) détectée(s) au démarrage:")
+                        for pos in active_positions:
+                            symbol = pos.get("symbol", "N/A")
+                            size = pos.get("size", "0")
+                            side = pos.get("side", "N/A")
+                            self.logger.info(f"   - {symbol}: {side} {size}")
+                        
+                        # Notifier le monitoring_manager des positions existantes
+                        if hasattr(monitoring_manager, 'handle_existing_positions'):
+                            await monitoring_manager.handle_existing_positions(active_positions)
+                    else:
+                        self.logger.info("ℹ️ Aucune position active détectée au démarrage")
+                else:
+                    self.logger.info("ℹ️ Aucune position trouvée au démarrage")
+            else:
+                self.logger.warning("⚠️ Impossible de vérifier les positions - bybit_client non disponible")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Erreur vérification positions existantes: {e}")
+            # Ne pas faire échouer le démarrage pour cette erreur
 
     async def _start_display_manager(self, display_manager: DisplayManager):
         """Démarre le gestionnaire d'affichage."""

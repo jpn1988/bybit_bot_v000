@@ -101,6 +101,7 @@ class MonitoringManager(MonitoringManagerInterface):
         self.watchlist_manager: Optional[WatchlistManager] = None
         self.volatility_tracker: Optional[VolatilityTracker] = None
         self.ws_manager = None  # Référence au WebSocket principal
+        self.bybit_client = None  # Référence au client Bybit
 
         # Scan périodique intégré (anciennement dans MarketScanner)
         self._scan_interval = scan_interval if scan_interval is not None else ScanIntervalConfig.MARKET_SCAN
@@ -142,6 +143,15 @@ class MonitoringManager(MonitoringManagerInterface):
             ws_manager: Gestionnaire WebSocket principal
         """
         self.ws_manager = ws_manager
+
+    def set_bybit_client(self, bybit_client):
+        """
+        Définit le client Bybit.
+
+        Args:
+            bybit_client: Client Bybit pour les API privées
+        """
+        self.bybit_client = bybit_client
 
     def set_on_new_opportunity_callback(self, callback: Callable) -> None:
         """
@@ -643,4 +653,32 @@ class MonitoringManager(MonitoringManagerInterface):
             Set des symboles avec positions actives
         """
         return self._active_positions.copy()
+
+    async def handle_existing_positions(self, existing_positions: list):
+        """
+        Traite les positions existantes détectées au démarrage.
+        
+        Args:
+            existing_positions: Liste des positions existantes
+        """
+        try:
+            self.logger.info("🔄 Traitement des positions existantes...")
+            
+            for position in existing_positions:
+                symbol = position.get("symbol")
+                if symbol:
+                    # Ajouter à la liste des positions actives
+                    self.add_active_position(symbol)
+                    
+                    # Notifier les callbacks si configurés
+                    if hasattr(self, '_position_opened_callback') and self._position_opened_callback:
+                        try:
+                            await self._position_opened_callback(symbol)
+                        except Exception as e:
+                            self.logger.error(f"❌ Erreur callback position existante {symbol}: {e}")
+            
+            self.logger.info(f"✅ Traitement terminé - {len(existing_positions)} position(s) existante(s) intégrée(s)")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur traitement positions existantes: {e}")
 

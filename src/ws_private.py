@@ -102,11 +102,12 @@ Le délai est réinitialisé après une connexion réussie.
 
 import time
 import json
-import hmac
-import hashlib
 import threading
 import websocket
 from config.timeouts import TimeoutConfig
+from ws.private.auth import AuthManager
+from ws.private.watchdog import AuthWatchdog
+from ws.private.router import PrivateMessageRouter
 
 
 class PrivateWSClient:
@@ -202,9 +203,20 @@ class PrivateWSClient:
         self.reconnect_delays = reconnect_delays or [1, 2, 5, 10]
         self.current_delay_index = 0
 
-        # Gestion du thread watchdog
-        self._watchdog_thread = None
-        self._watchdog_stop = threading.Event()
+        # Gestion du watchdog (via composant dédié)
+        self._watchdog = AuthWatchdog(
+            should_reconnect=lambda: (
+                self.connected and not self._authed and (time.monotonic() - self._auth_sent_at > 10)
+            ),
+            trigger_reconnect=lambda: self.ws and self.ws.close(),
+            logger=self.logger,
+        )
+
+        # Gestion auth (signature + message)
+        self._auth_manager = AuthManager(self.api_key, self.api_secret)
+
+        # Routeur de messages
+        self._router = PrivateMessageRouter(on_topic=None, on_pong=None, logger=self.logger)
 
         # Callbacks optionnels
         self.on_open_cb = None
@@ -217,73 +229,8 @@ class PrivateWSClient:
 
     # ========================= Helpers =========================
     def _generate_ws_signature(self, expires_ms: int) -> str:
-        """
-        Génère la signature HMAC-SHA256 pour l'authentification WebSocket.
-        
-        L'authentification WebSocket Bybit v5 utilise un format de payload différent
-        de l'authentification HTTP. Le payload est fixe : "GET/realtime{expires}".
-        
-        Algorithme :
-        1. Construire le payload : "GET/realtime" + expires_ms
-        2. Encoder le payload et le secret en UTF-8
-        3. Calculer HMAC-SHA256(payload, secret)
-        4. Convertir en hexadécimal
-        
-        Exemple concret :
-            expires_ms = 1712345738000
-            api_secret = "MY_SECRET_KEY"
-            
-            → payload = "GET/realtime1712345738000"
-            → HMAC-SHA256(payload, secret) → "a1b2c3d4e5f6..." (64 caractères)
-        
-        Args:
-            expires_ms (int): Timestamp d'expiration en millisecondes
-                            Généralement : time.time() * 1000 + 60000 (60 secondes)
-                            
-        Returns:
-            str: Signature HMAC-SHA256 en hexadécimal (64 caractères)
-                Cette signature doit être envoyée dans le message d'authentification
-                
-        Example:
-            ```python
-            # Générer une signature pour l'authentification
-            expires = int((time.time() + 60) * 1000)  # +60 secondes
-            signature = self._generate_ws_signature(expires)
-            
-            # Envoyer le message d'authentification
-            auth_message = {
-                "op": "auth",
-                "args": [self.api_key, expires, signature]
-            }
-            ws.send(json.dumps(auth_message))
-            ```
-            
-        Note:
-            - Le format du payload est DIFFÉRENT de l'authentification HTTP
-            - HTTP : "timestamp + api_key + recv_window + query_string"
-            - WebSocket : "GET/realtime + expires"
-            - La signature est unique pour chaque tentative (expires différent)
-            - Bybit rejette l'authentification si la signature est invalide
-            
-        Security:
-            - Le secret API n'est JAMAIS envoyé sur le réseau
-            - Seule la signature (dérivée du secret) est transmise
-            - L'expires limite la durée de validité de la signature
-        """
-        # Construire le payload selon le format WebSocket Bybit v5
-        # Format fixe : "GET/realtime" + expires_ms
-        # Ce format est DIFFÉRENT de l'authentification HTTP !
-        payload = f"GET/realtime{expires_ms}"
-        
-        # Calculer la signature HMAC-SHA256
-        # 1. Encoder le secret et le payload en bytes UTF-8
-        # 2. Calculer le hash HMAC avec SHA256
-        # 3. Convertir en hexadécimal (string de 64 caractères)
-        return hmac.new(
-            self.api_secret.encode("utf-8"),  # Clé secrète (bytes)
-            payload.encode("utf-8"),          # Message à signer (bytes)
-            hashlib.sha256,                   # Algorithme de hash
-        ).hexdigest()  # Résultat en hexadécimal
+        # Conservé pour compat rétro; délègue à AuthManager
+        return self._auth_manager.generate_signature(expires_ms)
 
     # ========================= WebSocket callbacks =========================
     def _on_open(self, ws):
@@ -295,12 +242,7 @@ class PrivateWSClient:
         self._authed = False
 
         # Authentification immédiate
-        expires_ms = int((time.time() + 60) * 1000)
-        signature = self._generate_ws_signature(expires_ms)
-        auth_message = {
-            "op": "auth",
-            "args": [self.api_key, expires_ms, signature],
-        }
+        auth_message, expires_ms = self._auth_manager.build_auth_message()
 
         try:
             self.logger.info("🪪 Authentification en cours…")
@@ -318,20 +260,6 @@ class PrivateWSClient:
     def _on_message(self, ws, message):
         try:
             data = json.loads(message)
-
-            # Ping/Pong
-            if data.get("op") == "pong" or "pong" in str(data).lower():
-                # Bruit minimisé par défaut
-                try:
-                    self.logger.debug("pong")
-                except Exception:
-                    pass
-                if callable(self.on_pong):
-                    try:
-                        self.on_pong()
-                    except Exception:
-                        pass
-                return
 
             # Auth
             if data.get("op") == "auth":
@@ -391,24 +319,10 @@ class PrivateWSClient:
                     pass
                 return
 
-            # Topics
-            topic = data.get("topic", "")
-            if topic and callable(self.on_topic):
-                try:
-                    self.on_topic(topic, data)
-                except Exception:
-                    pass
-            else:
-                # Debug court
-                message_preview = (
-                    str(data)[:100] + "..."
-                    if len(str(data)) > 100
-                    else str(data)
-                )
-                try:
-                    self.logger.debug(f"ℹ️ Private msg: {message_preview}")
-                except Exception:
-                    pass
+            # Déléguer le routage des messages privés (pong + topics)
+            self._router.on_topic = self.on_topic
+            self._router.on_pong = self.on_pong
+            self._router.route(message)
 
         except json.JSONDecodeError:
             try:
@@ -485,17 +399,8 @@ class PrivateWSClient:
         CORRECTIF : Réutilise le même thread watchdog au lieu d'en créer
         un nouveau à chaque reconnexion (évite les fuites de threads).
         """
-        # Créer le thread watchdog UNE SEULE FOIS
-        if self._watchdog_thread is None or not self._watchdog_thread.is_alive():
-            self._watchdog_stop.clear()
-            self._watchdog_thread = threading.Thread(
-                target=self._watchdog_loop, daemon=True, name="ws_private_watchdog"
-            )
-            self._watchdog_thread.start()
-            try:
-                self.logger.debug("🐕 Thread watchdog démarré")
-            except Exception:
-                pass
+        # Démarrer le watchdog (une seule fois)
+        self._watchdog.start()
 
         while self.running:
             try:
@@ -535,11 +440,11 @@ class PrivateWSClient:
                     )
                 except Exception:
                     pass
-                for _ in range(delay):
+                steps = int(delay / max(getattr(TimeoutConfig, "SHORT_SLEEP", 0.1), 0.1))
+                for _ in range(steps):
                     if not self.running:
                         break
-                    from config.timeouts import TimeoutConfig
-                    time.sleep(TimeoutConfig.RECONNECT_SLEEP)
+                    time.sleep(getattr(TimeoutConfig, "SHORT_SLEEP", 0.1))
                 if self.current_delay_index < len(self.reconnect_delays) - 1:
                     self.current_delay_index += 1
             else:
@@ -559,14 +464,8 @@ class PrivateWSClient:
                 pass
             self.running = False
             
-            # Arrêter le thread watchdog proprement
-            self._watchdog_stop.set()
-            if self._watchdog_thread and self._watchdog_thread.is_alive():
-                try:
-                    self._watchdog_thread.join(timeout=TimeoutConfig.THREAD_WS_PRIVATE_SHUTDOWN)
-                    self.logger.debug("🐕 Thread watchdog arrêté proprement")
-                except Exception:
-                    pass
+            # Arrêter le watchdog proprement
+            self._watchdog.stop()
             
             try:
                 if self.ws:

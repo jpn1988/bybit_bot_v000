@@ -122,6 +122,9 @@ import time
 import websocket
 from typing import Callable, List, Optional
 from metrics import record_ws_connection, record_ws_error
+from ws.public.subscriptions import SubscriptionBuilder
+from ws.public.parser_router import PublicMessageRouter
+from ws.public.transport import BackoffTransport
 
 
 class PublicWSClient:
@@ -215,6 +218,8 @@ class PublicWSClient:
         # Le current_delay_index est réinitialisé à 0 après une connexion réussie
         self.reconnect_delays = [1, 2, 5, 10, 30]  # secondes
         self.current_delay_index = 0  # Commence au premier délai (1s)
+        self._transport = BackoffTransport(self.reconnect_delays)
+        self._router = PublicMessageRouter(on_ticker=self.on_ticker_callback)
 
         # Callbacks optionnels pour événements de connexion
         self.on_open_callback: Optional[Callable] = None
@@ -247,12 +252,9 @@ class PublicWSClient:
         # Cela permet de réagir rapidement en cas de nouvelle déconnexion
         self.current_delay_index = 0
 
-        # S'abonner aux tickers pour tous les symboles
+        # S'abonner aux tickers pour tous les symboles (via builder dédié)
         if self.symbols:
-            subscribe_message = {
-                "op": "subscribe",
-                "args": [f"tickers.{symbol}" for symbol in self.symbols],
-            }
+            subscribe_message = SubscriptionBuilder.tickers(self.symbols)
             try:
                 ws.send(json.dumps(subscribe_message))
                 self.logger.info(
@@ -282,21 +284,8 @@ class PublicWSClient:
 
     def _on_message(self, ws, message):
         """Callback interne appelé à chaque message reçu."""
-        try:
-            data = json.loads(message)
-            if data.get("topic", "").startswith("tickers."):
-                ticker_data = data.get("data", {})
-                if ticker_data:
-                    self.on_ticker_callback(ticker_data)
-        except json.JSONDecodeError as e:
-            self.logger.warning(f"⚠️ Erreur JSON ({self.category}): {e}")
-        except (KeyError, TypeError, AttributeError) as e:
-            self.logger.warning(
-                f"⚠️ Erreur parsing données ({self.category}): "
-                f"{type(e).__name__}: {e}"
-            )
-        except Exception as e:
-            self.logger.warning(f"⚠️ Erreur parsing ({self.category}): {e}")
+        # Déléguer parsing + dispatch au routeur
+        self._router.route(message, self.logger, self.category)
 
     def _on_error(self, ws, error):
         """Callback interne appelé en cas d'erreur."""
@@ -375,41 +364,21 @@ class PublicWSClient:
                         except Exception:
                             pass
 
-                # ❌ ÉCHEC DE CONNEXION : Appliquer le backoff progressif
+                # ❌ ÉCHEC DE CONNEXION : Appliquer le backoff progressif via transport
                 if self.running:
-                    # Obtenir le délai de reconnexion actuel
-                    # min() garantit qu'on ne dépasse pas le dernier délai (30s)
-                    delay = self.reconnect_delays[
-                        min(
-                            self.current_delay_index,
-                            len(self.reconnect_delays) - 1,
-                        )
-                    ]
                     try:
                         self.logger.warning(
                             f"🔁 WS publique ({self.category}) déconnectée "
-                            f"→ reconnexion dans {delay}s (tentative #{self.current_delay_index + 1})"
+                            f"→ backoff (tentative #{self.current_delay_index + 1})"
                         )
-                        # Enregistrer la déconnexion dans les métriques
                         record_ws_connection(connected=False)
                     except Exception:
                         pass
 
-                    # Attendre le délai avec vérification périodique de l'arrêt
-                    # On ne peut pas utiliser time.sleep(delay) directement car ça bloquerait
-                    # l'arrêt propre du bot. Au lieu de ça, on vérifie toutes les 100ms.
-                    # Exemple : delay=5s → 50 vérifications de 100ms chacune
-                    for _ in range(delay * 10):  # 10 vérifications par seconde
-                        if not self.running:  # Arrêt demandé ?
-                            break
-                        from config.timeouts import TimeoutConfig
-                        time.sleep(TimeoutConfig.SHORT_SLEEP)  # Attendre 100ms
-
-                    # 📈 BACKOFF PROGRESSIF : Augmenter le délai pour la prochaine fois
-                    # Chaque échec augmente l'index jusqu'à atteindre le max (30s)
-                    # Exemple : index 0 → 1s, index 1 → 2s, index 2 → 5s, etc.
-                    if self.current_delay_index < len(self.reconnect_delays) - 1:
-                        self.current_delay_index += 1
+                    self.current_delay_index = self._transport.wait(
+                        self.current_delay_index,
+                        is_running_callable=lambda: self.running,
+                    )
                 else:
                     break
         finally:

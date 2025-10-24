@@ -1178,6 +1178,20 @@ class BybitClient(BybitClientInterface):
         if symbol:
             params["symbol"] = symbol
         return self._get_public("/v5/market/funding/history", params)
+
+    def get_funding_rate(self, symbol: str, category: str = "linear") -> Dict[str, Any]:
+        """
+        Récupère le taux de funding actuel pour un symbole.
+        
+        Args:
+            symbol: Symbole à vérifier
+            category: Catégorie des symboles ("linear", "inverse", "spot")
+            
+        Returns:
+            Dict contenant le taux de funding actuel
+        """
+        params = {"category": category, "symbol": symbol, "limit": 1}
+        return self._get_public("/v5/market/funding/history", params)
     
     def get_instruments_info(
         self, 
@@ -1216,9 +1230,12 @@ class BybitClient(BybitClientInterface):
         }
         return self._get_public("/v5/market/kline", params)
     
-    def get_positions(self, category: str = "linear") -> Dict[str, Any]:
+    def get_positions(self, category: str = "linear", settleCoin: str = None) -> Dict[str, Any]:
         """Récupère les positions ouvertes."""
-        return self._get_private("/v5/position/list", {"category": category})
+        params = {"category": category}
+        if settleCoin:
+            params["settleCoin"] = settleCoin
+        return self._get_private("/v5/position/list", params)
     
     def get_open_orders(self, category: str = "linear") -> Dict[str, Any]:
         """Récupère les ordres ouverts."""
@@ -1340,6 +1357,10 @@ class BybitPublicClient(BybitClientInterface):
         """Non implémenté - utiliser BybitClient pour les appels API réels."""
         raise NotImplementedError("Utilisez BybitClient pour les appels API réels")
 
+    def get_funding_rate(self, symbol: str, category: str = "linear") -> Dict[str, Any]:
+        """Non implémenté - utiliser BybitClient pour les appels API réels."""
+        raise NotImplementedError("Utilisez BybitClient pour les appels API réels")
+
     def get_instruments_info(self, category: str = "linear", symbol: Optional[str] = None) -> Dict[str, Any]:
         """Non implémenté - utiliser BybitClient pour les appels API réels."""
         raise NotImplementedError("Utilisez BybitClient pour les appels API réels")
@@ -1357,7 +1378,7 @@ class BybitPublicClient(BybitClientInterface):
         """Non supporté - le client public n'a pas accès aux API privées."""
         raise NotImplementedError("Client public - API privées non supportées")
 
-    def get_positions(self, category: str = "linear") -> Dict[str, Any]:
+    def get_positions(self, category: str = "linear", settleCoin: str = None) -> Dict[str, Any]:
         """Non supporté - le client public n'a pas accès aux API privées."""
         raise NotImplementedError("Client public - API privées non supportées")
 

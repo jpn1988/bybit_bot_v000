@@ -179,6 +179,10 @@ class BotOrchestrator:
         self.callback_manager = managers["callback_manager"]
         self.opportunity_manager = managers["opportunity_manager"]
 
+        # Passer le bybit_client au monitoring_manager pour la vérification des positions
+        if hasattr(self, 'bybit_client') and self.bybit_client:
+            self.monitoring_manager.set_bybit_client(self.bybit_client)
+
     def _test_bybit_auth_connection_sync(self) -> bool:
         """
         Teste la connexion à l'API Bybit avec authentification complète.
@@ -477,11 +481,30 @@ class BotOrchestrator:
         linear_symbols = self.data_manager.storage.get_linear_symbols()
         inverse_symbols = self.data_manager.storage.get_inverse_symbols()
         
-        # Restaurer la watchlist complète (asynchrone)
-        import asyncio
-        asyncio.create_task(
-            self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
-        )
+        # Restaurer la watchlist complète (synchrone)
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Si on est dans un contexte async, utiliser create_task
+                asyncio.create_task(
+                    self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
+                )
+            else:
+                # Si on est dans un contexte sync, utiliser run
+                loop.run_until_complete(
+                    self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
+                )
+        except RuntimeError:
+            # Pas de loop event, créer un nouveau thread
+            import threading
+            def run_async():
+                import asyncio
+                asyncio.run(
+                    self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
+                )
+            thread = threading.Thread(target=run_async, daemon=True)
+            thread.start()
 
     # ============================================================================
     # MÉTHODES DE DONNÉES ET MONITORING

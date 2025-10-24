@@ -174,6 +174,17 @@ def is_perpetual_active(item: Dict) -> bool:
     """
     contract_type = item.get("contractType", "").lower()
     status = item.get("status", "").lower()
+    symbol = item.get("symbol", "")
+
+    # Liste noire des symboles en cours de délisting ou problématiques
+    delisted_symbols = {
+        "LAUNCHCOINUSDT",  # En cours de délisting (erreur 30228)
+        # Ajouter d'autres symboles problématiques ici si nécessaire
+    }
+
+    # Exclure les symboles en cours de délisting
+    if symbol in delisted_symbols:
+        return False
 
     # Vérifier le type de contrat (perpétuel)
     is_perpetual = contract_type in {"linearperpetual", "inverseperpetual"}

@@ -59,6 +59,23 @@ class BybitClientInterface(ABC):
         pass
     
     @abstractmethod
+    def get_funding_rate(self, symbol: str, category: str = "linear") -> Dict[str, Any]:
+        """
+        Récupère le taux de funding actuel pour un symbole.
+        
+        Args:
+            symbol: Symbole à vérifier
+            category: Catégorie des symboles ("linear", "inverse", "spot")
+            
+        Returns:
+            Dict contenant le taux de funding actuel
+            
+        Raises:
+            Exception: En cas d'erreur API
+        """
+        pass
+    
+    @abstractmethod
     def get_instruments_info(
         self, 
         category: str = "linear", 
@@ -144,12 +161,13 @@ class BybitClientInterface(ABC):
         pass
     
     @abstractmethod
-    def get_positions(self, category: str = "linear") -> Dict[str, Any]:
+    def get_positions(self, category: str = "linear", settleCoin: str = None) -> Dict[str, Any]:
         """
         Récupère les positions ouvertes (API privée).
         
         Args:
             category: Catégorie des symboles ("linear", "inverse", "spot")
+            settleCoin: Monnaie de règlement (USDT, BTC, etc.)
             
         Returns:
             Dict contenant les positions ouvertes

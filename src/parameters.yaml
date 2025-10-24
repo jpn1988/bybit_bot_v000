@@ -45,14 +45,14 @@ weights:
 # ============================================
 # Configuration de l'affichage
 # ============================================
-display_interval_seconds: 1 # Intervalle d'affichage de la watchlist (secondes)
+display_interval_seconds: 5 # Intervalle d'affichage de la watchlist (secondes)
 
 # ============================================
 # Configuration du Scheduler
 # ============================================
 # Seuil de détection du funding imminent (en minutes)
 # Le scheduler alertera quand le funding time est <= à cette valeur
-funding_threshold_minutes: 48 # ex: 60 = alerte 1h avant funding, 10 = 10min avant, 1 = 1min avant
+funding_threshold_minutes: 1 # ex: 60 = alerte 1h avant funding, 10 = 10min avant, 1 = 1min avant
 
 # ============================================
 # Configuration du trading automatique
