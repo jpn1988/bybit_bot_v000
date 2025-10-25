@@ -620,8 +620,8 @@ class BotOrchestrator:
         
         while self.running:
             try:
-                # Attendre 30 secondes entre chaque mise à jour
-                await asyncio.sleep(30)
+                # Attendre 5 secondes entre chaque mise à jour
+                await asyncio.sleep(5)
                 
                 if not self.running:
                     break
