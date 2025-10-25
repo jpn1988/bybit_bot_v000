@@ -576,6 +576,9 @@ class BotOrchestrator:
         """Maintient le bot en vie avec une boucle d'attente et monitoring mémoire."""
         self.logger.info("🔄 Bot opérationnel - surveillance continue...")
 
+        # Démarrer la tâche de mise à jour périodique des données de funding
+        funding_update_task = asyncio.create_task(self._periodic_funding_update())
+
         try:
             while self.running:
                 # Vérifier que tous les composants principaux sont toujours actifs
@@ -602,6 +605,63 @@ class BotOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Erreur dans la boucle principale: {e}")
             self.running = False
+        finally:
+            # Annuler la tâche de mise à jour des funding
+            if 'funding_update_task' in locals():
+                funding_update_task.cancel()
+                try:
+                    await funding_update_task
+                except asyncio.CancelledError:
+                    pass
+
+    async def _periodic_funding_update(self):
+        """Met à jour périodiquement les données de funding via l'API REST."""
+        self.logger.info("🔄 Tâche de mise à jour périodique des funding démarrée")
+        
+        while self.running:
+            try:
+                # Attendre 30 secondes entre chaque mise à jour
+                await asyncio.sleep(30)
+                
+                if not self.running:
+                    break
+                
+                self.logger.debug("🔄 Mise à jour périodique des données de funding...")
+                
+                # Récupérer les données de funding via l'API REST
+                from config.urls import URLConfig
+                base_url = URLConfig.get_api_url(self.testnet)
+                funding_data = self.data_manager.fetcher.fetch_funding_map(base_url, "linear", 10)
+                
+                if funding_data:
+                    # Filtrer pour ne mettre à jour que les symboles de la watchlist
+                    watchlist_symbols = set(self.watchlist_manager.get_selected_symbols())
+                    filtered_funding_data = {
+                        symbol: data for symbol, data in funding_data.items() 
+                        if symbol in watchlist_symbols
+                    }
+                    
+                    if filtered_funding_data:
+                        # Mettre à jour seulement les données filtrées
+                        self.data_manager._update_funding_data(filtered_funding_data)
+                        
+                        # Mettre à jour les données originales
+                        if self.watchlist_manager:
+                            self.data_manager._update_original_funding_data(self.watchlist_manager)
+                        
+                        self.logger.debug(f"✅ Données de funding mises à jour: {len(filtered_funding_data)} symboles (watchlist)")
+                    else:
+                        self.logger.debug("⚠️ Aucun symbole de la watchlist trouvé dans les données de funding")
+                else:
+                    self.logger.warning("⚠️ Aucune donnée de funding récupérée")
+                    
+            except asyncio.CancelledError:
+                self.logger.info("🛑 Tâche de mise à jour des funding annulée")
+                break
+            except Exception as e:
+                self.logger.error(f"❌ Erreur mise à jour périodique des funding: {e}")
+                # Continuer même en cas d'erreur
+                await asyncio.sleep(10)  # Attendre un peu avant de réessayer
 
     # ============================================================================
     # MÉTHODES DE STATUT ET ARRÊT

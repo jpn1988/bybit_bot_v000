@@ -107,9 +107,14 @@ class FundingDataFactory:
             FundingData ou None si données invalides
         """
         try:
+            # Gérer les différents formats de clés
             funding = data.get("funding", 0.0)
             volume = data.get("volume", 0.0)
-            funding_time = data.get("funding_time_remaining", "-")
+            
+            # Gérer les différents formats de temps de funding
+            funding_time = data.get("funding_time_remaining", 
+                                  data.get("next_funding_time", "-"))
+            
             spread = data.get("spread_pct", 0.0)
             volatility = data.get("volatility_pct", None)
             

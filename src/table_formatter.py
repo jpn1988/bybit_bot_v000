@@ -230,11 +230,12 @@ class TableFormatter:
             symbol, realtime_info, data_manager
         )
 
+        # Fournir des valeurs par défaut si les données manquent
         return {
             "funding": funding,
             "volume": volume,
-            "spread_pct": spread_pct,
-            "volatility_pct": volatility_pct,
+            "spread_pct": spread_pct if spread_pct is not None else 0.0,  # Valeur par défaut
+            "volatility_pct": volatility_pct if volatility_pct is not None else 0.0,  # Valeur par défaut
             "funding_time": funding_time,
         }
 
@@ -375,18 +376,14 @@ class TableFormatter:
         if not funding_data:
             return False
 
-        # Vérifier pour chaque symbole si les données sont disponibles
+        # MODIFICATION: Vérifier seulement si les données de base (funding) sont disponibles
+        # Les autres données (volatilité, spread) peuvent être manquantes sans bloquer l'affichage
         for symbol in funding_data.keys():
             row_data = self.prepare_row_data(symbol, data_manager)
 
-            # Vérifier si la volatilité est disponible
-            volatility_pct = row_data.get("volatility_pct")
-            if volatility_pct is None:
-                return False
-
-            # Vérifier si le spread est disponible (pas null)
-            spread_pct = row_data.get("spread_pct")
-            if spread_pct is None:
+            # Vérifier seulement si les données de funding sont disponibles
+            funding = row_data.get("funding")
+            if funding is None:
                 return False
 
         return True

@@ -270,6 +270,10 @@ class DisplayManager:
         self._display_task = asyncio.create_task(self._display_loop())
 
         self.logger.info("📊 Boucle d'affichage démarrée")
+        
+        # Log de débogage pour vérifier que la tâche est bien créée
+        self.logger.info(f"🔍 [DEBUG] Tâche d'affichage créée: {self._display_task}")
+        self.logger.info(f"🔍 [DEBUG] État running: {self._running}")
 
     async def stop_display_loop(self):
         """
@@ -300,17 +304,21 @@ class DisplayManager:
         """
         Boucle d'affichage avec intervalle configurable.
         """
+        self.logger.info("🔍 [DEBUG] Boucle d'affichage démarrée")
+        
         while self._running:
             # Vérifier immédiatement si on doit s'arrêter
             if not self._running:
                 break
 
+            self.logger.debug("🔍 [DEBUG] Exécution de _print_price_table")
             self._print_price_table()
 
             # Attendre selon l'intervalle configuré
             await asyncio.sleep(self.display_interval_seconds)
 
         # Boucle d'affichage arrêtée
+        self.logger.info("🔍 [DEBUG] Boucle d'affichage arrêtée")
 
     def _print_price_table(self):
         """
@@ -321,9 +329,10 @@ class DisplayManager:
         """
         # Si aucune opportunité n'est trouvée, retourner
         funding_data_objects = self.data_manager.storage.get_all_funding_data_objects()
+        self.logger.info(f"🔍 [DEBUG] _print_price_table: {len(funding_data_objects) if funding_data_objects else 0} symboles")
+        
         if not funding_data_objects:
-            if self._first_display:
-                self._first_display = False
+            self.logger.debug("⏳ Aucune donnée de funding disponible - En attente...")
             return
 
         # Appliquer le filtre de symboles si défini
@@ -333,23 +342,23 @@ class DisplayManager:
                 if symbol in self._filtered_symbols
             }
             if not funding_data_objects:
-                if self._first_display:
-                    self._first_display = False
+                self.logger.debug("⏳ Aucun symbole après filtrage")
                 return
 
         # Pour la compatibilité avec calculate_column_widths qui attend un Dict
         funding_data_keys = funding_data_objects
 
         # Vérifier si toutes les données sont disponibles avant d'afficher
+        # MODIFICATION: Permettre l'affichage même si certaines données manquent
         if not self._formatter.are_all_data_available(
             funding_data_keys, self.data_manager
         ):
             if self._first_display:
                 self.logger.info(
-                    "⏳ En attente des données de volatilité et spread..."
+                    "⏳ Certaines données de volatilité et spread manquantes - Affichage avec valeurs par défaut"
                 )
                 self._first_display = False
-            return
+            # Ne pas retourner - continuer l'affichage avec les données disponibles
 
         # Calculer les largeurs de colonnes
         col_widths = self._formatter.calculate_column_widths(funding_data_keys)

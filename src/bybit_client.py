@@ -717,37 +717,68 @@ class BybitClient(BybitClientInterface):
                     start_time,
                 )
 
-            except (
-                httpx.TimeoutException,
-                httpx.ReadTimeout,
-                httpx.ConnectTimeout,
-            ) as e:
-                last_error = e
-                if not self._should_retry(attempt, max_attempts):
-                    break
-                self._wait_before_retry(attempt, backoff_base)
-
-            except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                last_error = e
-                if not self._should_retry(attempt, max_attempts):
-                    break
-                self._wait_before_retry(attempt, backoff_base)
-
-            except (ValueError, TypeError, KeyError) as e:
-                # Erreurs de données - pas de retry
-                last_error = e
-                break
-
             except Exception as e:
-                # Propager les erreurs formatées connues
-                if "Erreur" in str(e):
-                    raise
-                last_error = e
-                break
+                last_error = self._execute_post_with_error_handling(
+                    e, attempt, max_attempts, backoff_base
+                )
+                if last_error is None:
+                    # Erreur gérée, continuer le retry
+                    continue
+                else:
+                    # Erreur fatale, sortir de la boucle
+                    break
 
         # Échec - préparer l'erreur finale
         self._prepare_final_error(last_error)
         return None
+
+    def _execute_post_with_error_handling(
+        self,
+        error: Exception,
+        attempt: int,
+        max_attempts: int,
+        backoff_base: float,
+    ) -> Exception | None:
+        """
+        Gère les erreurs POST avec retry logic approprié.
+        
+        Args:
+            error: Exception capturée
+            attempt: Numéro de tentative actuelle
+            max_attempts: Nombre maximum de tentatives
+            backoff_base: Délai de base pour le backoff
+            
+        Returns:
+            Exception | None: None si l'erreur peut être retry, Exception sinon
+        """
+        # Erreurs de timeout - retry
+        if isinstance(error, (
+            httpx.TimeoutException,
+            httpx.ReadTimeout,
+            httpx.ConnectTimeout,
+        )):
+            if self._should_retry(attempt, max_attempts):
+                self._wait_before_retry(attempt, backoff_base)
+                return None
+            return error
+
+        # Erreurs de requête HTTP - retry
+        if isinstance(error, (httpx.RequestError, httpx.HTTPStatusError)):
+            if self._should_retry(attempt, max_attempts):
+                self._wait_before_retry(attempt, backoff_base)
+                return None
+            return error
+
+        # Erreurs de données - pas de retry
+        if isinstance(error, (ValueError, TypeError, KeyError)):
+            return error
+
+        # Erreurs formatées connues - propager
+        if "Erreur" in str(error):
+            raise error
+
+        # Autres erreurs - pas de retry
+        return error
 
     def _process_successful_post_request(
         self,
@@ -804,37 +835,68 @@ class BybitClient(BybitClientInterface):
                     start_time,
                 )
 
-            except (
-                httpx.TimeoutException,
-                httpx.ReadTimeout,
-                httpx.ConnectTimeout,
-            ) as e:
-                last_error = e
-                if not self._should_retry(attempt, max_attempts):
-                    break
-                self._wait_before_retry(attempt, backoff_base)
-
-            except (httpx.RequestError, httpx.HTTPStatusError) as e:
-                last_error = e
-                if not self._should_retry(attempt, max_attempts):
-                    break
-                self._wait_before_retry(attempt, backoff_base)
-
-            except (ValueError, TypeError, KeyError) as e:
-                # Erreurs de données - pas de retry
-                last_error = e
-                break
-
             except Exception as e:
-                # Propager les erreurs formatées connues
-                if "Erreur" in str(e):
-                    raise
-                last_error = e
-                break
+                last_error = self._execute_with_error_handling(
+                    e, attempt, max_attempts, backoff_base
+                )
+                if last_error is None:
+                    # Erreur gérée, continuer le retry
+                    continue
+                else:
+                    # Erreur fatale, sortir de la boucle
+                    break
 
         # Échec - préparer l'erreur finale
         self._prepare_final_error(last_error)
         return None
+
+    def _execute_with_error_handling(
+        self,
+        error: Exception,
+        attempt: int,
+        max_attempts: int,
+        backoff_base: float,
+    ) -> Exception | None:
+        """
+        Gère les erreurs avec retry logic approprié.
+        
+        Args:
+            error: Exception capturée
+            attempt: Numéro de tentative actuelle
+            max_attempts: Nombre maximum de tentatives
+            backoff_base: Délai de base pour le backoff
+            
+        Returns:
+            Exception | None: None si l'erreur peut être retry, Exception sinon
+        """
+        # Erreurs de timeout - retry
+        if isinstance(error, (
+            httpx.TimeoutException,
+            httpx.ReadTimeout,
+            httpx.ConnectTimeout,
+        )):
+            if self._should_retry(attempt, max_attempts):
+                self._wait_before_retry(attempt, backoff_base)
+                return None
+            return error
+
+        # Erreurs de requête HTTP - retry
+        if isinstance(error, (httpx.RequestError, httpx.HTTPStatusError)):
+            if self._should_retry(attempt, max_attempts):
+                self._wait_before_retry(attempt, backoff_base)
+                return None
+            return error
+
+        # Erreurs de données - pas de retry
+        if isinstance(error, (ValueError, TypeError, KeyError)):
+            return error
+
+        # Erreurs formatées connues - propager
+        if "Erreur" in str(error):
+            raise error
+
+        # Autres erreurs - pas de retry
+        return error
 
     def _process_successful_request(
         self,
@@ -938,24 +1000,7 @@ class BybitClient(BybitClientInterface):
 
         # Rate limiting (429) - retry avec backoff
         if response.status_code == 429:
-            delay = self._get_retry_after_delay(
-                response, attempt, backoff_base
-            )
-            
-            # CORRECTIF PERF-002: Éviter time.sleep() dans un contexte async
-            try:
-                import asyncio
-                loop = asyncio.get_running_loop()
-                # Contexte async détecté - logger et continuer sans sleep
-                import logging
-                logging.getLogger(__name__).warning(
-                    "PERF-002: Rate limit détecté dans un contexte async. "
-                    "Délai ignoré pour éviter de bloquer l'event loop."
-                )
-            except RuntimeError:
-                # Contexte synchrone - OK pour time.sleep
-                time.sleep(delay)
-            
+            self._handle_rate_limit_sleep(response, attempt, backoff_base)
             raise httpx.HTTPStatusError(
                 "Rate limited", request=None, response=response
             )
@@ -968,6 +1013,38 @@ class BybitClient(BybitClientInterface):
                 f'Erreur HTTP Bybit: status={response.status_code} '
                 f'detail="{detail_safe}"'
             )
+
+    def _handle_rate_limit_sleep(
+        self,
+        response: httpx.Response,
+        attempt: int,
+        backoff_base: float,
+    ):
+        """
+        Gère le sleep pour rate limiting avec détection async.
+        
+        Args:
+            response: Réponse HTTP
+            attempt: Numéro de tentative actuelle
+            backoff_base: Délai de base pour le backoff
+        """
+        delay = self._get_retry_after_delay(
+            response, attempt, backoff_base
+        )
+        
+        # CORRECTIF PERF-002: Éviter time.sleep() dans un contexte async
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            # Contexte async détecté - logger et continuer sans sleep
+            import logging
+            logging.getLogger(__name__).warning(
+                "PERF-002: Rate limit détecté dans un contexte async. "
+                "Délai ignoré pour éviter de bloquer l'event loop."
+            )
+        except RuntimeError:
+            # Contexte synchrone - OK pour time.sleep
+            time.sleep(delay)
 
     def _handle_api_response(
         self,
@@ -996,56 +1073,99 @@ class BybitClient(BybitClientInterface):
 
         ret_msg = data.get("retMsg", "")
 
-        # Erreurs d'authentification
+        # Dispatcher vers les handlers spécialisés
+        if ret_code in [10005, 10006, 10018, 10017]:
+            self._handle_auth_errors(ret_code)
+        elif ret_code == 10016:
+            self._handle_rate_limit_error(
+                response, attempt, max_attempts, backoff_base
+            )
+        else:
+            self._handle_generic_api_error(ret_code, ret_msg)
+
+    def _handle_auth_errors(self, ret_code: int):
+        """
+        Gère les erreurs d'authentification.
+        
+        Args:
+            ret_code: Code d'erreur API
+            
+        Raises:
+            RuntimeError: Erreur d'authentification détaillée
+        """
         if ret_code in [10005, 10006]:
             raise RuntimeError(
                 "Authentification échouée : clé/secret invalides ou "
                 "signature incorrecte"
             )
-
-        # Erreur d'IP non autorisée
-        if ret_code == 10018:
+        elif ret_code == 10018:
             raise RuntimeError(
                 "Accès refusé : IP non autorisée "
                 "(whitelist requise dans Bybit)"
             )
-
-        # Erreur de timestamp
-        if ret_code == 10017:
+        elif ret_code == 10017:
             raise RuntimeError(
                 "Horodatage invalide : horloge locale désynchronisée "
                 "(corrige l'heure système)"
             )
 
-        # Rate limit API - retry
-        if ret_code == 10016:
-            delay = self._get_retry_after_delay(
-                response, attempt, backoff_base
-            )
+    def _handle_rate_limit_error(
+        self,
+        response: httpx.Response,
+        attempt: int,
+        max_attempts: int,
+        backoff_base: float,
+    ):
+        """
+        Gère les erreurs de rate limiting.
+        
+        Args:
+            response: Réponse HTTP
+            attempt: Numéro de tentative actuelle
+            max_attempts: Nombre maximum de tentatives
+            backoff_base: Délai de base pour le backoff
             
-            # CORRECTIF PERF-002: Éviter time.sleep() dans un contexte async
-            try:
-                import asyncio
-                loop = asyncio.get_running_loop()
-                # Contexte async détecté - logger et continuer sans sleep
-                import logging
-                logging.getLogger(__name__).warning(
-                    "PERF-002: API Rate limit (retCode=10016) dans un contexte async. "
-                    "Délai ignoré pour éviter de bloquer l'event loop."
-                )
-            except RuntimeError:
-                # Contexte synchrone - OK pour time.sleep
-                time.sleep(delay)
-            
-            if attempt < max_attempts:
-                raise httpx.HTTPStatusError(
-                    "API Rate limited", request=None, response=response
-                )
-            raise RuntimeError(
-                "Limite de requêtes atteinte : ralentis ou réessaie plus tard"
+        Raises:
+            httpx.HTTPStatusError: Pour retry
+            RuntimeError: Pour échec final
+        """
+        delay = self._get_retry_after_delay(
+            response, attempt, backoff_base
+        )
+        
+        # CORRECTIF PERF-002: Éviter time.sleep() dans un contexte async
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            # Contexte async détecté - logger et continuer sans sleep
+            import logging
+            logging.getLogger(__name__).warning(
+                "PERF-002: API Rate limit (retCode=10016) dans un contexte async. "
+                "Délai ignoré pour éviter de bloquer l'event loop."
             )
+        except RuntimeError:
+            # Contexte synchrone - OK pour time.sleep
+            time.sleep(delay)
+        
+        if attempt < max_attempts:
+            raise httpx.HTTPStatusError(
+                "API Rate limited", request=None, response=response
+            )
+        raise RuntimeError(
+            "Limite de requêtes atteinte : ralentis ou réessaie plus tard"
+        )
 
-        # Autre erreur API
+    def _handle_generic_api_error(self, ret_code: int, ret_msg: str):
+        """
+        Gère les erreurs API génériques.
+        
+        Args:
+            ret_code: Code d'erreur API
+            ret_msg: Message d'erreur API
+            
+        Raises:
+            RuntimeError: Erreur API générique
+        """
         ret_msg_safe = _sanitize_error_message(ret_msg)
         raise RuntimeError(
             f'Erreur API Bybit : retCode={ret_code} retMsg="{ret_msg_safe}"'

@@ -218,6 +218,9 @@ class DataManager:
 
     def _update_funding_data(self, funding_data: Dict):
         """Met à jour les données de funding dans le stockage (utilise Value Objects)."""
+        self.logger.info(f"🔍 [DEBUG] Mise à jour de {len(funding_data)} symboles de funding")
+        
+        success_count = 0
         for symbol, data in funding_data.items():
             try:
                 # Utiliser la factory centralisée pour créer FundingData
@@ -226,11 +229,14 @@ class DataManager:
                 if funding_obj is not None:
                     # Stocker le Value Object
                     self.storage.set_funding_data_object(funding_obj)
+                    success_count += 1
                 else:
-                    self.logger.warning(f"⚠️ Données invalides pour {symbol}: format non supporté")
+                    self.logger.warning(f"⚠️ Données invalides pour {symbol}: format non supporté - data={data}")
                 
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur création FundingData pour {symbol}: {e}")
+        
+        self.logger.info(f"✅ [DEBUG] {success_count}/{len(funding_data)} FundingData créés avec succès")
 
     def _update_original_funding_data(self, watchlist_manager):
         """Met à jour les données originales de funding."""

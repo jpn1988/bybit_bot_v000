@@ -99,34 +99,13 @@ class FundingCloseManager:
         # Log de débogage pour TOUS les événements WebSocket
         self.logger.info(f"🔍 [DEBUG] Événement WebSocket reçu: topic='{topic}', type={type(data)}, data={data}")
         
-        # Vérifier le type de topic reçu
-        if topic == "funding":
-            self.logger.info(f"💰 [DEBUG] Topic 'funding' détecté !")
-            if "data" in data:
-                self.logger.info(f"💰 [DEBUG] Données funding trouvées: {data['data']}")
-                for funding_info in data["data"]:
-                    symbol = funding_info.get("symbol")
-                    funding_rate = float(funding_info.get("fundingRate", 0))
-                    
-                    if not symbol:
-                        self.logger.warning(f"⚠️ [DEBUG] Symbole manquant dans funding_info: {funding_info}")
-                        continue
-                    
-                    self.logger.info(f"💰 [DEBUG] Funding détecté pour {symbol}: rate={funding_rate:.4f}")
-                    
-                    # Vérifier si cette position est surveillée
-                    if symbol in self._monitored_positions:
-                        self.logger.info(f"🎯 [DEBUG] Position {symbol} est surveillée ! Fermeture automatique...")
-                        self.logger.info(f"💰 Funding touché pour {symbol}: {funding_rate:.4f}")
-                        
-                        # Fermer automatiquement la position
-                        self._close_position_after_funding(symbol)
-                    else:
-                        self.logger.info(f"ℹ️ [DEBUG] Position {symbol} non surveillée (surveillées: {list(self._monitored_positions)})")
-            else:
-                self.logger.warning(f"⚠️ [DEBUG] Pas de 'data' dans l'événement funding: {data}")
+        # Le topic "funding" n'existe pas dans l'API WebSocket privée de Bybit
+        # On utilise la surveillance périodique via l'API REST à la place
+        if topic == "position":
+            self.logger.debug(f"💰 [DEBUG] Mise à jour de position reçue")
+            # Les positions sont surveillées via la méthode périodique _check_positions_periodically
         else:
-            self.logger.info(f"ℹ️ [DEBUG] Topic '{topic}' ignoré (attendu: 'funding')")
+            self.logger.debug(f"ℹ️ [DEBUG] Topic '{topic}' reçu (surveillance via API REST)")
 
     def _close_position_after_funding(self, symbol: str):
         """
@@ -204,7 +183,7 @@ class FundingCloseManager:
                 testnet=self.testnet,
                 api_key=self.api_key,
                 api_secret=self.api_secret,
-                channels=["funding"],  # Surveiller les événements de funding
+                channels=["position"],  # Surveiller les positions (pas de topic "funding" disponible)
                 logger=self.logger,
             )
             self._ws_client.on_topic = self._on_funding_event
@@ -217,7 +196,6 @@ class FundingCloseManager:
     def _check_positions_periodically(self):
         """Vérifie périodiquement les positions et les ferme si nécessaire (fallback)."""
         import threading
-        import time
         
         def check_loop():
             while self._running:
@@ -226,69 +204,90 @@ class FundingCloseManager:
                         self.logger.info(f"🔍 Vérification périodique des positions: {list(self._monitored_positions)}")
                         
                         for symbol in list(self._monitored_positions):
-                            # Vérifier si la position existe encore (filtrage local par symbole)
-                            # Faire plusieurs tentatives avec délai pour gérer les latences API
-                            position_found = False
-                            max_attempts = 3
+                            position_found = self._verify_position_exists(symbol)
                             
-                            for attempt in range(max_attempts):
-                                try:
-                                    positions = self.bybit_client.get_positions(category="linear", settleCoin="USDT")
-                                    
-                                    # Debug: Afficher la réponse de l'API
-                                    self.logger.info(f"🔍 Tentative {attempt + 1}/{max_attempts} - API Response pour {symbol}: {positions}")
-
-                                    if positions and positions.get("list"):
-                                        all_positions = positions.get("list", [])
-                                        self.logger.info(f"🔍 Toutes les positions: {[p.get('symbol') for p in all_positions]}")
-                                        
-                                        matching = [p for p in all_positions if p.get("symbol") == symbol]
-                                        if matching:
-                                            position_data = matching[0]
-                                            size = position_data.get("size", "0")
-                                            
-                                            self.logger.info(f"🔍 Position {symbol}: size={size}")
-                                            
-                                            if size and float(size) > 0:
-                                                self.logger.info(f"✅ Position {symbol} confirmée (size={size}) - surveillance continue")
-                                                position_found = True
-                                                break
-                                            else:
-                                                self.logger.info(f"ℹ️ Position {symbol} fermée (size=0) - retirer de la surveillance")
-                                                self.remove_position_from_monitor(symbol)
-                                                position_found = True
-                                                break
-                                    
-                                    # Si pas trouvée, attendre un peu avant la prochaine tentative
-                                    if attempt < max_attempts - 1:
-                                        self.logger.debug(f"⏳ Position {symbol} non trouvée, tentative {attempt + 2} dans 5s...")
-                                        time.sleep(5)
-                                        
-                                except Exception as e:
-                                    self.logger.error(f"❌ Erreur tentative {attempt + 1} pour {symbol}: {e}")
-                                    if attempt < max_attempts - 1:
-                                        time.sleep(5)
-                            
-                            # Si la position n'a pas été trouvée après toutes les tentatives
-                            if not position_found:
-                                self.logger.warning(f"⚠️ Position {symbol} non trouvée après {max_attempts} tentatives")
+                            if position_found:
+                                self._check_funding_and_monitor(symbol)
+                            else:
                                 self.logger.info(f"ℹ️ Position {symbol} n'existe plus - retirer de la surveillance")
                                 self.remove_position_from_monitor(symbol)
-                            else:
-                                # Vérifier si le funding a été touché via API REST
-                                self._check_funding_event(symbol)
-                                self.logger.info(f"ℹ️ Position {symbol} toujours active - surveillance continue")
                     
                     # Attendre 30 secondes avant la prochaine vérification
+                    import time
                     time.sleep(30)
                     
                 except Exception as e:
                     self.logger.error(f"❌ Erreur vérification périodique: {e}")
+                    import time
                     time.sleep(30)
         
         # Démarrer le thread de vérification périodique
         check_thread = threading.Thread(target=check_loop, daemon=True)
         check_thread.start()
+
+    def _verify_position_exists(self, symbol: str) -> bool:
+        """
+        Vérifie si une position existe encore avec retry logic.
+        
+        Args:
+            symbol: Symbole à vérifier
+            
+        Returns:
+            bool: True si la position existe et est active, False sinon
+        """
+        import time
+        
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                positions = self.bybit_client.get_positions(category="linear", settleCoin="USDT")
+                
+                # Debug: Afficher la réponse de l'API
+                self.logger.info(f"🔍 Tentative {attempt + 1}/{max_attempts} - API Response pour {symbol}: {positions}")
+
+                if positions and positions.get("list"):
+                    all_positions = positions.get("list", [])
+                    self.logger.info(f"🔍 Toutes les positions: {[p.get('symbol') for p in all_positions]}")
+                    
+                    matching = [p for p in all_positions if p.get("symbol") == symbol]
+                    if matching:
+                        position_data = matching[0]
+                        size = position_data.get("size", "0")
+                        
+                        self.logger.info(f"🔍 Position {symbol}: size={size}")
+                        
+                        if size and float(size) > 0:
+                            self.logger.info(f"✅ Position {symbol} confirmée (size={size}) - surveillance continue")
+                            return True
+                        else:
+                            self.logger.info(f"ℹ️ Position {symbol} fermée (size=0) - retirer de la surveillance")
+                            return False
+                
+                # Si pas trouvée, attendre un peu avant la prochaine tentative
+                if attempt < max_attempts - 1:
+                    self.logger.debug(f"⏳ Position {symbol} non trouvée, tentative {attempt + 2} dans 5s...")
+                    time.sleep(5)
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Erreur tentative {attempt + 1} pour {symbol}: {e}")
+                if attempt < max_attempts - 1:
+                    time.sleep(5)
+        
+        # Si la position n'a pas été trouvée après toutes les tentatives
+        self.logger.warning(f"⚠️ Position {symbol} non trouvée après {max_attempts} tentatives")
+        return False
+
+    def _check_funding_and_monitor(self, symbol: str):
+        """
+        Vérifie le funding et continue la surveillance.
+        
+        Args:
+            symbol: Symbole à surveiller
+        """
+        # Vérifier si le funding a été touché via API REST
+        self._check_funding_event(symbol)
+        self.logger.info(f"ℹ️ Position {symbol} toujours active - surveillance continue")
 
     def _check_funding_event(self, symbol: str):
         """
