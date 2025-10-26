@@ -24,6 +24,20 @@ Bot de trading automatisé pour Bybit avec WebSocket et API REST, incluant un sy
 2. (Optionnel privé) Créer `.env` avec `BYBIT_API_KEY` et `BYBIT_API_SECRET`
 3. Lancer le bot asynchrone : `python src/bot.py`
 
+## 💾 Sauvegarde automatique GitHub
+
+Pour sauvegarder automatiquement vos modifications vers GitHub :
+
+```bash
+# Méthode simple (message interactif)
+python git_save.py
+
+# Avec message directement
+python git_save.py "Votre message de commit"
+```
+
+📖 **Guide complet** : Voir [`SAUVEGARDE_GIT.md`](SAUVEGARDE_GIT.md) pour plus de détails
+
 ## 📊 Système de watchlist avancé
 
 ### Suivi des prix en temps réel avec filtrage intelligent (Architecture asynchrone)

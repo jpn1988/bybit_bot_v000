@@ -23,9 +23,9 @@ class TestDataManager:
 
     def test_init(self, mock_logger):
         """Test d'initialisation."""
-        with patch('unified_data_manager.DataFetcher') as mock_fetcher, \
-             patch('unified_data_manager.DataStorage') as mock_storage, \
-             patch('unified_data_manager.DataValidator') as mock_validator:
+        with patch('data_manager.DataFetcher') as mock_fetcher, \
+             patch('data_manager.DataStorage') as mock_storage, \
+             patch('data_manager.DataValidator') as mock_validator:
             
             manager = DataManager(testnet=True, logger=mock_logger)
             
@@ -37,10 +37,10 @@ class TestDataManager:
 
     def test_init_defaults(self):
         """Test d'initialisation avec valeurs par défaut."""
-        with patch('unified_data_manager.DataFetcher'), \
-             patch('unified_data_manager.DataStorage'), \
-             patch('unified_data_manager.DataValidator'), \
-             patch('unified_data_manager.setup_logging') as mock_setup:
+        with patch('data_manager.DataFetcher'), \
+             patch('data_manager.DataStorage'), \
+             patch('data_manager.DataValidator'), \
+             patch('data_manager.setup_logging') as mock_setup:
             
             mock_logger = Mock()
             mock_setup.return_value = mock_logger

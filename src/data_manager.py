@@ -300,3 +300,42 @@ class DataManager:
         
         # Mettre à jour dans le storage
         self.storage.set_symbol_lists(all_linear, all_inverse)
+
+    def get_loading_summary(self) -> Dict[str, Any]:
+        """
+        Retourne un résumé du chargement des données.
+        
+        Cette méthode délègue au validator pour construire le résumé
+        à partir des données stockées.
+        
+        Returns:
+            Dict[str, Any]: Résumé des données chargées avec les statistiques
+        """
+        try:
+            # Récupérer les données du storage
+            linear_symbols = self.storage.get_linear_symbols()
+            inverse_symbols = self.storage.get_inverse_symbols()
+            funding_data_objects = self.storage.get_all_funding_data_objects()
+            
+            # Convertir les Value Objects en tuples pour la compatibilité
+            funding_data = {
+                symbol: obj.to_tuple() 
+                for symbol, obj in funding_data_objects.items()
+            }
+            
+            # Déléguer au validator pour construire le résumé
+            return self.validator.get_loading_summary(
+                linear_symbols, 
+                inverse_symbols, 
+                funding_data
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur récupération résumé chargement: {e}")
+            return {
+                "linear_count": 0,
+                "inverse_count": 0,
+                "total_symbols": 0,
+                "funding_data_count": 0,
+                "error": str(e),
+            }
