@@ -6,6 +6,9 @@ Ce module définit BotComponentsBundle, une dataclass immutable qui regroupe
 tous les composants du bot pour permettre leur injection en bloc dans BotOrchestrator.
 """
 
+# ============================================================================
+# IMPORTS STANDARD LIBRARY
+# ============================================================================
 from dataclasses import dataclass
 from typing import Optional, Any
 
@@ -92,6 +95,9 @@ class BotComponentsBundle:
     
     # Client
     bybit_client: Optional[Any] = None
+    
+    # Composants spécialisés de surveillance (optionnel)
+    candidate_monitor: Optional[Any] = None
     
     # Composants spécialisés (initialisés plus tard dans start())
     scheduler: Optional[Any] = None

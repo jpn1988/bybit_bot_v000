@@ -45,42 +45,61 @@ les composants spécialisés pour démarrer et maintenir le bot en vie.
 - FallbackDataManager : Gestion du fallback des données
 """
 
-# Standard library
+# ============================================================================
+# IMPORTS STANDARD LIBRARY
+# ============================================================================
 import asyncio
+import atexit
 import signal
 import sys
 import time
-import atexit
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple, Union, List, Callable
 
-# Local imports - Configuration
+# ============================================================================
+# IMPORTS CONFIGURATION ET UTILITAIRES
+# ============================================================================
 from config import get_settings
 from config.constants import DEFAULT_FUNDING_UPDATE_INTERVAL
 from config.urls import URLConfig
 from logging_setup import setup_logging
 
-# Local imports - Clients et utilitaires
+# ============================================================================
+# IMPORTS CLIENTS ET SERVICES EXTERNES
+# ============================================================================
 from bybit_client import BybitClient
 from http_client_manager import close_all_http_clients
 from metrics_monitor import start_metrics_monitoring
 
-# Local imports - Composants du bot
+# ============================================================================
+# IMPORTS COMPOSANTS CORE DU BOT
+# ============================================================================
+# Initialisation et configuration
 from bot_initializer import BotInitializer
 from bot_configurator import BotConfigurator
-from data_manager import DataManager
 from bot_starter import BotStarter
+
+# Gestion des données
+from data_manager import DataManager
+
+# Monitoring et santé
 from bot_health_monitor import BotHealthMonitor
+from position_monitor import PositionMonitor
+
+# Gestion du cycle de vie
 from shutdown_manager import ShutdownManager
 from thread_manager import ThreadManager
 from scheduler_manager import SchedulerManager
-from position_monitor import PositionMonitor
 from funding_close_manager import FundingCloseManager
+
+# Gestion des exceptions
 from thread_exception_handler import (
     install_global_exception_handlers,
     install_asyncio_handler_if_needed
 )
 
-# Local imports - Nouveaux composants refactorisés
+# ============================================================================
+# IMPORTS COMPOSANTS REFACTORISÉS (NOUVEAUX)
+# ============================================================================
 from bot_lifecycle_manager import BotLifecycleManager
 from position_event_handler import PositionEventHandler
 from fallback_data_manager import FallbackDataManager
@@ -209,14 +228,24 @@ class BotOrchestrator:
             self.metrics_monitor = metrics_monitor
         except ImportError:
             self.metrics_monitor = None
-            self.logger.warning("⚠️ metrics_monitor non disponible")
+            self.logger.warning("⚠️ metrics_monitor non disponible - monitoring des métriques désactivé")
 
     # ============================================================================
     # MÉTHODES D'INITIALISATION
     # ============================================================================
 
     def _initialize_components(self):
-        """Initialise tous les composants du bot."""
+        """
+        Initialise tous les composants du bot.
+        
+        Cette méthode détermine le mode d'initialisation (factory ou legacy)
+        et délègue l'initialisation appropriée.
+        
+        Side effects:
+            - Initialise les managers principaux
+            - Configure les relations entre composants
+            - Met à jour self._use_factory_mode
+        """
         if self._use_factory_mode:
             # NOUVEAU MODE: Utiliser les composants du bundle
             self._initialize_from_bundle()
@@ -225,7 +254,17 @@ class BotOrchestrator:
             self._initialize_from_legacy()
     
     def _initialize_from_legacy(self):
-        """Ancien mode: Initialise les composants comme avant."""
+        """
+        Ancien mode: Initialise les composants comme avant.
+        
+        Cette méthode utilise l'approche legacy pour créer et configurer
+        tous les managers du bot. Elle est maintenue pour la rétro-compatibilité.
+        
+        Side effects:
+            - Crée tous les managers via BotInitializer
+            - Configure les callbacks entre managers
+            - Assigne les managers aux attributs de l'instance
+        """
         # Initialiser les managers
         self._initializer.initialize_managers()
         self._initializer.initialize_specialized_managers()
@@ -261,8 +300,19 @@ class BotOrchestrator:
         )
     
     def _initialize_from_bundle(self):
-        """Nouveau mode: Initialise depuis le bundle de composants."""
-        self.logger.debug("🔄 Initialisation en mode factory depuis le bundle...")
+        """
+        Nouveau mode: Initialise depuis le bundle de composants.
+        
+        Cette méthode utilise les composants pré-créés par BotFactory
+        et les assigne aux attributs de l'instance. C'est l'approche recommandée.
+        
+        Side effects:
+            - Assigne tous les composants depuis le bundle
+            - Configure les relations entre composants
+            - Met à jour self.bybit_client
+        """
+        self.logger.debug("🔄 Initialisation en mode factory depuis le bundle (composants: %d managers)", 
+                          len(self.components_bundle.get_all_managers()))
         
         # Utiliser les composants du bundle
         bundle = self.components_bundle
@@ -294,7 +344,8 @@ class BotOrchestrator:
         # Assigner le client Bybit
         self.bybit_client = bundle.bybit_client
         
-        self.logger.debug("✅ Composants initialisés depuis le bundle")
+        self.logger.debug("✅ Composants initialisés depuis le bundle (bybit_client: {})", 
+                          "connecté" if self.bybit_client else "non configuré")
 
     def _test_bybit_auth_connection_sync(self) -> bool:
         """
@@ -313,12 +364,22 @@ class BotOrchestrator:
         api_secret = settings.get("api_secret")
 
         if not api_key or not api_secret:
-            self.logger.warning("🔒 Clés API non configurées : connexion authentifiée désactivée.")
+            self.logger.warning("🔒 Clés API non configurées : connexion authentifiée désactivée (mode lecture seule)")
             return False
 
         try:
             # Exécuter la logique synchrone dans un thread dédié pour éviter PERF-002
             def _sync_connection_test():
+                """
+                Teste la connexion Bybit de manière synchrone.
+                
+                Cette fonction interne teste la connexion à l'API Bybit
+                et récupère le solde du portefeuille. Elle est exécutée
+                dans un thread dédié pour éviter les problèmes d'event loop.
+                
+                Returns:
+                    dict: Réponse de l'API get_wallet_balance
+                """
                 self.bybit_client = BybitClient(
                     testnet=testnet,
                     timeout=settings["timeout"],
@@ -334,10 +395,12 @@ class BotOrchestrator:
                 result = future.result()
             
             balance = self._extract_usdt_balance(result)
-            self.logger.info(f"✅ Bybit connecté ({'testnet' if testnet else 'mainnet'}) en mode authentifié. Balance : {balance} USDT")
+            self.logger.info("✅ Bybit connecté ({}) en mode authentifié - Balance: {} USDT", 
+                            'testnet' if testnet else 'mainnet', balance)
             return True
         except Exception as e:
-            self.logger.error(f"❌ Vérification Bybit authentifiée échouée : {e}")
+            self.logger.error("❌ Vérification Bybit authentifiée échouée : {} (type: {})", 
+                             str(e), type(e).__name__)
             return False
 
     def _extract_usdt_balance(self, wallet_response: dict) -> str:
@@ -379,33 +442,89 @@ class BotOrchestrator:
             return f"{float(total_balance or 0):.2f}"
             
         except (ValueError, TypeError, KeyError, IndexError) as e:
-            self.logger.debug(f"Erreur extraction solde USDT: {e}")
+            self.logger.debug("Erreur extraction solde USDT: {} (données: {})", 
+                             str(e), str(wallet_response)[:100])
             return "N/A"
 
     # ============================================================================
     # MÉTHODES DE DÉMARRAGE
     # ============================================================================
 
-    async def start(self):
-        """Démarre le suivi des prix avec filtrage par funding."""
+    async def start(self) -> None:
+        """
+        Démarre le suivi des prix avec filtrage par funding.
+        
+        Cette méthode orchestre le démarrage complet du bot en divisant
+        le processus en étapes logiques distinctes pour une meilleure
+        lisibilité et maintenabilité.
+        """
         # Installer le handler asyncio pour la boucle événementielle actuelle
         install_asyncio_handler_if_needed()
         
+        # 1. Configuration et validation
+        config, base_url, perp_data = await self._initialize_and_validate_config()
+        if not config:
+            return
+
+        # 2. Configuration des managers et chargement des données
+        if not await self._configure_managers_and_load_data(config, base_url, perp_data):
+            return
+
+        # 3. Démarrer les composants principaux
+        await self._start_main_components(base_url, perp_data)
+
+        # 4. Initialiser les composants spécialisés
+        self._initialize_specialized_components(config)
+
+        # 5. Configurer les callbacks
+        self._configure_specialized_callbacks()
+
+        # 6. Démarrer le cycle de vie du bot
+        await self._start_lifecycle()
+
+    async def _initialize_and_validate_config(self) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[Dict[str, Any]]]:
+        """
+        Initialise et valide la configuration du bot.
+        
+        Cette méthode charge la configuration, la valide et récupère
+        les données de marché nécessaires au démarrage.
+        
+        Returns:
+            Tuple[Optional[Dict[str, Any]], Optional[str], Optional[Dict[str, Any]]]: 
+                (config, base_url, perp_data) ou (None, None, None) si erreur
+        """
         try:
             # 1. Charger et valider la configuration
             config = self._configurator.load_and_validate_config(
                 self.watchlist_manager.config_manager
             )
         except ValueError:
-            return  # Arrêt propre sans sys.exit
+            return None, None, None  # Arrêt propre sans sys.exit
 
         try:
             # 2. Récupérer les données de marché
             base_url, perp_data = self._configurator.get_market_data()
+            return config, base_url, perp_data
         except Exception as e:
-            self.logger.error(f"❌ Erreur récupération données marché : {e}")
-            return
+            self.logger.error("❌ Erreur récupération données marché : {} (étape: configuration)", 
+                             str(e))
+            return None, None, None
 
+    async def _configure_managers_and_load_data(self, config: Dict[str, Any], base_url: str, perp_data: Dict[str, Any]) -> bool:
+        """
+        Configure les managers et charge les données nécessaires.
+        
+        Cette méthode configure tous les managers avec la configuration
+        et charge les données de la watchlist.
+        
+        Args:
+            config: Configuration du bot
+            base_url: URL de base de l'API
+            perp_data: Données des instruments perpétuels
+            
+        Returns:
+            bool: True si la configuration et le chargement ont réussi
+        """
         # 3. Configurer les managers
         self._configurator.configure_managers(
             config,
@@ -423,14 +542,26 @@ class BotOrchestrator:
             self.watchlist_manager,
             self.volatility_tracker,
         ):
-            return
+            return False
 
         # 5. Afficher le résumé de démarrage
         self._starter.display_startup_summary(
             config, perp_data, self.data_manager
         )
+        
+        return True
 
-        # 6. Démarrer tous les composants
+    async def _start_main_components(self, base_url: str, perp_data: Dict[str, Any]) -> None:
+        """
+        Démarre tous les composants principaux du bot.
+        
+        Cette méthode démarre les composants de base nécessaires
+        au fonctionnement du bot (volatility_tracker, display_manager, etc.).
+        
+        Args:
+            base_url: URL de base de l'API
+            perp_data: Données des instruments perpétuels
+        """
         await self._starter.start_bot_components(
             self.volatility_tracker,
             self.display_manager,
@@ -441,6 +572,16 @@ class BotOrchestrator:
             perp_data,
         )
 
+    def _initialize_specialized_components(self, config: Dict[str, Any]) -> None:
+        """
+        Initialise les composants spécialisés du bot.
+        
+        Cette méthode initialise les composants spécialisés comme
+        le Scheduler, PositionMonitor et FundingCloseManager.
+        
+        Args:
+            config: Configuration du bot
+        """
         # 7. Initialiser et démarrer le Scheduler pour la surveillance du funding
         self._initialize_scheduler(config)
 
@@ -449,8 +590,14 @@ class BotOrchestrator:
         
         # 9. Initialiser le FundingCloseManager
         self._initialize_funding_close_manager()
+
+    def _configure_specialized_callbacks(self) -> None:
+        """
+        Configure les callbacks des composants spécialisés.
         
-        # 10. Configurer les callbacks des composants spécialisés
+        Cette méthode configure les callbacks entre les composants
+        spécialisés pour assurer la communication entre eux.
+        """
         # Note: Le bundle étant immutable, on configure directement les callbacks
         if self.scheduler and self._position_event_handler:
             self.scheduler.on_position_opened_callback = self._position_event_handler.on_position_opened
@@ -463,7 +610,14 @@ class BotOrchestrator:
             self.funding_close_manager.on_position_closed = self._position_event_handler.on_position_closed
             self._position_event_handler.set_funding_close_manager(self.funding_close_manager)
 
-        # 13. Démarrer le cycle de vie du bot
+    async def _start_lifecycle(self) -> None:
+        """
+        Démarre le cycle de vie du bot.
+        
+        Cette méthode démarre le cycle de vie du bot et maintient
+        le bot en vie avec une boucle d'attente.
+        """
+        self.logger.info("🔄 Démarrage du cycle de vie du bot...")
         components = {
             "monitoring_manager": self.monitoring_manager,
             "display_manager": self.display_manager,
@@ -471,13 +625,28 @@ class BotOrchestrator:
             "volatility_tracker": self.volatility_tracker,
             "metrics_monitor": self.metrics_monitor,
         }
+        self.logger.info(f"🔍 Composants à démarrer: {list(components.keys())}")
+        
         await self._lifecycle_manager.start_lifecycle(components)
+        self.logger.info("✅ Cycle de vie démarré, démarrage de la boucle principale...")
 
-        # 14. Maintenir le bot en vie avec une boucle d'attente
+        # Maintenir le bot en vie avec une boucle d'attente
         await self._lifecycle_manager.keep_bot_alive(components)
 
     def _initialize_scheduler(self, config):
-        """Initialise le SchedulerManager pour la surveillance du funding."""
+        """
+        Initialise le SchedulerManager pour la surveillance du funding.
+        
+        Cette méthode crée et configure le SchedulerManager qui surveille
+        les positions et déclenche des actions basées sur les données de funding.
+        
+        Args:
+            config: Configuration du bot contenant les paramètres de funding
+            
+        Side effects:
+            - Crée self.scheduler
+            - Lance une tâche asyncio pour la surveillance
+        """
         funding_threshold = config.get('funding_threshold_minutes', 60)
         auto_trading_config = config.get('auto_trading', {})
         self.scheduler = SchedulerManager(
@@ -493,6 +662,14 @@ class BotOrchestrator:
     def _initialize_position_monitor(self):
         """
         Initialise le PositionMonitor avec les callbacks appropriés.
+        
+        Cette méthode crée et démarre le PositionMonitor qui surveille
+        les positions ouvertes/fermées et déclenche les callbacks appropriés.
+        
+        Side effects:
+            - Crée self.position_monitor
+            - Démarre la surveillance des positions
+            - Configure les callbacks d'ouverture/fermeture
         """
         try:
             self.position_monitor = PositionMonitor(
@@ -505,14 +682,25 @@ class BotOrchestrator:
             # Démarrer le PositionMonitor
             self.position_monitor.start()
             
-            self.logger.info("🔍 PositionMonitor initialisé")
+            self.logger.info("🔍 PositionMonitor initialisé (testnet: {})", self.testnet)
             
         except Exception as e:
-            self.logger.error(f"❌ Erreur initialisation PositionMonitor: {e}")
+            self.logger.error("❌ Erreur initialisation PositionMonitor: {} (composant: surveillance positions)", 
+                             str(e))
             self.position_monitor = None
 
     def _initialize_funding_close_manager(self):
-        """Initialise le FundingCloseManager pour fermeture automatique après funding."""
+        """
+        Initialise le FundingCloseManager pour fermeture automatique après funding.
+        
+        Cette méthode crée et démarre le FundingCloseManager qui surveille
+        les positions et les ferme automatiquement après un événement de funding.
+        
+        Side effects:
+            - Crée self.funding_close_manager
+            - Démarre la surveillance des funding
+            - Configure les callbacks de fermeture
+        """
         try:
             self.funding_close_manager = FundingCloseManager(
                 testnet=self.testnet,
@@ -521,34 +709,49 @@ class BotOrchestrator:
                 on_position_closed=self._on_position_closed
             )
             self.funding_close_manager.start()
-            self.logger.info("💰 FundingCloseManager initialisé")
+            self.logger.info("💰 FundingCloseManager initialisé (testnet: {}, client: {})", 
+                            self.testnet, "configuré" if self.bybit_client else "non configuré")
         except Exception as e:
-            self.logger.error(f"❌ Erreur initialisation FundingCloseManager: {e}")
+            self.logger.error("❌ Erreur initialisation FundingCloseManager: {} (composant: fermeture automatique)", 
+                             str(e))
             self.funding_close_manager = None
 
     # ============================================================================
     # MÉTHODES DE CALLBACK POUR LES POSITIONS (DÉLÉGUÉES)
     # ============================================================================
 
-    def _on_position_opened(self, symbol: str, position_data: Dict[str, Any]):
+    def _on_position_opened(self, symbol: str, position_data: Dict[str, Any]) -> None:
         """
         Callback appelé lors de l'ouverture d'une position.
-        Délègue au PositionEventHandler.
+        
+        Cette méthode délègue le traitement de l'ouverture de position
+        au PositionEventHandler qui gère la logique métier.
         
         Args:
-            symbol: Symbole de la position ouverte
-            position_data: Données de la position
+            symbol: Symbole de la position ouverte (ex: "BTCUSDT")
+            position_data: Données de la position (taille, prix, etc.)
+            
+        Side effects:
+            - Déclenche le callback du PositionEventHandler
+            - Peut modifier l'état des managers
         """
         self._position_event_handler.on_position_opened(symbol, position_data)
 
-    def _on_position_closed(self, symbol: str, position_data: Dict[str, Any]):
+    def _on_position_closed(self, symbol: str, position_data: Dict[str, Any]) -> None:
         """
         Callback appelé lors de la fermeture d'une position.
-        Délègue au PositionEventHandler.
+        
+        Cette méthode délègue le traitement de la fermeture de position
+        au PositionEventHandler et retire la position du scheduler.
         
         Args:
-            symbol: Symbole de la position fermée
-            position_data: Données de la position
+            symbol: Symbole de la position fermée (ex: "BTCUSDT")
+            position_data: Données de la position (P&L, etc.)
+            
+        Side effects:
+            - Retire la position du scheduler
+            - Déclenche le callback du PositionEventHandler
+            - Peut modifier l'état des managers
         """
         # Retirer aussi du scheduler
         if self.scheduler:
@@ -563,10 +766,14 @@ class BotOrchestrator:
     def _get_funding_data_for_scheduler(self) -> Dict[str, Dict[str, Any]]:
         """
         Récupère les données de funding formatées pour le Scheduler.
-        Délègue au FallbackDataManager.
+        
+        Cette méthode délègue la récupération des données de funding
+        au FallbackDataManager qui gère le cache et les sources de données.
         
         Returns:
-            Dict avec les données de funding formatées pour chaque symbole
+            Dict[str, Dict[str, Any]]: Données de funding formatées
+                - Clé: Symbole (ex: "BTCUSDT")
+                - Valeur: Dict avec funding_rate, funding_time, etc.
         """
         return self._fallback_data_manager.get_funding_data_for_scheduler()
 
@@ -600,9 +807,10 @@ class BotOrchestrator:
             },
         }
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Arrête le bot de manière propre via ShutdownManager."""
-        self.logger.info("🛑 Arrêt du bot...")
+        self.logger.info("🛑 Arrêt du bot... (uptime: {:.1f}s)", 
+                        time.time() - self.start_time)
         self.running = False
 
         # Arrêter les composants spécialisés
@@ -619,23 +827,35 @@ class BotOrchestrator:
         
         await self._lifecycle_manager.stop_lifecycle(components)
 
-    async def _stop_specialized_components(self):
-        """Arrête les composants spécialisés (PositionMonitor, FundingCloseManager)."""
+    async def _stop_specialized_components(self) -> None:
+        """
+        Arrête les composants spécialisés (PositionMonitor, FundingCloseManager).
+        
+        Cette méthode arrête proprement tous les composants spécialisés
+        qui ne sont pas gérés par le BotLifecycleManager principal.
+        
+        Side effects:
+            - Arrête le PositionMonitor si actif
+            - Arrête le FundingCloseManager si actif
+            - Log les erreurs d'arrêt sans les propager
+        """
         # Arrêter le PositionMonitor si actif
         if self.position_monitor:
             try:
                 self.position_monitor.stop()
-                self.logger.info("🔍 PositionMonitor arrêté")
+                self.logger.info("🔍 PositionMonitor arrêté (composant: surveillance positions)")
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur arrêt PositionMonitor: {e}")
+                self.logger.warning("⚠️ Erreur arrêt PositionMonitor: {} (composant: surveillance positions)", 
+                                   str(e))
         
         # Arrêter le FundingCloseManager si actif
         if self.funding_close_manager:
             try:
                 self.funding_close_manager.stop()
-                self.logger.info("💰 FundingCloseManager arrêté")
+                self.logger.info("💰 FundingCloseManager arrêté (composant: fermeture automatique)")
             except Exception as e:
-                self.logger.warning(f"⚠️ Erreur arrêt FundingCloseManager: {e}")
+                self.logger.warning("⚠️ Erreur arrêt FundingCloseManager: {} (composant: fermeture automatique)", 
+                                   str(e))
 
 
 class AsyncBotRunner:
@@ -643,31 +863,74 @@ class AsyncBotRunner:
     Lance le BotOrchestrator dans un event loop asyncio.
     """
 
-    def __init__(self):
-        self.logger = setup_logging()
-        self.orchestrator = BotOrchestrator()
-        self.running = True
+    def __init__(self) -> None:
+        """
+        Initialise l'AsyncBotRunner.
+        
+        Cette méthode configure le runner asynchrone qui lance le bot
+        dans un event loop asyncio. Elle utilise BotFactory pour créer
+        l'orchestrator avec injection de dépendances.
+        
+        Side effects:
+            - Configure le logger
+            - Crée l'orchestrator via BotFactory
+            - Initialise les variables d'état
+        """
+        try:
+            print("🔧 Configuration du logger...")
+            self.logger = setup_logging()
+            
+            print("🏭 Import de BotFactory...")
+            # NOUVEAU: Utiliser BotFactory pour créer l'orchestrator avec injection de dépendances
+            from factories.bot_factory import BotFactory
+            
+            print("⚙️ Récupération de la configuration...")
+            # Récupérer testnet depuis la configuration
+            settings = get_settings()
+            testnet = settings.get("testnet", True)
+            
+            print(f"🏭 Création du bot (testnet: {testnet})...")
+            factory = BotFactory(logger=self.logger)
+            self.orchestrator = factory.create_bot(testnet=testnet)
+            
+            print("✅ Runner initialisé avec succès")
+            self.running = True
+        except Exception as e:
+            print(f"❌ Erreur initialisation AsyncBotRunner: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
-    async def start(self):
+    async def start(self) -> None:
         """Démarre le bot de manière asynchrone."""
-        self.logger.info("Démarrage du bot Bybit (mode asynchrone)...")
+        self.logger.info("🚀 Démarrage du bot Bybit (mode asynchrone, testnet: {})...", 
+                        self.orchestrator.testnet)
         try:
             # Configurer le signal handler pour l'arrêt propre (Windows compatible)
             self._setup_signal_handlers()
 
             await self.orchestrator.start()
         except asyncio.CancelledError:
-            self.logger.info("Bot arrêté par annulation de tâche.")
+            self.logger.info("⏹️ Bot arrêté par annulation de tâche (uptime: {:.1f}s)", 
+                            time.time() - self.orchestrator.start_time)
         except Exception as e:
-            self.logger.error(
-                f"Erreur critique dans le runner asynchrone: {e}",
-                exc_info=True,
-            )
+            self.logger.error("❌ Erreur critique dans le runner asynchrone: {} (type: {})", 
+                             str(e), type(e).__name__, exc_info=True)
         finally:
-            self.logger.info("Bot Bybit arrêté.")
+            self.logger.info("🏁 Bot Bybit arrêté (session terminée)")
 
-    def _setup_signal_handlers(self):
-        """Configure les signal handlers pour l'arrêt propre."""
+    def _setup_signal_handlers(self) -> None:
+        """
+        Configure les signal handlers pour l'arrêt propre.
+        
+        Cette méthode configure les handlers pour SIGINT (Ctrl+C) et SIGTERM
+        pour permettre un arrêt propre du bot. Sur Windows, les signal handlers
+        ne sont pas supportés par asyncio.
+        
+        Side effects:
+            - Configure les handlers de signal si supportés
+            - Log un avertissement si non supportés
+        """
         try:
             loop = asyncio.get_running_loop()
             for sig in (signal.SIGINT, signal.SIGTERM):
@@ -693,8 +956,19 @@ class AsyncBotRunner:
             self.logger.info("Toutes les tâches asynchrones ont été annulées.")
             sys.exit(0)  # Forcer la sortie après l'arrêt propre
 
-    async def _cancel_remaining_tasks(self):
-        """Annule toutes les tâches asyncio restantes."""
+    async def _cancel_remaining_tasks(self) -> None:
+        """
+        Annule toutes les tâches asyncio restantes.
+        
+        Cette méthode annule toutes les tâches asyncio en cours d'exécution
+        pour permettre un arrêt propre de l'event loop. Elle est appelée
+        lors de l'arrêt du bot pour éviter les tâches zombies.
+        
+        Side effects:
+            - Annule toutes les tâches asyncio
+            - Attend la fin de l'annulation
+            - Permet l'arrêt propre de l'event loop
+        """
         tasks = [
             t
             for t in asyncio.all_tasks()
@@ -706,17 +980,30 @@ class AsyncBotRunner:
 
 
 async def main_async():
-    # Installer le handler asyncio au point d'entrée principal
-    install_asyncio_handler_if_needed()
-    
-    runner = AsyncBotRunner()
-    await runner.start()
+    try:
+        print("🔧 Installation du handler asyncio...")
+        # Installer le handler asyncio au point d'entrée principal
+        install_asyncio_handler_if_needed()
+        
+        print("🏭 Création du runner...")
+        runner = AsyncBotRunner()
+        
+        print("🚀 Démarrage du runner...")
+        await runner.start()
+    except Exception as e:
+        print(f"❌ Erreur dans main_async: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
     try:
+        print("🚀 Démarrage du bot Bybit...")
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        print("\nArrêt demandé par l'utilisateur (KeyboardInterrupt)")
+        print("\n🛑 Arrêt demandé par l'utilisateur (KeyboardInterrupt)")
     except Exception as e:
-        print(f"Erreur inattendue: {e}")
+        print(f"❌ Erreur inattendue: {e}")
+        import traceback
+        traceback.print_exc()

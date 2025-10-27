@@ -14,14 +14,33 @@ Architecture simplifiée :
     data_manager.load_watchlist_data()        # Coordination de haut niveau
 """
 
-from typing import Dict, List, Optional, Tuple, Any
+# ============================================================================
+# IMPORTS STANDARD LIBRARY
+# ============================================================================
+from typing import Dict, List, Optional, Tuple, Any, Union
+
+# ============================================================================
+# IMPORTS CONFIGURATION ET UTILITAIRES
+# ============================================================================
 from logging_setup import setup_logging
-from volatility_tracker import VolatilityTracker
+
+# ============================================================================
+# IMPORTS COMPOSANTS DE DONNÉES
+# ============================================================================
 from data_fetcher import DataFetcher
 from data_storage import DataStorage
 from data_validator import DataValidator
+
+# ============================================================================
+# IMPORTS MODELS ET FACTORIES
+# ============================================================================
 from models.funding_data import FundingData
 from factories.funding_factory import FundingDataFactory
+
+# ============================================================================
+# IMPORTS COMPOSANTS EXTERNES
+# ============================================================================
+from volatility_tracker import VolatilityTracker
 
 
 class DataManager:
@@ -48,11 +67,11 @@ class DataManager:
     def __init__(
         self,
         testnet: bool = True,
-        logger=None,
+        logger: Optional[Any] = None,
         fetcher: Optional["DataFetcher"] = None,
         storage: Optional["DataStorage"] = None,
         validator: Optional["DataValidator"] = None,
-    ):
+    ) -> None:
         """
         Initialise le gestionnaire de données unifié.
 
@@ -111,8 +130,8 @@ class DataManager:
     def load_watchlist_data(
         self,
         base_url: str,
-        perp_data: Dict,
-        watchlist_manager,
+        perp_data: Dict[str, Any],
+        watchlist_manager: Any,
         volatility_tracker: VolatilityTracker,
     ) -> bool:
         """
@@ -131,7 +150,8 @@ class DataManager:
             bool: True si le chargement a réussi
         """
         try:
-            self.logger.info("📊 Chargement des données de la watchlist...")
+            self.logger.info("📊 Chargement des données de la watchlist... (URL: {}, symboles: {})", 
+                            base_url, len(perp_data) if perp_data else 0)
 
             # 1. Valider les paramètres d'entrée
             if not self._validate_input_parameters(
@@ -153,11 +173,14 @@ class DataManager:
             if not self._validate_loaded_data():
                 return False
 
-            self.logger.info("✅ Données de la watchlist chargées avec succès")
+            self.logger.info("✅ Données de la watchlist chargées avec succès (symboles: %d, funding: %d)", 
+                            len(watchlist_manager.get_selected_symbols()), 
+                            len(self.storage.get_all_funding_data_objects()))
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Erreur chargement watchlist: {e}")
+            self.logger.error("❌ Erreur chargement watchlist: {} (étape: {})", 
+                             str(e), "validation" if "validate" in str(e) else "chargement")
             return False
 
     def _validate_input_parameters(
@@ -216,9 +239,24 @@ class DataManager:
         # Mettre à jour les données originales
         self._update_original_funding_data(watchlist_manager)
 
-    def _update_funding_data(self, funding_data: Dict):
-        """Met à jour les données de funding dans le stockage (utilise Value Objects)."""
-        self.logger.info(f"🔍 [DEBUG] Mise à jour de {len(funding_data)} symboles de funding")
+    def _update_funding_data(self, funding_data: Dict[str, Any]) -> None:
+        """
+        Met à jour les données de funding dans le stockage (utilise Value Objects).
+        
+        Cette méthode traite les données de funding brutes et les convertit
+        en objets FundingData via la factory centralisée. Elle gère les erreurs
+        de conversion et calcule les statistiques de succès.
+        
+        Args:
+            funding_data: Dict des données de funding brutes par symbole
+            
+        Side effects:
+            - Met à jour le stockage avec les nouveaux objets FundingData
+            - Log les erreurs de conversion individuelles
+            - Calcule et log les statistiques de succès
+        """
+        self.logger.info("🔍 Mise à jour des données de funding (symboles: {}, source: {})", 
+                        len(funding_data), "API" if funding_data else "cache")
         
         success_count = 0
         for symbol, data in funding_data.items():
@@ -236,10 +274,25 @@ class DataManager:
             except Exception as e:
                 self.logger.warning(f"⚠️ Erreur création FundingData pour {symbol}: {e}")
         
-        self.logger.info(f"✅ [DEBUG] {success_count}/{len(funding_data)} FundingData créés avec succès")
+        self.logger.info("✅ FundingData créés avec succès ({}/{}, taux: {:.1f}%)", 
+                        success_count, len(funding_data), 
+                        (success_count / len(funding_data) * 100) if funding_data else 0)
 
-    def _update_original_funding_data(self, watchlist_manager):
-        """Met à jour les données originales de funding."""
+    def _update_original_funding_data(self, watchlist_manager: Any) -> None:
+        """
+        Met à jour les données originales de funding.
+        
+        Cette méthode synchronise les données de funding originales
+        entre le WatchlistManager et le DataStorage pour maintenir
+        la cohérence des données.
+        
+        Args:
+            watchlist_manager: Instance du WatchlistManager
+            
+        Side effects:
+            - Met à jour le stockage avec les données originales
+            - Log les erreurs de synchronisation
+        """
         try:
             original_data = watchlist_manager.get_original_funding_data()
             for symbol, next_funding_time in original_data.items():

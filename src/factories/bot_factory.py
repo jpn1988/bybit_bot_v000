@@ -10,13 +10,28 @@ Cette factory orchestre l'ensemble du processus de création d'un bot:
 Point d'entrée simplifié pour créer un bot complet.
 """
 
+# ============================================================================
+# IMPORTS STANDARD LIBRARY
+# ============================================================================
 from typing import Optional
+
+# ============================================================================
+# IMPORTS CONFIGURATION ET UTILITAIRES
+# ============================================================================
 from logging_setup import setup_logging
 from config import get_settings
+
+# ============================================================================
+# IMPORTS FACTORIES ET CONFIGURATEURS
+# ============================================================================
 from .bot_component_factory import BotComponentFactory
 from configuration.bot_callback_configurator import BotCallbackConfigurator
 
-# Import BotOrchestrator sera fait localement pour éviter les imports circulaires
+# ============================================================================
+# NOTE: Import BotOrchestrator
+# ============================================================================
+# L'import de BotOrchestrator est fait localement dans create_bot()
+# pour éviter les imports circulaires
 
 
 class BotFactory:

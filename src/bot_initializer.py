@@ -29,15 +29,35 @@ pour créer et configurer tous les managers nécessaires.
 📚 POUR EN SAVOIR PLUS : Consultez GUIDE_DEMARRAGE_BOT.md
 """
 
+# ============================================================================
+# IMPORTS STANDARD LIBRARY
+# ============================================================================
 from typing import Optional
+
+# ============================================================================
+# IMPORTS CONFIGURATION ET UTILITAIRES
+# ============================================================================
 from logging_setup import setup_logging
 from config import ConfigManager
+
+# ============================================================================
+# IMPORTS COMPOSANTS CORE DU BOT
+# ============================================================================
+# Gestion des données
 from data_manager import DataManager
+
+# Affichage et monitoring
 from display_manager import DisplayManager
 from monitoring_manager import MonitoringManager
+
+# Connexions et communication
 from ws_manager import WebSocketManager
+
+# Analyse et filtrage
 from volatility_tracker import VolatilityTracker
 from watchlist_manager import WatchlistManager
+
+# Gestion des callbacks et opportunités
 from callback_manager import CallbackManager
 from opportunity_manager import OpportunityManager
 
@@ -77,6 +97,7 @@ class BotInitializer:
         # Gestionnaires spécialisés
         self.callback_manager: Optional[CallbackManager] = None
         self.opportunity_manager: Optional[OpportunityManager] = None
+        self.candidate_monitor = None
 
     def initialize_managers(self):
         """
@@ -134,6 +155,15 @@ class BotInitializer:
         self.opportunity_manager = OpportunityManager(
             self.data_manager, logger=self.logger
         )
+        
+        # Gestionnaire de candidats (pour cohérence avec factory mode)
+        from candidate_monitor import CandidateMonitor
+        self.candidate_monitor = CandidateMonitor(
+            data_manager=self.data_manager,
+            watchlist_manager=self.watchlist_manager,
+            testnet=self.testnet,
+            logger=self.logger
+        )
 
     def setup_manager_callbacks(self):
         """
@@ -185,4 +215,5 @@ class BotInitializer:
             "watchlist_manager": self.watchlist_manager,
             "callback_manager": self.callback_manager,
             "opportunity_manager": self.opportunity_manager,
+            "candidate_monitor": getattr(self, 'candidate_monitor', None),
         }

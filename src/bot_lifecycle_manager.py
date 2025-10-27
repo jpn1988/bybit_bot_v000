@@ -109,9 +109,11 @@ class BotLifecycleManager:
             components: Dictionnaire des composants du bot
         """
         self.logger.info("🔄 Bot opérationnel - surveillance continue...")
+        self.logger.info(f"🔍 État initial: running={self.running}, composants={len(components)}")
 
         try:
             while self.running:
+                self.logger.debug(f"🔄 Boucle de surveillance active (running={self.running})")
                 # Vérifier que tous les composants principaux sont toujours actifs
                 if self._health_monitor and not self._health_monitor.check_components_health(
                     components.get("monitoring_manager"),
@@ -135,6 +137,8 @@ class BotLifecycleManager:
             self.running = False
         except Exception as e:
             self.logger.error(f"❌ Erreur dans la boucle principale: {e}")
+            import traceback
+            traceback.print_exc()
             self.running = False
 
     async def stop_lifecycle(self, components: Dict[str, Any]):

@@ -41,14 +41,27 @@ les composants spécialisés sans implémenter directement la logique métier.
    → Délègue toute la logique métier aux composants spécialisés
 """
 
+# ============================================================================
+# IMPORTS STANDARD LIBRARY
+# ============================================================================
 import asyncio
 import time
 from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
+
+# ============================================================================
+# IMPORTS CONFIGURATION ET UTILITAIRES
+# ============================================================================
 from logging_setup import setup_logging
-from interfaces.monitoring_manager_interface import MonitoringManagerInterface
 from config.timeouts import ScanIntervalConfig, TimeoutConfig
 
-# Éviter les imports circulaires avec TYPE_CHECKING
+# ============================================================================
+# IMPORTS INTERFACES
+# ============================================================================
+from interfaces.monitoring_manager_interface import MonitoringManagerInterface
+
+# ============================================================================
+# IMPORTS TYPE CHECKING (Éviter les imports circulaires)
+# ============================================================================
 if TYPE_CHECKING:
     from data_manager import DataManager
     from watchlist_manager import WatchlistManager
@@ -71,11 +84,11 @@ class MonitoringManager(MonitoringManagerInterface):
         self,
         data_manager: Any,
         testnet: bool = True,
-        logger=None,
-        scan_interval: int = None,
+        logger: Optional[Any] = None,
+        scan_interval: Optional[int] = None,
         opportunity_manager: Optional[Any] = None,
         candidate_monitor: Optional[Any] = None,
-    ):
+    ) -> None:
         """
         Initialise le gestionnaire de surveillance unifié.
 
@@ -190,8 +203,8 @@ class MonitoringManager(MonitoringManagerInterface):
         self.data_manager = data_manager
 
     async def start_continuous_monitoring(
-        self, base_url: str, perp_data: Dict
-    ):
+        self, base_url: str, perp_data: Dict[str, Any]
+    ) -> None:
         """
         Démarre la surveillance continue du marché.
 
@@ -204,7 +217,8 @@ class MonitoringManager(MonitoringManagerInterface):
             RuntimeError: Si l'initialisation échoue
         """
         if self._running:
-            self.logger.warning("⚠️ Surveillance continue déjà active")
+            self.logger.warning("⚠️ Surveillance continue déjà active (composants: {})", 
+                               len(self._active_positions))
             return
 
         try:
@@ -222,14 +236,15 @@ class MonitoringManager(MonitoringManagerInterface):
             # Configurer la surveillance des candidats
             self._setup_candidate_monitoring(base_url, perp_data)
 
-            self.logger.info("🔍 Surveillance continue démarrée avec succès")
+            self.logger.info("🔍 Surveillance continue démarrée avec succès (scan: {}s, positions: {})", 
+                            self._scan_interval, len(self._active_positions))
 
         except ValueError as e:
-            self.logger.error(f"❌ Configuration invalide : {e}")
+            self.logger.error("❌ Configuration invalide : {} (composant: monitoring)", str(e))
             self._running = False
             raise
         except Exception as e:
-            self.logger.error(f"❌ Erreur démarrage surveillance : {e}")
+            self.logger.error("❌ Erreur démarrage surveillance : {} (composant: monitoring)", str(e))
             self._running = False
             # Tenter un nettoyage
             await self._cleanup_on_error()
@@ -310,7 +325,18 @@ class MonitoringManager(MonitoringManagerInterface):
             raise ValueError("VolatilityTracker doit être configuré via set_volatility_tracker()")
 
     def _init_opportunity_manager(self):
-        """Initialise le gestionnaire d'opportunités si nécessaire."""
+        """
+        Initialise le gestionnaire d'opportunités si nécessaire.
+        
+        Cette méthode crée l'OpportunityManager de manière paresseuse
+        s'il n'existe pas encore. Elle configure les callbacks et
+        les références aux autres managers.
+        
+        Side effects:
+            - Crée self.opportunity_manager si nécessaire
+            - Configure les callbacks de découverte d'opportunités
+            - Met à jour les références aux managers
+        """
         if self.opportunity_manager:
             self.logger.debug("→ OpportunityManager déjà initialisé, réutilisation")
             return
@@ -333,7 +359,18 @@ class MonitoringManager(MonitoringManagerInterface):
         self.logger.debug("→ OpportunityManager créé et configuré")
 
     def _init_candidate_monitor(self):
-        """Initialise le moniteur de candidats si nécessaire."""
+        """
+        Initialise le moniteur de candidats si nécessaire.
+        
+        Cette méthode crée le CandidateMonitor de manière paresseuse
+        s'il n'existe pas encore. Elle configure les callbacks pour
+        la surveillance des symboles proches des critères.
+        
+        Side effects:
+            - Crée self.candidate_monitor si nécessaire
+            - Configure les callbacks de surveillance des candidats
+            - Met à jour les références aux managers
+        """
         if self.candidate_monitor:
             self.logger.debug("→ CandidateMonitor déjà initialisé, réutilisation")
             return

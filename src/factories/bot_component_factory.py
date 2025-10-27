@@ -8,13 +8,28 @@ au fonctionnement du bot, améliorant la maintenabilité et la testabilité.
 Responsabilité unique : Instancier les composants avec leurs dépendances
 """
 
+# ============================================================================
+# IMPORTS STANDARD LIBRARY
+# ============================================================================
 import concurrent.futures
 from typing import Optional, Any
+
+# ============================================================================
+# IMPORTS CONFIGURATION ET UTILITAIRES
+# ============================================================================
 from logging_setup import setup_logging
-from models.bot_components_bundle import BotComponentsBundle
 from config import get_settings
 
-# Imports seront faits localement dans les méthodes pour éviter les imports circulaires
+# ============================================================================
+# IMPORTS MODELS ET STRUCTURES DE DONNÉES
+# ============================================================================
+from models.bot_components_bundle import BotComponentsBundle
+
+# ============================================================================
+# NOTE: Imports des composants du bot
+# ============================================================================
+# Les imports des composants du bot sont faits localement dans les méthodes
+# pour éviter les imports circulaires et améliorer les performances
 
 
 class BotComponentFactory:
@@ -98,6 +113,9 @@ class BotComponentFactory:
             opportunity_manager=managers['opportunity_manager'],
             volatility_tracker=managers['volatility_tracker'],
             
+            # Composants spécialisés de surveillance
+            candidate_monitor=managers.get('candidate_monitor'),
+            
             # Helpers
             initializer=helpers['initializer'],
             configurator=helpers['configurator'],
@@ -156,9 +174,58 @@ class BotComponentFactory:
         
         initializer.initialize_managers()
         initializer.initialize_specialized_managers()
+        
+        # Récupérer les managers de base
+        managers = initializer.get_managers()
+        
+        # NOUVEAU: Créer OpportunityManager et CandidateMonitor explicitement
+        # pour les injecter dans MonitoringManager (évite initialisation paresseuse)
+        self.logger.debug("→ Création des composants spécialisés de surveillance...")
+        
+        # Imports locaux pour éviter les imports circulaires
+        from opportunity_manager import OpportunityManager
+        from candidate_monitor import CandidateMonitor
+        from monitoring_manager import MonitoringManager
+        
+        # Créer OpportunityManager
+        opportunity_manager = OpportunityManager(
+            data_manager=managers['data_manager'],
+            logger=self.logger
+        )
+        
+        # Créer CandidateMonitor
+        candidate_monitor = CandidateMonitor(
+            data_manager=managers['data_manager'],
+            watchlist_manager=managers['watchlist_manager'],
+            testnet=self.testnet,
+            logger=self.logger
+        )
+        
+        # Réinjecter MonitoringManager avec les composants spécialisés
+        managers['monitoring_manager'] = MonitoringManager(
+            data_manager=managers['data_manager'],
+            testnet=self.testnet,
+            logger=self.logger,
+            opportunity_manager=opportunity_manager,
+            candidate_monitor=candidate_monitor
+        )
+        
+        # Mettre à jour opportunity_manager dans le dictionnaire
+        managers['opportunity_manager'] = opportunity_manager
+        
+        # Ajouter candidate_monitor au dictionnaire
+        managers['candidate_monitor'] = candidate_monitor
+        
+        # Configurer les callbacks maintenant que tout est en place
         initializer.setup_manager_callbacks()
         
-        return initializer.get_managers()
+        # Récupérer les managers mis à jour
+        managers = initializer.get_managers()
+        
+        # S'assurer que candidate_monitor est bien dans le dict
+        managers['candidate_monitor'] = candidate_monitor
+        
+        return managers
     
     def _create_lifecycle_components(
         self,
