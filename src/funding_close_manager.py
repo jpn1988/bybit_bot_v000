@@ -76,6 +76,8 @@ class FundingCloseManager:
         """
         self._monitored_positions.add(symbol)
         self.logger.info(f"💰 Position ajoutée à la surveillance funding: {symbol}")
+        self.logger.info(f"💰 Positions surveillées: {list(self._monitored_positions)}")
+        self.logger.info(f"💰 FundingCloseManager running: {self._running}")
 
     def remove_position_from_monitor(self, symbol: str):
         """
@@ -212,9 +214,9 @@ class FundingCloseManager:
                                 self.logger.info(f"ℹ️ Position {symbol} n'existe plus - retirer de la surveillance")
                                 self.remove_position_from_monitor(symbol)
                     
-                    # Attendre 30 secondes avant la prochaine vérification
+                    # Attendre 10 secondes avant la prochaine vérification (plus fréquent)
                     import time
-                    time.sleep(30)
+                    time.sleep(10)
                     
                 except Exception as e:
                     self.logger.error(f"❌ Erreur vérification périodique: {e}")
@@ -311,7 +313,7 @@ class FundingCloseManager:
                 # Vérifier si c'est un nouveau funding (pas déjà traité)
                 cache_key = f"{symbol}_{funding_time}"
                 if cache_key not in self._last_funding_check:
-                    # Vérifier si le funding est récent (dans les 5 dernières minutes)
+                    # Vérifier si le funding est récent (dans les 2 dernières minutes)
                     import time
                     current_time = int(time.time() * 1000)  # Timestamp en millisecondes
                     funding_timestamp = int(funding_time) if funding_time else 0
@@ -319,11 +321,11 @@ class FundingCloseManager:
                     
                     self.logger.info(f"🔍 [DEBUG] Différence de temps: {time_diff_minutes:.1f} minutes")
                     
-                    # Ne fermer que si le funding est très récent (moins de 5 minutes)
-                    if time_diff_minutes < 5:
+                    # Ne fermer que si le funding est très récent (moins de 2 minutes)
+                    if time_diff_minutes < 2:
                         self._last_funding_check[cache_key] = True
                         
-                        self.logger.info(f"💰 [DEBUG] Nouveau funding récent détecté pour {symbol}: {funding_rate:.4f}")
+                        self.logger.info(f"💰 [DEBUG] NOUVEAU funding détecté pour {symbol}: {funding_rate:.4f}")
                         self.logger.info(f"🎯 [DEBUG] Position {symbol} est surveillée ! Fermeture automatique...")
                         
                         # Fermer automatiquement la position
@@ -388,3 +390,22 @@ class FundingCloseManager:
                 
         except Exception as e:
             self.logger.error(f"❌ Erreur fermeture forcée toutes positions: {e}")
+    
+    def test_funding_detection(self, symbol: str):
+        """
+        Teste la détection de funding pour un symbole donné.
+        Utile pour diagnostiquer les problèmes.
+        
+        Args:
+            symbol: Symbole à tester
+        """
+        try:
+            self.logger.info(f"🧪 [TEST] Test de détection de funding pour {symbol}")
+            self.logger.info(f"🧪 [TEST] Position surveillée: {symbol in self._monitored_positions}")
+            self.logger.info(f"🧪 [TEST] Manager running: {self._running}")
+            
+            # Forcer la vérification
+            self._check_funding_event(symbol)
+            
+        except Exception as e:
+            self.logger.error(f"❌ [TEST] Erreur test funding {symbol}: {e}")

@@ -11,9 +11,6 @@ Ce module implémente une façade simplifiée qui orchestre les modules spécial
 import asyncio
 import time
 from typing import List, Callable, Optional, Dict, Any, TYPE_CHECKING
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from logging_setup import setup_logging
 from ws_public import PublicWSClient
@@ -81,7 +78,17 @@ class WebSocketManager(WebSocketManagerInterface):
         self._handlers.set_data_manager(data_manager)
     
     def set_ticker_callback(self, callback: Callable[[dict], None]):
-        """Définit le callback pour les données ticker."""
+        """
+        Définit le callback pour les données ticker.
+        
+        Args:
+            callback: Fonction à appeler avec les données ticker
+            
+        Raises:
+            TypeError: Si callback n'est pas une fonction
+        """
+        if not callable(callback):
+            raise TypeError("callback doit être une fonction")
         self._ticker_callback = callback
         self._handlers.set_ticker_callback(callback)
     

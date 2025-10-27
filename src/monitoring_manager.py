@@ -437,7 +437,7 @@ class MonitoringManager(MonitoringManagerInterface):
         CORRECTIF PERF-002: Optimisation pour réduire les cycles CPU en utilisant
         des délais plus longs entre les vérifications.
         """
-        # CORRECTIF PERF-002: Vérifier toutes les 2 secondes au lieu d'1 seconde
+        # Vérifier toutes les 2 secondes au lieu d'1 seconde (PERF-002)
         # pour réduire les cycles CPU tout en gardant une bonne réactivité
         check_interval = 2
         remaining_seconds = seconds
@@ -463,8 +463,8 @@ class MonitoringManager(MonitoringManagerInterface):
             return
 
         try:
-            # Scanner les opportunités
-            new_opportunities = self.opportunity_manager.scan_for_opportunities(
+            # Scanner les opportunités (version async)
+            new_opportunities = await self.opportunity_manager.scan_for_opportunities_async(
                 base_url, perp_data
             )
 

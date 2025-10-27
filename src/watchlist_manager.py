@@ -325,6 +325,13 @@ class WatchlistManager:
 
         Returns:
             str: Temps restant formaté ou "-" si invalide
+            
+        Example:
+            >>> manager = WatchlistManager(...)
+            >>> manager.calculate_funding_time_remaining(1640995200000)
+            "2h 15m"
+            >>> manager.calculate_funding_time_remaining(1640995190000)
+            "45s"
         """
         return self.symbol_filter.calculate_funding_time_remaining(
             next_funding_time

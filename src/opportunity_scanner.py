@@ -109,6 +109,64 @@ class OpportunityScanner:
 
         return None
 
+    async def scan_for_opportunities_async(self, base_url: str, perp_data: Dict) -> Optional[Dict]:
+        """
+        Version async de scan_for_opportunities().
+        Scanne le marché sans bloquer l'event loop.
+
+        Args:
+            base_url: URL de base de l'API
+            perp_data: Données des perpétuels
+
+        Returns:
+            Dict avec les opportunités trouvées ou None
+            
+        Note:
+            Cette méthode utilise asyncio.to_thread() pour exécuter build_watchlist()
+            dans un thread séparé, évitant de bloquer l'event loop principal.
+        """
+        try:
+            # Optimisation : éviter le scan si WebSocket déjà actif
+            if self._is_websocket_active():
+                self.logger.info("🔄 Scan évité - WebSocket déjà actif")
+                return None
+
+            # Vérifier que les composants nécessaires sont disponibles
+            if not self.watchlist_manager or not self.volatility_tracker:
+                self.logger.warning("⚠️ Scan impossible - composants manquants")
+                return None
+
+            # Créer un client pour l'URL
+            client: BybitClientInterface = BybitPublicClient(
+                testnet=self.testnet, timeout=TimeoutConfig.DEFAULT
+            )
+            fresh_base_url = client.public_base_url()
+
+            # Utiliser asyncio.to_thread pour exécuter build_watchlist dans un thread
+            import asyncio
+            (
+                linear_symbols,
+                inverse_symbols,
+                funding_data,
+            ) = await asyncio.to_thread(
+                self.watchlist_manager.build_watchlist,
+                fresh_base_url,
+                perp_data,
+                self.volatility_tracker
+            )
+
+            if linear_symbols or inverse_symbols:
+                return {
+                    "linear": linear_symbols,
+                    "inverse": inverse_symbols,
+                    "funding_data": funding_data,
+                }
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur scan async opportunités: {e}")
+
+        return None
+
     def _is_websocket_active(self) -> bool:
         """Vérifie si le WebSocket principal est actif."""
         return (

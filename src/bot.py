@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Orchestrateur principal du bot Bybit.
+Orchestrateur principal du bot Bybit - Version refactorisée.
 
 ╔═══════════════════════════════════════════════════════════════════╗
 ║                    📖 GUIDE DE LECTURE                            ║
@@ -40,22 +40,31 @@ les composants spécialisés pour démarrer et maintenir le bot en vie.
 - BotHealthMonitor : Surveillance de la santé
 - ShutdownManager : Gestion de l'arrêt
 - ThreadManager : Gestion des threads
+- BotLifecycleManager : Gestion du cycle de vie
+- PositionEventHandler : Gestion des événements de position
+- FallbackDataManager : Gestion du fallback des données
 """
 
+# Standard library
 import asyncio
 import signal
 import sys
 import time
 import atexit
 from typing import Dict, Any
+
+# Local imports - Configuration
+from config import get_settings
+from config.constants import DEFAULT_FUNDING_UPDATE_INTERVAL
+from config.urls import URLConfig
 from logging_setup import setup_logging
 
-from config import get_settings
+# Local imports - Clients et utilitaires
+from bybit_client import BybitClient
 from http_client_manager import close_all_http_clients
 from metrics_monitor import start_metrics_monitoring
-from bybit_client import BybitClient
 
-# Import des composants refactorisés
+# Local imports - Composants du bot
 from bot_initializer import BotInitializer
 from bot_configurator import BotConfigurator
 from data_manager import DataManager
@@ -66,12 +75,20 @@ from thread_manager import ThreadManager
 from scheduler_manager import SchedulerManager
 from position_monitor import PositionMonitor
 from funding_close_manager import FundingCloseManager
-from thread_exception_handler import install_global_exception_handlers, install_asyncio_handler_if_needed
+from thread_exception_handler import (
+    install_global_exception_handlers,
+    install_asyncio_handler_if_needed
+)
+
+# Local imports - Nouveaux composants refactorisés
+from bot_lifecycle_manager import BotLifecycleManager
+from position_event_handler import PositionEventHandler
+from fallback_data_manager import FallbackDataManager
 
 
 class BotOrchestrator:
     """
-    Orchestrateur principal du bot Bybit.
+    Orchestrateur principal du bot Bybit - Version refactorisée.
 
     Cette classe coordonne les différents composants spécialisés :
     - BotInitializer : Initialisation des managers
@@ -81,6 +98,9 @@ class BotOrchestrator:
     - BotHealthMonitor : Surveillance de la santé
     - ShutdownManager : Gestion de l'arrêt
     - ThreadManager : Gestion des threads
+    - BotLifecycleManager : Gestion du cycle de vie
+    - PositionEventHandler : Gestion des événements de position
+    - FallbackDataManager : Gestion du fallback des données
     """
 
     def __init__(
@@ -93,6 +113,7 @@ class BotOrchestrator:
         health_monitor=None,
         shutdown_manager=None,
         thread_manager=None,
+        components_bundle=None,  # NOUVEAU: Support du mode factory
     ):
         """
         Initialise l'orchestrateur du bot.
@@ -106,6 +127,8 @@ class BotOrchestrator:
             health_monitor: Moniteur de santé (optionnel, créé automatiquement si non fourni)
             shutdown_manager: Gestionnaire d'arrêt (optionnel, créé automatiquement si non fourni)
             thread_manager: Gestionnaire de threads (optionnel, créé automatiquement si non fourni)
+            components_bundle: Bundle de composants pré-créés (optionnel, nouveau mode factory)
+                              Si fourni, utilise les composants du bundle au lieu de créer de nouveaux
         """
         self.logger = logger or setup_logging()
         self.running = True
@@ -117,12 +140,18 @@ class BotOrchestrator:
         # S'assurer que les clients HTTP sont fermés à l'arrêt
         atexit.register(close_all_http_clients)
 
+        # NOUVEAU: Détecter le mode factory
+        self._use_factory_mode = components_bundle is not None
+        self.components_bundle = components_bundle  # Stocker pour utilisation dans start()
+
         # Configuration
         settings = get_settings()
         self.testnet = settings["testnet"]
         
         # Test de connexion Bybit authentifiée (exécuté dans un thread dédié pour éviter PERF-002)
-        self._test_bybit_auth_connection_sync()
+        # Uniquement en mode legacy (mode factory l'a déjà fait)
+        if not self._use_factory_mode:
+            self._test_bybit_auth_connection_sync()
 
         # Initialiser les composants spécialisés (injection avec fallback)
         self._initializer = initializer or BotInitializer(self.testnet, self.logger)
@@ -134,6 +163,26 @@ class BotOrchestrator:
         # Initialiser les nouveaux managers
         self._shutdown_manager = shutdown_manager or ShutdownManager(self.logger)
         self._thread_manager = thread_manager or ThreadManager(self.logger)
+        
+        # Initialiser les nouveaux composants refactorisés
+        self._lifecycle_manager = BotLifecycleManager(
+            testnet=self.testnet,
+            logger=self.logger,
+            health_monitor=self._health_monitor,
+            shutdown_manager=self._shutdown_manager,
+            thread_manager=self._thread_manager,
+        )
+        
+        self._position_event_handler = PositionEventHandler(
+            testnet=self.testnet,
+            logger=self.logger,
+        )
+        
+        self._fallback_data_manager = FallbackDataManager(
+            testnet=self.testnet,
+            logger=self.logger,
+        )
+        
         # Scheduler sera initialisé avec la configuration dans start()
         self.scheduler = None
         
@@ -154,8 +203,13 @@ class BotOrchestrator:
         start_metrics_monitoring(interval_minutes=5)
 
         # Stocker la référence au moniteur de métriques pour l'arrêt
-        from metrics_monitor import metrics_monitor
-        self.metrics_monitor = metrics_monitor
+        # Import ici pour éviter les imports circulaires
+        try:
+            from metrics_monitor import metrics_monitor
+            self.metrics_monitor = metrics_monitor
+        except ImportError:
+            self.metrics_monitor = None
+            self.logger.warning("⚠️ metrics_monitor non disponible")
 
     # ============================================================================
     # MÉTHODES D'INITIALISATION
@@ -163,6 +217,15 @@ class BotOrchestrator:
 
     def _initialize_components(self):
         """Initialise tous les composants du bot."""
+        if self._use_factory_mode:
+            # NOUVEAU MODE: Utiliser les composants du bundle
+            self._initialize_from_bundle()
+        else:
+            # ANCIEN MODE: Créer les composants comme avant (rétro-compatibilité)
+            self._initialize_from_legacy()
+    
+    def _initialize_from_legacy(self):
+        """Ancien mode: Initialise les composants comme avant."""
         # Initialiser les managers
         self._initializer.initialize_managers()
         self._initializer.initialize_specialized_managers()
@@ -182,6 +245,56 @@ class BotOrchestrator:
         # Passer le bybit_client au monitoring_manager pour la vérification des positions
         if hasattr(self, 'bybit_client') and self.bybit_client:
             self.monitoring_manager.set_bybit_client(self.bybit_client)
+        
+        # Configurer les nouveaux composants refactorisés
+        self._position_event_handler.set_monitoring_manager(self.monitoring_manager)
+        self._position_event_handler.set_ws_manager(self.ws_manager)
+        self._position_event_handler.set_display_manager(self.display_manager)
+        self._position_event_handler.set_data_manager(self.data_manager)
+        
+        self._fallback_data_manager.set_data_manager(self.data_manager)
+        self._fallback_data_manager.set_watchlist_manager(self.watchlist_manager)
+        
+        # Configurer le callback de mise à jour des funding
+        self._lifecycle_manager.set_on_funding_update_callback(
+            self._fallback_data_manager.update_funding_data_periodically
+        )
+    
+    def _initialize_from_bundle(self):
+        """Nouveau mode: Initialise depuis le bundle de composants."""
+        self.logger.debug("🔄 Initialisation en mode factory depuis le bundle...")
+        
+        # Utiliser les composants du bundle
+        bundle = self.components_bundle
+        
+        # Assigner les helpers
+        self._initializer = bundle.initializer
+        self._configurator = bundle.configurator
+        self._data_loader = bundle.data_loader
+        self._starter = bundle.starter
+        self._health_monitor = bundle.health_monitor
+        self._shutdown_manager = bundle.shutdown_manager
+        self._thread_manager = bundle.thread_manager
+        
+        # Assigner les managers principaux
+        self.data_manager = bundle.data_manager
+        self.display_manager = bundle.display_manager
+        self.monitoring_manager = bundle.monitoring_manager
+        self.ws_manager = bundle.ws_manager
+        self.watchlist_manager = bundle.watchlist_manager
+        self.callback_manager = bundle.callback_manager
+        self.opportunity_manager = bundle.opportunity_manager
+        self.volatility_tracker = bundle.volatility_tracker
+        
+        # Assigner les composants de lifecycle
+        self._lifecycle_manager = bundle.lifecycle_manager
+        self._position_event_handler = bundle.position_event_handler
+        self._fallback_data_manager = bundle.fallback_data_manager
+        
+        # Assigner le client Bybit
+        self.bybit_client = bundle.bybit_client
+        
+        self.logger.debug("✅ Composants initialisés depuis le bundle")
 
     def _test_bybit_auth_connection_sync(self) -> bool:
         """
@@ -193,9 +306,11 @@ class BotOrchestrator:
         et supprimer le warning PERF-002.
         """
         settings = get_settings()
-        testnet = settings["testnet"]
-        api_key = settings["api_key"]
-        api_secret = settings["api_secret"]
+        testnet = settings.get("testnet", True)
+        
+        # Gérer les cas où les clés ne sont pas configurées (tests, mode non-auth, etc.)
+        api_key = settings.get("api_key")
+        api_secret = settings.get("api_secret")
 
         if not api_key or not api_secret:
             self.logger.warning("🔒 Clés API non configurées : connexion authentifiée désactivée.")
@@ -335,12 +450,31 @@ class BotOrchestrator:
         # 9. Initialiser le FundingCloseManager
         self._initialize_funding_close_manager()
         
-        # 10. Définir le callback du scheduler après l'initialisation
-        if self.scheduler:
-            self.scheduler.on_position_opened_callback = self._on_position_opened
+        # 10. Configurer les callbacks des composants spécialisés
+        # Note: Le bundle étant immutable, on configure directement les callbacks
+        if self.scheduler and self._position_event_handler:
+            self.scheduler.on_position_opened_callback = self._position_event_handler.on_position_opened
 
-        # 11. Maintenir le bot en vie avec une boucle d'attente
-        await self._keep_bot_alive()
+        if self.position_monitor and self._position_event_handler:
+            self.position_monitor.on_position_opened = self._position_event_handler.on_position_opened
+            self.position_monitor.on_position_closed = self._position_event_handler.on_position_closed
+
+        if self.funding_close_manager and self._position_event_handler:
+            self.funding_close_manager.on_position_closed = self._position_event_handler.on_position_closed
+            self._position_event_handler.set_funding_close_manager(self.funding_close_manager)
+
+        # 13. Démarrer le cycle de vie du bot
+        components = {
+            "monitoring_manager": self.monitoring_manager,
+            "display_manager": self.display_manager,
+            "ws_manager": self.ws_manager,
+            "volatility_tracker": self.volatility_tracker,
+            "metrics_monitor": self.metrics_monitor,
+        }
+        await self._lifecycle_manager.start_lifecycle(components)
+
+        # 14. Maintenir le bot en vie avec une boucle d'attente
+        await self._lifecycle_manager.keep_bot_alive(components)
 
     def _initialize_scheduler(self, config):
         """Initialise le SchedulerManager pour la surveillance du funding."""
@@ -393,118 +527,34 @@ class BotOrchestrator:
             self.funding_close_manager = None
 
     # ============================================================================
-    # MÉTHODES DE CALLBACK POUR LES POSITIONS
+    # MÉTHODES DE CALLBACK POUR LES POSITIONS (DÉLÉGUÉES)
     # ============================================================================
 
     def _on_position_opened(self, symbol: str, position_data: Dict[str, Any]):
         """
         Callback appelé lors de l'ouverture d'une position.
+        Délègue au PositionEventHandler.
         
         Args:
             symbol: Symbole de la position ouverte
             position_data: Données de la position
         """
-        try:
-            self.logger.info(f"📈 Position ouverte détectée: {symbol}")
-            
-            # Ajouter la position active
-            if self.monitoring_manager:
-                self.monitoring_manager.add_active_position(symbol)
-            
-            # Basculer vers le symbole unique seulement si c'est la première position
-            if self.ws_manager and len(self.monitoring_manager.get_active_positions()) == 1:
-                self._switch_to_single_symbol(symbol)
-            
-            # Filtrer l'affichage vers le symbole unique
-            if self.display_manager:
-                self.display_manager.set_symbol_filter({symbol})
-            
-            # Ajouter la position à la surveillance du funding
-            if self.funding_close_manager:
-                self.funding_close_manager.add_position_to_monitor(symbol)
-            
-            self.logger.info(f"⏸️ Watchlist en pause - Position ouverte sur {symbol}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur callback position ouverte: {e}")
-
-    def _switch_to_single_symbol(self, symbol: str):
-        """Bascule vers un symbole unique dans le WebSocket."""
-        # Déterminer la catégorie du symbole
-        category = "linear" if symbol.endswith("USDT") else "inverse"
-        
-        # Basculer vers le symbole unique (asynchrone)
-        import asyncio
-        asyncio.create_task(
-            self.ws_manager.switch_to_single_symbol(symbol, category)
-        )
+        self._position_event_handler.on_position_opened(symbol, position_data)
 
     def _on_position_closed(self, symbol: str, position_data: Dict[str, Any]):
         """
         Callback appelé lors de la fermeture d'une position.
+        Délègue au PositionEventHandler.
         
         Args:
             symbol: Symbole de la position fermée
             position_data: Données de la position
         """
-        try:
-            self.logger.info(f"📉 Position fermée détectée: {symbol}")
-            
-            # Retirer la position active
-            if self.monitoring_manager:
-                self.monitoring_manager.remove_active_position(symbol)
-            
-            # Retirer aussi du scheduler
-            if self.scheduler:
-                self.scheduler.remove_position(symbol)
-            
-            # Restaurer la watchlist complète seulement si plus de positions actives
-            if (self.ws_manager and self.data_manager and 
-                not self.monitoring_manager.has_active_positions()):
-                self._restore_full_watchlist()
-            
-            # Restaurer l'affichage de tous les symboles
-            if self.display_manager:
-                self.display_manager.clear_symbol_filter()
-            
-            # Retirer la position de la surveillance du funding
-            if self.funding_close_manager:
-                self.funding_close_manager.remove_position_from_monitor(symbol)
-            
-            self.logger.info("▶️ Watchlist reprise - Position fermée")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur callback position fermée: {e}")
-
-    def _restore_full_watchlist(self):
-        """Restaure la watchlist complète dans le WebSocket."""
-        linear_symbols = self.data_manager.storage.get_linear_symbols()
-        inverse_symbols = self.data_manager.storage.get_inverse_symbols()
+        # Retirer aussi du scheduler
+        if self.scheduler:
+            self._position_event_handler.remove_position_from_scheduler(symbol, self.scheduler)
         
-        # Restaurer la watchlist complète (synchrone)
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Si on est dans un contexte async, utiliser create_task
-                asyncio.create_task(
-                    self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
-                )
-            else:
-                # Si on est dans un contexte sync, utiliser run
-                loop.run_until_complete(
-                    self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
-                )
-        except RuntimeError:
-            # Pas de loop event, créer un nouveau thread
-            import threading
-            def run_async():
-                import asyncio
-                asyncio.run(
-                    self.ws_manager.restore_full_watchlist(linear_symbols, inverse_symbols)
-                )
-            thread = threading.Thread(target=run_async, daemon=True)
-            thread.start()
+        self._position_event_handler.on_position_closed(symbol, position_data)
 
     # ============================================================================
     # MÉTHODES DE DONNÉES ET MONITORING
@@ -513,155 +563,13 @@ class BotOrchestrator:
     def _get_funding_data_for_scheduler(self) -> Dict[str, Dict[str, Any]]:
         """
         Récupère les données de funding formatées pour le Scheduler.
-        Calcule dynamiquement le temps restant à partir des timestamps temps réel.
+        Délègue au FallbackDataManager.
         
         Returns:
             Dict avec les données de funding formatées pour chaque symbole
         """
-        funding_data = {}
-        selected_symbols = self.watchlist_manager.get_selected_symbols()
-        self.logger.debug(f"[SCHEDULER] Symboles sélectionnés: {len(selected_symbols)}")
-        
-        for symbol in selected_symbols:
-            funding_info = self._get_symbol_funding_data(symbol)
-            if funding_info:
-                funding_data[symbol] = funding_info
-        
-        self.logger.debug(f"[SCHEDULER] Données récupérées: {len(funding_data)} symboles")
-        return funding_data
+        return self._fallback_data_manager.get_funding_data_for_scheduler()
 
-    def _get_symbol_funding_data(self, symbol: str) -> Dict[str, Any]:
-        """Récupère les données de funding pour un symbole spécifique."""
-        # Récupérer les données temps réel (mises à jour via WebSocket)
-        realtime_info = self.data_manager.storage.get_realtime_data(symbol)
-        
-        if realtime_info and realtime_info.get("next_funding_time"):
-            # Calculer le temps restant à partir du timestamp temps réel
-            next_funding_timestamp = realtime_info["next_funding_time"]
-            funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(next_funding_timestamp)
-            
-            funding_data = {
-                'next_funding_time': funding_time_str,  # Recalculé dynamiquement
-                'funding_rate': realtime_info.get('funding_rate'),
-                'volume_24h': realtime_info.get('volume24h')
-            }
-            self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (temps réel)")
-            return funding_data
-        else:
-            # Fallback sur les données originales si pas de données temps réel
-            return self._get_fallback_funding_data(symbol)
-
-    def _get_fallback_funding_data(self, symbol: str) -> Dict[str, Any]:
-        """Récupère les données de funding en fallback depuis les données originales."""
-        funding_obj = self.data_manager.storage.get_funding_data_object(symbol)
-        if funding_obj:
-            original_timestamp = self.data_manager.storage.get_original_funding_data(symbol)
-            if original_timestamp:
-                funding_time_str = self.watchlist_manager.calculate_funding_time_remaining(original_timestamp)
-            else:
-                funding_time_str = funding_obj.next_funding_time
-                
-            funding_data = {
-                'next_funding_time': funding_time_str,
-                'funding_rate': funding_obj.funding_rate,
-                'volume_24h': funding_obj.volume_24h
-            }
-            self.logger.debug(f"[SCHEDULER] {symbol}: {funding_time_str} (fallback)")
-            return funding_data
-        else:
-            self.logger.debug(f"[SCHEDULER] Aucune donnée pour {symbol}")
-            return None
-
-    async def _keep_bot_alive(self):
-        """Maintient le bot en vie avec une boucle d'attente et monitoring mémoire."""
-        self.logger.info("🔄 Bot opérationnel - surveillance continue...")
-
-        # Démarrer la tâche de mise à jour périodique des données de funding
-        funding_update_task = asyncio.create_task(self._periodic_funding_update())
-
-        try:
-            while self.running:
-                # Vérifier que tous les composants principaux sont toujours actifs
-                if not self._health_monitor.check_components_health(
-                    self.monitoring_manager,
-                    self.display_manager,
-                    self.volatility_tracker,
-                ):
-                    self.logger.warning(
-                        "⚠️ Un composant critique s'est arrêté, redémarrage..."
-                    )
-                    # Optionnel: redémarrer les composants défaillants
-
-                # Monitoring mémoire périodique
-                if self._health_monitor.should_check_memory():
-                    self._health_monitor.monitor_memory_usage()
-
-                # Attendre avec vérification d'interruption
-                await asyncio.sleep(1.0)
-
-        except asyncio.CancelledError:
-            self.logger.info("🛑 Arrêt demandé par l'utilisateur")
-            self.running = False
-        except Exception as e:
-            self.logger.error(f"❌ Erreur dans la boucle principale: {e}")
-            self.running = False
-        finally:
-            # Annuler la tâche de mise à jour des funding
-            if 'funding_update_task' in locals():
-                funding_update_task.cancel()
-                try:
-                    await funding_update_task
-                except asyncio.CancelledError:
-                    pass
-
-    async def _periodic_funding_update(self):
-        """Met à jour périodiquement les données de funding via l'API REST."""
-        self.logger.info("🔄 Tâche de mise à jour périodique des funding démarrée")
-        
-        while self.running:
-            try:
-                # Attendre 5 secondes entre chaque mise à jour
-                await asyncio.sleep(5)
-                
-                if not self.running:
-                    break
-                
-                self.logger.debug("🔄 Mise à jour périodique des données de funding...")
-                
-                # Récupérer les données de funding via l'API REST
-                from config.urls import URLConfig
-                base_url = URLConfig.get_api_url(self.testnet)
-                funding_data = self.data_manager.fetcher.fetch_funding_map(base_url, "linear", 10)
-                
-                if funding_data:
-                    # Filtrer pour ne mettre à jour que les symboles de la watchlist
-                    watchlist_symbols = set(self.watchlist_manager.get_selected_symbols())
-                    filtered_funding_data = {
-                        symbol: data for symbol, data in funding_data.items() 
-                        if symbol in watchlist_symbols
-                    }
-                    
-                    if filtered_funding_data:
-                        # Mettre à jour seulement les données filtrées
-                        self.data_manager._update_funding_data(filtered_funding_data)
-                        
-                        # Mettre à jour les données originales
-                        if self.watchlist_manager:
-                            self.data_manager._update_original_funding_data(self.watchlist_manager)
-                        
-                        self.logger.debug(f"✅ Données de funding mises à jour: {len(filtered_funding_data)} symboles (watchlist)")
-                    else:
-                        self.logger.debug("⚠️ Aucun symbole de la watchlist trouvé dans les données de funding")
-                else:
-                    self.logger.warning("⚠️ Aucune donnée de funding récupérée")
-                    
-            except asyncio.CancelledError:
-                self.logger.info("🛑 Tâche de mise à jour des funding annulée")
-                break
-            except Exception as e:
-                self.logger.error(f"❌ Erreur mise à jour périodique des funding: {e}")
-                # Continuer même en cas d'erreur
-                await asyncio.sleep(10)  # Attendre un peu avant de réessayer
 
     # ============================================================================
     # MÉTHODES DE STATUT ET ARRÊT
@@ -676,7 +584,7 @@ class BotOrchestrator:
         """
         return {
             "running": self.running,
-            "uptime_seconds": time.time() - self.start_time,
+            "uptime_seconds": self._lifecycle_manager.get_uptime(),
             "testnet": self.testnet,
             "health_status": self._health_monitor.get_health_status(
                 self.monitoring_manager,
@@ -686,6 +594,10 @@ class BotOrchestrator:
             "startup_stats": self._starter.get_startup_stats(
                 self.data_manager
             ),
+            "lifecycle_status": {
+                "is_running": self._lifecycle_manager.is_running(),
+                "fallback_summary": self._fallback_data_manager.get_fallback_summary(),
+            },
         }
 
     async def stop(self):
@@ -693,29 +605,19 @@ class BotOrchestrator:
         self.logger.info("🛑 Arrêt du bot...")
         self.running = False
 
-        # Utiliser ShutdownManager pour l'arrêt centralisé
-        try:
-            # Préparer le dictionnaire des managers pour ShutdownManager
-            managers = {
-                "monitoring_manager": self.monitoring_manager,
-                "display_manager": self.display_manager,
-                "ws_manager": self.ws_manager,
-                "volatility_tracker": self.volatility_tracker,
-                "metrics_monitor": self.metrics_monitor,
-            }
+        # Arrêter les composants spécialisés
+        await self._stop_specialized_components()
 
-            # Arrêter les composants spécialisés
-            await self._stop_specialized_components()
-
-            # Utiliser ShutdownManager pour l'arrêt asynchrone
-            # CORRECTIF : Utiliser await au lieu d'asyncio.run()
-            # pour éviter de créer une nouvelle event loop imbriquée
-            await self._shutdown_manager.stop_all_managers_async(managers)
-
-            self.logger.info("✅ Bot arrêté proprement via ShutdownManager")
-
-        except Exception as e:
-            self.logger.error(f"❌ Erreur lors de l'arrêt: {e}")
+        # Utiliser le BotLifecycleManager pour l'arrêt centralisé
+        components = {
+            "monitoring_manager": self.monitoring_manager,
+            "display_manager": self.display_manager,
+            "ws_manager": self.ws_manager,
+            "volatility_tracker": self.volatility_tracker,
+            "metrics_monitor": self.metrics_monitor,
+        }
+        
+        await self._lifecycle_manager.stop_lifecycle(components)
 
     async def _stop_specialized_components(self):
         """Arrête les composants spécialisés (PositionMonitor, FundingCloseManager)."""
@@ -784,7 +686,7 @@ class AsyncBotRunner:
             self.running = False
             self.logger.info("Signal d'arrêt reçu, arrêt propre du bot...")
             # Utiliser la nouvelle méthode stop() du orchestrateur refactorisé
-            # CORRECTIF : Utiliser await car stop() est maintenant asynchrone
+            # Utiliser await car stop() est maintenant asynchrone
             await self.orchestrator.stop()
             # Annuler toutes les tâches restantes pour permettre l'arrêt de l'event loop
             await self._cancel_remaining_tasks()

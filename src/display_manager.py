@@ -272,8 +272,8 @@ class DisplayManager:
         self.logger.info("📊 Boucle d'affichage démarrée")
         
         # Log de débogage pour vérifier que la tâche est bien créée
-        self.logger.info(f"🔍 [DEBUG] Tâche d'affichage créée: {self._display_task}")
-        self.logger.info(f"🔍 [DEBUG] État running: {self._running}")
+        self.logger.debug(f"Tâche d'affichage créée: {self._display_task}")
+        self.logger.debug(f"État running: {self._running}")
 
     async def stop_display_loop(self):
         """
@@ -304,21 +304,21 @@ class DisplayManager:
         """
         Boucle d'affichage avec intervalle configurable.
         """
-        self.logger.info("🔍 [DEBUG] Boucle d'affichage démarrée")
+        self.logger.debug("Boucle d'affichage démarrée")
         
         while self._running:
             # Vérifier immédiatement si on doit s'arrêter
             if not self._running:
                 break
 
-            self.logger.debug("🔍 [DEBUG] Exécution de _print_price_table")
+            self.logger.debug("Exécution de _print_price_table")
             self._print_price_table()
 
             # Attendre selon l'intervalle configuré
             await asyncio.sleep(self.display_interval_seconds)
 
         # Boucle d'affichage arrêtée
-        self.logger.info("🔍 [DEBUG] Boucle d'affichage arrêtée")
+        self.logger.debug("Boucle d'affichage arrêtée")
 
     def _print_price_table(self):
         """
@@ -329,7 +329,7 @@ class DisplayManager:
         """
         # Si aucune opportunité n'est trouvée, retourner
         funding_data_objects = self.data_manager.storage.get_all_funding_data_objects()
-        self.logger.info(f"🔍 [DEBUG] _print_price_table: {len(funding_data_objects) if funding_data_objects else 0} symboles")
+        self.logger.debug(f"_print_price_table: {len(funding_data_objects) if funding_data_objects else 0} symboles")
         
         if not funding_data_objects:
             self.logger.debug("⏳ Aucune donnée de funding disponible - En attente...")

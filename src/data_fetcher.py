@@ -84,6 +84,18 @@ class DataFetcher:
         """
         return self._funding_fetcher.fetch_funding_data_parallel(base_url, categories, timeout)
 
+    async def fetch_funding_map_async(
+        self, base_url: str, category: str, timeout: int = 10
+    ) -> Dict[str, Dict]:
+        """Version async de fetch_funding_map()."""
+        return await self._funding_fetcher.fetch_funding_map_async(base_url, category, timeout)
+
+    async def fetch_funding_data_parallel_async(
+        self, base_url: str, categories: List[str], timeout: int = 10
+    ) -> Dict[str, Dict]:
+        """Version async de fetch_funding_data_parallel()."""
+        return await self._funding_fetcher.fetch_funding_data_parallel_async(base_url, categories, timeout)
+
     # ===== MÉTHODES DE SPREAD (DÉLÉGATION VERS SPREAD_FETCHER) =====
 
     def fetch_spread_data(

@@ -123,6 +123,20 @@ class OpportunityManager:
         """
         return self.scanner.scan_for_opportunities(base_url, perp_data)
 
+    async def scan_for_opportunities_async(self, base_url: str, perp_data: Dict) -> Optional[Dict]:
+        """
+        Version async de scan_for_opportunities().
+        Délègue au scanner async.
+
+        Args:
+            base_url: URL de base de l'API
+            perp_data: Données des perpétuels
+
+        Returns:
+            Dict avec les opportunités trouvées ou None
+        """
+        return await self.scanner.scan_for_opportunities_async(base_url, perp_data)
+
     def integrate_opportunities(self, opportunities: Dict):
         """
         Intègre les nouvelles opportunités détectées.
@@ -163,8 +177,7 @@ class OpportunityManager:
                     f"(WebSocket déjà actif)"
                 )
             else:
-                # CORRECTIF ARCH-001: Utiliser create_task avec gestion d'exceptions
-                import asyncio
+                # Utiliser create_task avec gestion d'exceptions (ARCH-001)
                 try:
                     # Essayer d'obtenir la boucle actuelle et créer une tâche
                     loop = asyncio.get_running_loop()
@@ -173,7 +186,7 @@ class OpportunityManager:
                             ws_manager, linear_symbols, inverse_symbols
                         )
                     )
-                    # CORRECTIF: Ajouter un callback pour gérer les exceptions
+                    # Ajouter un callback pour gérer les exceptions
                     task.add_done_callback(self._handle_task_exception)
                     self.logger.info(
                         f"🎯 Nouvelles opportunités intégrées: "
@@ -271,7 +284,6 @@ class OpportunityManager:
         Returns:
             asyncio.Task: Tâche créée pour les connexions WebSocket
         """
-        import asyncio
         
         task = asyncio.create_task(
             ws_manager.start_connections(linear_symbols, inverse_symbols)

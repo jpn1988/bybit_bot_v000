@@ -126,6 +126,95 @@ class FundingFetcher:
             self._error_handler.log_error(e, "fetch_funding_data_parallel")
             raise
 
+    async def fetch_funding_map_async(
+        self, base_url: str, category: str, timeout: int = 10
+    ) -> Dict[str, Dict]:
+        """
+        Version async de fetch_funding_map().
+        Récupère les taux de funding sans bloquer l'event loop.
+
+        Args:
+            base_url: URL de base de l'API Bybit
+            category: Catégorie (linear ou inverse)
+            timeout: Timeout pour les requêtes HTTP
+
+        Returns:
+            Dict[str, Dict]: Dictionnaire {symbol: {funding, volume, next_funding_time}}
+
+        Raises:
+            RuntimeError: En cas d'erreur HTTP ou API
+            
+        Note:
+            Cette méthode utilise aiohttp pour les requêtes non-bloquantes.
+            Préférer cette version dans un contexte async pour éviter de bloquer l'event loop.
+        """
+        try:
+            self.logger.debug(f"📊 Récupération funding async pour {category}...")
+            
+            # Paramètres de base pour la pagination
+            params = {
+                "category": category,
+                "limit": 1000,  # Limite maximum supportée par l'API Bybit
+            }
+            
+            # Utiliser la version async de la pagination
+            all_tickers = await self._pagination_handler.fetch_paginated_data_async(
+                base_url, "/v5/market/tickers", params, timeout
+            )
+            
+            # Traiter les données (méthode synchrone légère)
+            funding_map = self._process_funding_data(all_tickers)
+            
+            self.logger.info(f"✅ Funding async récupéré: {len(funding_map)} symboles pour {category}")
+            return funding_map
+            
+        except Exception as e:
+            self._error_handler.log_error(e, f"fetch_funding_map_async category={category}")
+            raise
+
+    async def fetch_funding_data_parallel_async(
+        self, base_url: str, categories: List[str], timeout: int = 10
+    ) -> Dict[str, Dict]:
+        """
+        Version async de fetch_funding_data_parallel().
+        Récupère les données pour plusieurs catégories en parallèle.
+
+        Args:
+            base_url: URL de base de l'API Bybit
+            categories: Liste des catégories à récupérer
+            timeout: Timeout pour les requêtes HTTP
+
+        Returns:
+            Dict[str, Dict]: Dictionnaire combiné de toutes les catégories
+        """
+        if len(categories) == 1:
+            return await self.fetch_funding_map_async(base_url, categories[0], timeout)
+        
+        funding_map = {}
+        
+        try:
+            # Utiliser asyncio.gather pour paralléliser
+            import asyncio
+            tasks = [
+                self.fetch_funding_map_async(base_url, category, timeout)
+                for category in categories
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for category, result in zip(categories, results):
+                if isinstance(result, Exception):
+                    self._error_handler.log_error(result, f"async parallel {category}")
+                    raise result
+                funding_map.update(result)
+                self.logger.debug(f"✅ Funding async {category}: {len(result)} symboles")
+            
+            self.logger.info(f"✅ Funding async parallèle terminé: {len(funding_map)} symboles total")
+            return funding_map
+            
+        except Exception as e:
+            self._error_handler.log_error(e, "fetch_funding_data_parallel_async")
+            raise
+
     def _process_funding_data(self, tickers: List[Dict[str, Any]]) -> Dict[str, Dict]:
         """
         Traite les données de tickers pour extraire les informations de funding.

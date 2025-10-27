@@ -75,6 +75,17 @@ def safe_log_info(message: str):
                 pass  # Ignorer toute erreur
 
 
+def safe_log_debug(message: str):
+    """Logging debug sécurisé qui utilise print() si le logging est désactivé."""
+    if _logging_disabled or _shutdown_logging_active:
+        return  # Ne pas logger en debug lors de l'arrêt
+    else:
+        try:
+            logger.debug(message)
+        except Exception:
+            pass  # Ignorer toute erreur
+
+
 def setup_logging():
     """Configure le système de logging avec loguru."""
     # Supprimer le handler par défaut

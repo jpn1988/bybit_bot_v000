@@ -36,6 +36,9 @@ class TimeoutConfig:
     # Timeout pour les requêtes HTTP génériques
     HTTP_REQUEST = int(os.getenv("TIMEOUT_HTTP_REQUEST", "15"))
     
+    # Timeout pour les requêtes API Bybit
+    BYBIT_API_REQUEST = int(os.getenv("TIMEOUT_BYBIT_API_REQUEST", "30"))
+    
     # Timeout pour les requêtes de récupération de données
     DATA_FETCH = int(os.getenv("TIMEOUT_DATA_FETCH", "30"))
     

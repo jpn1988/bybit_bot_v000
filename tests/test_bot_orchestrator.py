@@ -128,7 +128,6 @@ class TestBotOrchestrator:
         mock_dependencies['mock_init_instance'].initialize_specialized_managers.assert_called_once()
         mock_dependencies['mock_init_instance'].setup_manager_callbacks.assert_called_once()
         mock_dependencies['mock_shutdown_instance'].setup_signal_handler.assert_called_once_with(orchestrator)
-        mock_dependencies['mock_set_global'].assert_called_once()
 
     def test_initialize_components(self, mock_dependencies):
         """Test de l'initialisation des composants."""

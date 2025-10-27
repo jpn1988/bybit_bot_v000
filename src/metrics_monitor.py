@@ -10,13 +10,16 @@ from config.timeouts import TimeoutConfig
 class MetricsMonitor:
     """Moniteur périodique des métriques."""
 
-    def __init__(self, interval_minutes: int = 5):
+    def __init__(self, interval_minutes: int = None):
         """
         Initialise le moniteur de métriques.
 
         Args:
             interval_minutes (int): Intervalle de monitoring en minutes
         """
+        if interval_minutes is None:
+            from config.constants import DEFAULT_METRICS_INTERVAL
+            interval_minutes = DEFAULT_METRICS_INTERVAL
         self.interval_seconds = interval_minutes * 60
         self.logger = setup_logging()
         self.running = False
