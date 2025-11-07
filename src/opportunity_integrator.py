@@ -10,13 +10,17 @@ Cette classe est responsable uniquement de :
 Responsabilité unique : Intégrer les opportunités dans la watchlist.
 """
 
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, TYPE_CHECKING
 from logging_setup import setup_logging
-from data_manager import DataManager
-from watchlist_manager import WatchlistManager
+from interfaces.data_manager_interface import DataManagerInterface
+from interfaces.watchlist_manager_interface import WatchlistManagerInterface
 from instruments import category_of_symbol
 from models.funding_data import FundingData
 from factories.funding_factory import FundingDataFactory
+
+if TYPE_CHECKING:
+    from data_manager import DataManager
+    from watchlist_manager import WatchlistManager
 
 
 class OpportunityIntegrator:
@@ -31,8 +35,8 @@ class OpportunityIntegrator:
 
     def __init__(
         self,
-        data_manager: DataManager,
-        watchlist_manager: Optional[WatchlistManager] = None,
+        data_manager: DataManagerInterface,
+        watchlist_manager: Optional[WatchlistManagerInterface] = None,
         logger=None,
     ):
         """
@@ -70,9 +74,9 @@ class OpportunityIntegrator:
         inverse_symbols = opportunities.get("inverse", [])
         funding_data = opportunities.get("funding_data", {})
 
-        # Récupérer les symboles existants
-        existing_linear = set(self.data_manager.storage.get_linear_symbols())
-        existing_inverse = set(self.data_manager.storage.get_inverse_symbols())
+        # Récupérer les symboles existants (utiliser les méthodes déléguées)
+        existing_linear = set(self.data_manager.get_linear_symbols())
+        existing_inverse = set(self.data_manager.get_inverse_symbols())
 
         # Identifier les nouveaux symboles
         new_linear = set(linear_symbols) - existing_linear
@@ -92,7 +96,7 @@ class OpportunityIntegrator:
         self,
         symbol: str,
         ticker_data: dict,
-        watchlist_manager: WatchlistManager,
+        watchlist_manager: WatchlistManagerInterface,
     ) -> bool:
         """
         Ajoute un symbole individuel à la watchlist.
@@ -106,8 +110,8 @@ class OpportunityIntegrator:
             bool: True si l'ajout a réussi
         """
         try:
-            # Vérifier que le symbole n'est pas déjà dans la watchlist
-            if self.data_manager.storage.get_funding_data_object(symbol):
+            # Vérifier que le symbole n'est pas déjà dans la watchlist (utiliser méthode déléguée)
+            if self.data_manager.get_funding_data_object(symbol):
                 return False  # Déjà présent
 
             # Construire les données du symbole
@@ -124,18 +128,18 @@ class OpportunityIntegrator:
                 if funding_obj is None:
                     return False  # Données invalides
 
-                # Ajouter à la watchlist via le DataStorage
-                self.data_manager.storage.set_funding_data_object(funding_obj)
+                # Ajouter à la watchlist via les méthodes déléguées
+                self.data_manager.set_funding_data_object(funding_obj)
 
-                # Ajouter aux listes par catégorie
+                # Ajouter aux listes par catégorie (utiliser méthode déléguée)
                 category = category_of_symbol(
-                    symbol, self.data_manager.storage.symbol_categories
+                    symbol, self.data_manager.get_symbol_categories()
                 )
-                self.data_manager.storage.add_symbol_to_category(symbol, category)
+                self.data_manager.add_symbol_to_category(symbol, category)
 
-                # Mettre à jour les données originales
+                # Mettre à jour les données originales (utiliser méthode déléguée)
                 if next_funding_time:
-                    self.data_manager.storage.update_original_funding_data(
+                    self.data_manager.update_original_funding_data(
                         symbol, next_funding_time
                     )
 
@@ -179,7 +183,8 @@ class OpportunityIntegrator:
         try:
             original_data = self.watchlist_manager.get_original_funding_data()
             for symbol, next_funding_time in original_data.items():
-                self.data_manager.storage.update_original_funding_data(
+                # Utiliser la méthode déléguée au lieu d'accéder à .storage
+                self.data_manager.update_original_funding_data(
                     symbol, next_funding_time
                 )
         except Exception as e:

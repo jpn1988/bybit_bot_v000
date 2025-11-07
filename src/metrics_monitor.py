@@ -2,7 +2,7 @@
 
 import threading
 from typing import Optional
-from metrics import get_metrics_summary
+from enhanced_metrics import get_metrics_summary
 from logging_setup import setup_logging
 from config.timeouts import TimeoutConfig
 
@@ -93,13 +93,13 @@ class MetricsMonitor:
             self.logger.info("=" * 70)
             self.logger.info("📊 RÉSUMÉ DES MÉTRIQUES DU BOT")
             self.logger.info("=" * 70)
-            
+
             # Uptime
             self.logger.info(
                 f"⏱️  Uptime: {int(uptime_hours)}h {int(uptime_minutes)}m "
                 f"({metrics['uptime_seconds']:.0f}s)"
             )
-            
+
             # Métriques API
             self.logger.info(
                 f"📡 API: {metrics['api_calls_total']} appels | "
@@ -107,7 +107,7 @@ class MetricsMonitor:
                 f"Taux erreur: {metrics['api_error_rate_percent']:.1f}% | "
                 f"Latence moy: {metrics['api_avg_latency_ms']:.1f}ms"
             )
-            
+
             # Métriques de filtrage
             total_pairs = metrics['pairs_kept_total'] + metrics['pairs_rejected_total']
             self.logger.info(
@@ -116,14 +116,14 @@ class MetricsMonitor:
                 f"Total: {total_pairs} | "
                 f"Taux succès: {metrics['filter_success_rate_percent']:.1f}%"
             )
-            
+
             # Métriques WebSocket
             self.logger.info(
                 f"🌐 WebSocket: {metrics['ws_connections']} connexions | "
                 f"{metrics['ws_reconnects']} reconnexions | "
                 f"{metrics['ws_errors']} erreurs"
             )
-            
+
             # Détails par filtre (si disponibles)
             filter_stats = metrics.get('filter_stats', {})
             if filter_stats:
@@ -139,7 +139,7 @@ class MetricsMonitor:
                         f"{rejected} rejetées | "
                         f"Taux: {success_rate:.1f}%"
                     )
-            
+
             self.logger.info("=" * 70)
 
         except Exception as e:
@@ -164,3 +164,4 @@ def start_metrics_monitoring(interval_minutes: int = 5):
     global metrics_monitor
     metrics_monitor = MetricsMonitor(interval_minutes)
     metrics_monitor.start()
+    return metrics_monitor

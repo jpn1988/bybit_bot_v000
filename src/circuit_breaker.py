@@ -118,17 +118,17 @@ from logging_setup import setup_logging
 class CircuitState(Enum):
     """
     États possibles du Circuit Breaker.
-    
+
     CLOSED : Circuit fermé, tout fonctionne normalement
              - Les appels passent sans restriction
              - Compte les échecs
              - Passe à OPEN après N échecs
-             
+
     OPEN : Circuit ouvert, trop d'échecs détectés
            - Tous les appels sont bloqués
            - Retourne immédiatement une erreur
            - Passe à HALF_OPEN après timeout
-           
+
     HALF_OPEN : Circuit semi-ouvert, test de récupération
                 - Autorise UN seul appel de test
                 - Si succès → CLOSED
@@ -142,10 +142,10 @@ class CircuitState(Enum):
 class CircuitBreakerOpen(Exception):
     """
     Exception levée quand le circuit breaker est ouvert.
-    
+
     Cette exception indique que le service est considéré comme indisponible
     et que les appels sont temporairement bloqués.
-    
+
     Example:
         ```python
         try:
@@ -161,11 +161,11 @@ class CircuitBreakerOpen(Exception):
 class CircuitBreaker:
     """
     Circuit Breaker pattern pour protéger contre les appels répétés à un service défaillant.
-    
+
     Le circuit breaker suit les échecs et ouvre le circuit (bloque les appels)
     après un certain nombre d'échecs consécutifs. Après un timeout, il teste
     la récupération du service.
-    
+
     Attributes:
         failure_threshold (int): Nombre d'échecs avant ouverture
         timeout_seconds (int): Temps d'attente avant test de récupération
@@ -173,7 +173,7 @@ class CircuitBreaker:
         state (CircuitState): État actuel du circuit
         failure_count (int): Nombre d'échecs consécutifs
         last_failure_time (float): Timestamp du dernier échec
-        
+
     Example:
         ```python
         # Circuit pour l'API Bybit
@@ -182,18 +182,18 @@ class CircuitBreaker:
             timeout_seconds=60,     # Réessayer après 1 minute
             name="BybitAPI"
         )
-        
+
         # Utiliser le circuit
         def fetch_tickers():
             response = requests.get("https://api.bybit.com/v5/market/tickers")
             return response.json()
-        
+
         try:
             data = api_breaker.call(fetch_tickers)
         except CircuitBreakerOpen:
             logger.warning("API temporairement indisponible")
         ```
-        
+
     Thread Safety:
         - ✅ Thread-safe via threading.Lock
         - ✅ Plusieurs threads peuvent partager le même circuit
@@ -209,7 +209,7 @@ class CircuitBreaker:
     ):
         """
         Initialise le Circuit Breaker.
-        
+
         Args:
             failure_threshold (int): Nombre d'échecs consécutifs avant ouverture
                                     Exemple: 5 = ouvre après 5 échecs
@@ -217,7 +217,7 @@ class CircuitBreaker:
                                   Exemple: 60 = réessaie après 1 minute
             name (str): Nom du circuit pour identification dans les logs
             logger: Logger optionnel pour les événements du circuit
-            
+
         Example:
             ```python
             # Circuit conservateur (tolère peu d'erreurs)
@@ -226,7 +226,7 @@ class CircuitBreaker:
                 timeout_seconds=30,
                 name="StrictAPI"
             )
-            
+
             # Circuit tolérant (pour API instable)
             lenient_breaker = CircuitBreaker(
                 failure_threshold=10,
@@ -239,15 +239,15 @@ class CircuitBreaker:
         self.timeout_seconds = timeout_seconds
         self.name = name
         self.logger = logger or setup_logging()
-        
+
         # État du circuit
         self.state = CircuitState.CLOSED
         self.failure_count = 0
         self.last_failure_time: Optional[float] = None
-        
+
         # Lock pour thread-safety
         self._lock = threading.Lock()
-        
+
         self.logger.debug(
             f"🔌 Circuit Breaker '{name}' initialisé "
             f"(seuil={failure_threshold}, timeout={timeout_seconds}s)"
@@ -256,31 +256,31 @@ class CircuitBreaker:
     def call(self, func: Callable[..., Any], *args, **kwargs) -> Any:
         """
         Appelle une fonction avec protection du Circuit Breaker.
-        
+
         Cette méthode wrappe l'appel de fonction avec la logique du circuit :
         - Si OPEN : lève CircuitBreakerOpen
         - Si HALF_OPEN : tente l'appel (test de récupération)
         - Si CLOSED : appelle normalement
-        
+
         Args:
             func: Fonction à appeler
             *args: Arguments positionnels de la fonction
             **kwargs: Arguments nommés de la fonction
-            
+
         Returns:
             Résultat de la fonction si succès
-            
+
         Raises:
             CircuitBreakerOpen: Si le circuit est ouvert
             Exception: Toute exception levée par func
-            
+
         Example:
             ```python
             circuit = CircuitBreaker(name="API")
-            
+
             # Appel simple
             result = circuit.call(requests.get, "https://api.com/data")
-            
+
             # Avec kwargs
             result = circuit.call(
                 requests.post,
@@ -293,20 +293,20 @@ class CircuitBreaker:
         with self._lock:
             # Vérifier l'état avant l'appel
             self._check_state()
-            
+
             # Si OPEN, bloquer l'appel
             if self.state == CircuitState.OPEN:
                 raise CircuitBreakerOpen(
                     f"Circuit Breaker '{self.name}' est ouvert - "
                     f"Service temporairement indisponible"
                 )
-        
+
         # Effectuer l'appel (hors du lock pour ne pas bloquer)
         try:
             result = func(*args, **kwargs)
             self._on_success()
             return result
-            
+
         except Exception as e:
             self._on_failure(e)
             raise
@@ -314,10 +314,10 @@ class CircuitBreaker:
     def _check_state(self):
         """
         Vérifie et met à jour l'état du circuit si nécessaire.
-        
+
         Transitions possibles :
         - OPEN → HALF_OPEN : Si timeout écoulé
-        
+
         Note:
             - Doit être appelé dans un contexte avec _lock
             - Les autres transitions sont gérées par on_success/on_failure
@@ -334,20 +334,20 @@ class CircuitBreaker:
     def _should_attempt_reset(self) -> bool:
         """
         Détermine si on peut tenter de réinitialiser le circuit.
-        
+
         Returns:
             True si le timeout est écoulé depuis le dernier échec
         """
         if self.last_failure_time is None:
             return True
-        
+
         elapsed = time.time() - self.last_failure_time
         return elapsed >= self.timeout_seconds
 
     def _on_success(self):
         """
         Gère un appel réussi.
-        
+
         Actions selon l'état :
         - CLOSED : Réinitialise le compteur d'échecs
         - HALF_OPEN : Ferme le circuit (récupération confirmée)
@@ -369,19 +369,19 @@ class CircuitBreaker:
     def _on_failure(self, error: Exception):
         """
         Gère un échec d'appel.
-        
+
         Actions selon l'état :
         - CLOSED : Incrémente compteur, ouvre si seuil atteint
         - HALF_OPEN : Ouvre immédiatement (récupération échouée)
         - OPEN : N/A (ne devrait pas arriver ici)
-        
+
         Args:
             error: Exception qui a causé l'échec
         """
         with self._lock:
             self.failure_count += 1
             self.last_failure_time = time.time()
-            
+
             if self.state == CircuitState.HALF_OPEN:
                 # Test de récupération échoué
                 self.state = CircuitState.OPEN
@@ -389,7 +389,7 @@ class CircuitBreaker:
                     f"⚠️ Circuit '{self.name}' réouvert - "
                     f"Test de récupération échoué: {error}"
                 )
-                
+
             elif self.state == CircuitState.CLOSED:
                 # Vérifier si seuil atteint
                 if self.failure_count >= self.failure_threshold:
@@ -403,10 +403,10 @@ class CircuitBreaker:
     def reset(self):
         """
         Réinitialise manuellement le circuit breaker.
-        
+
         Force la fermeture du circuit et remet tous les compteurs à zéro.
         Utile pour les tests ou la récupération manuelle.
-        
+
         Example:
             ```python
             # Après maintenance de l'API
@@ -419,7 +419,7 @@ class CircuitBreaker:
             self.state = CircuitState.CLOSED
             self.failure_count = 0
             self.last_failure_time = None
-            
+
             if old_state != CircuitState.CLOSED:
                 self.logger.info(
                     f"🔧 Circuit '{self.name}' réinitialisé manuellement "
@@ -429,10 +429,10 @@ class CircuitBreaker:
     def get_state(self) -> CircuitState:
         """
         Retourne l'état actuel du circuit.
-        
+
         Returns:
             CircuitState: État actuel (CLOSED, OPEN, ou HALF_OPEN)
-            
+
         Example:
             ```python
             if breaker.get_state() == CircuitState.OPEN:
@@ -445,7 +445,7 @@ class CircuitBreaker:
     def get_stats(self) -> dict:
         """
         Retourne les statistiques du circuit breaker.
-        
+
         Returns:
             dict: Statistiques contenant :
                 - state: État actuel
@@ -453,7 +453,7 @@ class CircuitBreaker:
                 - failure_threshold: Seuil d'ouverture
                 - last_failure_time: Timestamp du dernier échec
                 - time_until_retry: Secondes avant prochain test (si OPEN)
-                
+
         Example:
             ```python
             stats = breaker.get_stats()
@@ -468,12 +468,12 @@ class CircuitBreaker:
                 "failure_threshold": self.failure_threshold,
                 "last_failure_time": self.last_failure_time,
             }
-            
+
             # Calculer temps avant retry si OPEN
             if self.state == CircuitState.OPEN and self.last_failure_time:
                 elapsed = time.time() - self.last_failure_time
                 time_until_retry = max(0, self.timeout_seconds - elapsed)
                 stats["time_until_retry"] = round(time_until_retry, 1)
-            
+
             return stats
 

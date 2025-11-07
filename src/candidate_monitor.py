@@ -7,26 +7,30 @@ des symboles candidats via WebSocket.
 """
 
 import threading
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, TYPE_CHECKING
 from logging_setup import setup_logging
-from data_manager import DataManager
-from watchlist_manager import WatchlistManager
+from interfaces.data_manager_interface import DataManagerInterface
+from interfaces.watchlist_manager_interface import WatchlistManagerInterface
 from instruments import category_of_symbol
 from config.timeouts import TimeoutConfig
+
+if TYPE_CHECKING:
+    from data_manager import DataManager
+    from watchlist_manager import WatchlistManager
 
 
 class CandidateMonitor:
     """
     Moniteur de symboles candidats via WebSocket.
-    
+
     Responsabilité unique : Surveiller en temps réel les candidats
     qui sont proches de passer les filtres.
     """
 
     def __init__(
         self,
-        data_manager: DataManager,
-        watchlist_manager: WatchlistManager,
+        data_manager: DataManagerInterface,
+        watchlist_manager: WatchlistManagerInterface,
         testnet: bool = True,
         logger=None,
     ):
@@ -43,17 +47,17 @@ class CandidateMonitor:
         self.watchlist_manager = watchlist_manager
         self.testnet = testnet
         self.logger = logger or setup_logging()
-        
+
         # État de surveillance
         self._candidate_running = False
-        
+
         # Gestionnaires WebSocket pour candidats
         self.candidate_ws_client = None
         self._candidate_ws_thread: Optional[threading.Thread] = None
-        
+
         # Liste des symboles candidats surveillés
         self.candidate_symbols: List[str] = []
-        
+
         # Callback pour les tickers candidats
         self._on_candidate_ticker_callback: Optional[Callable] = None
 
@@ -141,7 +145,8 @@ class CandidateMonitor:
             linear_candidates = []
             inverse_candidates = []
 
-            symbol_categories = self.data_manager.storage.symbol_categories
+            # Utiliser la méthode déléguée de DataManagerInterface au lieu d'accéder à .storage
+            symbol_categories = self.data_manager.get_symbol_categories()
 
             for symbol in candidate_symbols:
                 category = category_of_symbol(symbol, symbol_categories)
@@ -202,7 +207,7 @@ class CandidateMonitor:
             self._candidate_ws_thread.start()
 
             self._candidate_running = True
-            
+
             self.logger.info(
                 f"👀 Surveillance des candidats démarrée: {len(symbols_to_monitor)} symboles"
             )
@@ -223,7 +228,7 @@ class CandidateMonitor:
     def _on_ticker_received(self, ticker_data: dict):
         """
         Callback appelé pour chaque ticker des candidats.
-        
+
         Args:
             ticker_data: Données du ticker
         """

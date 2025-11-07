@@ -17,7 +17,7 @@ _logging_disabled = False
 
 class SensitiveDataFilter:
     """Filtre qui masque les credentials sensibles dans les logs."""
-    
+
     # Patterns pour détecter et masquer les credentials
     PATTERNS = [
         # API keys et secrets
@@ -25,18 +25,18 @@ class SensitiveDataFilter:
         (r'(api[_-]?secret["\s:=]+)([a-zA-Z0-9-_]{10,})', r'\1***MASKED_API_SECRET***'),
         (r'(\'api_key\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_API_KEY***'),
         (r'(\'api_secret\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_API_SECRET***'),
-        
+
         # Headers Bybit
         (r'(X-BAPI-API-KEY["\s:=]+)([^"\s,}]+)', r'\1***MASKED_BAPI_KEY***'),
         (r'(X-BAPI-SIGN["\s:=]+)([^"\s,}]+)', r'\1***MASKED_SIGNATURE***'),
         (r'(\'X-BAPI-API-KEY\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_BAPI_KEY***'),
         (r'(\'X-BAPI-SIGN\':\s*)([\'"][^\'\"]+[\'"])', r'\1***MASKED_SIGNATURE***'),
-        
+
         # Variables d'environnement
         (r'(BYBIT_API_KEY["\s:=]+)([^"\s,}]+)', r'\1***MASKED***'),
         (r'(BYBIT_API_SECRET["\s:=]+)([^"\s,}]+)', r'\1***MASKED***'),
     ]
-    
+
     def __call__(self, record):
         """Filtre les credentials dans le message de log."""
         try:

@@ -10,7 +10,7 @@ Ce module contient la classe TableFormatter responsable de :
 """
 
 import time
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Callable
 from datetime import datetime
 
 
@@ -25,7 +25,7 @@ class TableFormatter:
     - Formatage des valeurs (funding, volume, spread, volatilité)
     """
 
-    def __init__(self, volatility_callback: Optional[callable] = None):
+    def __init__(self, volatility_callback: Optional[Callable[[str], Optional[float]]] = None):
         """
         Initialise le formateur de tableaux.
 
@@ -34,7 +34,7 @@ class TableFormatter:
         """
         self._volatility_callback = volatility_callback
 
-    def set_volatility_callback(self, callback: callable):
+    def set_volatility_callback(self, callback: Callable[[str], Optional[float]]) -> None:
         """Définit le callback pour la volatilité."""
         self._volatility_callback = callback
 
@@ -196,7 +196,7 @@ class TableFormatter:
     def prepare_row_data(self, symbol: str, data_manager) -> Dict[str, Any]:
         """
         Prépare les données d'une ligne avec fallback entre temps réel et REST.
-        
+
         Utilise les FundingData Value Objects pour récupérer les données de base.
 
         Args:

@@ -33,7 +33,7 @@ Avantages :
 Implémentation :
     class HTTPClientManager:
         _instance = None  # Instance unique (classe)
-        
+
         def __new__(cls):
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
@@ -116,36 +116,36 @@ class HTTPClientManager:
     Ce gestionnaire maintient des clients HTTP réutilisables (httpx, aiohttp)
     avec connexions keep-alive pour améliorer les performances en évitant
     les handshakes TLS répétés.
-    
+
     Pattern Singleton : Une seule instance pour toute l'application.
-    
+
     Clients gérés :
     - httpx.Client (synchrone) : Pour les requêtes bloquantes
     - httpx.AsyncClient (asynchrone) : Pour asyncio avec httpx
     - aiohttp.ClientSession (asynchrone) : Pour asyncio avec aiohttp
-    
+
     Attributes:
         _instance (HTTPClientManager): Instance unique (niveau classe)
         _initialized (bool): Flag d'initialisation (évite double init)
         _sync_client (httpx.Client): Client HTTP synchrone
         _async_client (httpx.AsyncClient): Client HTTP asynchrone (httpx)
         _aiohttp_session (aiohttp.ClientSession): Session aiohttp
-        
+
     Example:
         ```python
         # Obtenir l'instance (singleton)
         manager = HTTPClientManager()  # Même instance partout
-        
+
         # Client synchrone
         client = manager.get_sync_client(timeout=10)
         response = client.get("https://api.bybit.com/...")
-        
+
         # Client asynchrone
         async def fetch():
             client = await manager.get_async_client()
             response = await client.get("https://...")
         ```
-        
+
     Note:
         - L'instance est créée au premier appel
         - Les clients sont créés à la demande (lazy loading)
@@ -282,7 +282,7 @@ class HTTPClientManager:
         """
         Ferme tous les clients HTTP de manière synchrone.
         Utilisé par atexit pour un nettoyage automatique.
-        
+
         ASYNC-002 CORRECTIF: Évite les event loops imbriquées.
         """
         try:
@@ -326,7 +326,7 @@ _http_manager: Optional[HTTPClientManager] = None
 def _get_manager() -> HTTPClientManager:
     """
     Obtient l'instance du gestionnaire HTTP de manière lazy.
-    
+
     Returns:
         HTTPClientManager: Instance unique du gestionnaire
     """

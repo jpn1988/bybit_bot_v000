@@ -12,15 +12,15 @@ from typing import Any, Optional
 def format_success(component: str, action: str, details: Optional[str] = None) -> str:
     """
     Formate un message de succès.
-    
+
     Args:
         component: Nom du composant (ex: "WebSocket", "API")
         action: Action effectuée (ex: "connecté", "démarré")
         details: Détails supplémentaires (optionnel)
-        
+
     Returns:
         str: Message formaté
-        
+
     Example:
         >>> format_success("WebSocket", "connecté", "2 connexions actives")
         "✅ WebSocket: connecté - 2 connexions actives"
@@ -34,15 +34,15 @@ def format_success(component: str, action: str, details: Optional[str] = None) -
 def format_warning(component: str, issue: str, solution: Optional[str] = None) -> str:
     """
     Formate un message d'avertissement.
-    
+
     Args:
         component: Nom du composant
         issue: Problème rencontré
         solution: Solution suggérée (optionnel)
-        
+
     Returns:
         str: Message formaté
-        
+
     Example:
         >>> format_warning("API", "rate limit atteint", "attendre 60s")
         "⚠️ API: rate limit atteint - attendre 60s"
@@ -56,15 +56,15 @@ def format_warning(component: str, issue: str, solution: Optional[str] = None) -
 def format_error(component: str, error: str, context: Optional[str] = None) -> str:
     """
     Formate un message d'erreur.
-    
+
     Args:
         component: Nom du composant
         error: Erreur rencontrée
         context: Contexte supplémentaire (optionnel)
-        
+
     Returns:
         str: Message formaté
-        
+
     Example:
         >>> format_error("WebSocket", "connexion fermée", "timeout")
         "❌ WebSocket: connexion fermée - timeout"
@@ -78,15 +78,15 @@ def format_error(component: str, error: str, context: Optional[str] = None) -> s
 def format_info(component: str, message: str, details: Optional[str] = None) -> str:
     """
     Formate un message d'information.
-    
+
     Args:
         component: Nom du composant
         message: Message principal
         details: Détails supplémentaires (optionnel)
-        
+
     Returns:
         str: Message formaté
-        
+
     Example:
         >>> format_info("Bot", "démarré", "mode testnet")
         "ℹ️ Bot: démarré - mode testnet"
@@ -100,15 +100,15 @@ def format_info(component: str, message: str, details: Optional[str] = None) -> 
 def format_debug(component: str, action: str, data: Optional[Any] = None) -> str:
     """
     Formate un message de debug.
-    
+
     Args:
         component: Nom du composant
         action: Action en cours
         data: Données de debug (optionnel)
-        
+
     Returns:
         str: Message formaté
-        
+
     Example:
         >>> format_debug("Filter", "appliqué", "10 symboles gardés")
         "🔍 Filter: appliqué - 10 symboles gardés"

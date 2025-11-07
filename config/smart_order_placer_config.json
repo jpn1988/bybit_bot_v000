@@ -1,0 +1,214 @@
+{
+  "smart_order_placer": {
+    "version": "1.0.0",
+    "description": "Configuration pour SmartOrderPlacer",
+    
+    "timing": {
+      "order_refresh_interval": 5,
+      "max_retries": 3,
+      "execution_wait_timeout": 5,
+      "api_call_timeout": 10
+    },
+    
+    "limits": {
+      "min_order_value_usdt": 5.0,
+      "max_order_value_usdt": 1000000.0,
+      "min_quantity": 0.0001,
+      "max_quantity": 1000000.0
+    },
+    
+    "liquidity_classification": {
+      "high_liquidity": {
+        "max_spread_percent": 0.1,
+        "min_volume": 1000000,
+        "offset_percent": 0.02,
+        "description": "Marchés très liquides (BTC, ETH)"
+      },
+      "medium_liquidity": {
+        "max_spread_percent": 0.5,
+        "min_volume": 100000,
+        "offset_percent": 0.05,
+        "description": "Marchés normaux (altcoins populaires)"
+      },
+      "low_liquidity": {
+        "max_spread_percent": 999.0,
+        "min_volume": 0,
+        "offset_percent": 0.10,
+        "description": "Marchés peu liquides (altcoins récents)"
+      }
+    },
+    
+    "cache": {
+      "orderbook_ttl_seconds": 30,
+      "instruments_ttl_seconds": 3600,
+      "liquidity_ttl_seconds": 60,
+      "max_orderbook_entries": 100,
+      "max_instrument_entries": 500
+    },
+    
+    "threading": {
+      "max_workers": 4,
+      "thread_name_prefix": "smart_order_",
+      "daemon_threads": true
+    },
+    
+    "symbol_configs": {
+      "BTCUSDT": {
+        "min_offset_percent": 0.01,
+        "max_offset_percent": 0.10,
+        "refresh_interval": 3,
+        "min_order_value": 10.0,
+        "description": "Bitcoin - marché très liquide"
+      },
+      "ETHUSDT": {
+        "min_offset_percent": 0.02,
+        "max_offset_percent": 0.20,
+        "refresh_interval": 5,
+        "min_order_value": 5.0,
+        "description": "Ethereum - marché très liquide"
+      },
+      "ALTCOINS": {
+        "min_offset_percent": 0.05,
+        "max_offset_percent": 0.50,
+        "refresh_interval": 8,
+        "min_order_value": 5.0,
+        "description": "Altcoins - marchés moins liquides"
+      }
+    },
+    
+    "error_handling": {
+      "110094": {
+        "action": "adjust_quantity",
+        "retry": true,
+        "max_attempts": 3,
+        "description": "Order does not meet minimum order value"
+      },
+      "170140": {
+        "action": "increase_quantity",
+        "retry": true,
+        "max_attempts": 2,
+        "description": "Order value exceeded lower limit"
+      },
+      "170134": {
+        "action": "format_price",
+        "retry": true,
+        "max_attempts": 1,
+        "description": "Order price has too many decimals"
+      },
+      "10001": {
+        "action": "validate_parameters",
+        "retry": false,
+        "log_level": "ERROR",
+        "description": "Missing parameters"
+      }
+    },
+    
+    "fallback_strategies": {
+      "smart_placer_failed": {
+        "action": "use_classic_placement",
+        "conditions": ["max_retries_exceeded", "api_error"],
+        "description": "Utiliser placement classique si SmartOrderPlacer échoue"
+      },
+      "liquidity_classification_failed": {
+        "action": "use_medium_liquidity",
+        "conditions": ["orderbook_unavailable", "calculation_error"],
+        "description": "Utiliser liquidité moyenne par défaut"
+      },
+      "price_calculation_failed": {
+        "action": "use_market_price_offset",
+        "conditions": ["orderbook_empty", "invalid_data"],
+        "description": "Utiliser prix marché avec offset fixe"
+      }
+    },
+    
+    "monitoring": {
+      "enable_metrics": true,
+      "metrics_retention_hours": 24,
+      "dashboard_update_interval": 5,
+      "alerts": {
+        "success_rate_low": 0.8,
+        "execution_time_high": 10.0,
+        "retry_count_high": 5,
+        "cache_hit_rate_low": 0.7
+      }
+    },
+    
+    "logging": {
+      "level": "INFO",
+      "format": "%(asctime)s | %(levelname)s | %(message)s",
+      "handlers": ["console", "file", "metrics"],
+      "log_file": "logs/smart_order_placer.log",
+      "max_file_size_mb": 10,
+      "backup_count": 5
+    },
+    
+    "testing": {
+      "test_symbols": ["BTCUSDT", "ETHUSDT", "ADAUSDT"],
+      "test_categories": ["linear", "spot"],
+      "test_sides": ["Buy", "Sell"],
+      "test_quantities": ["0.001", "0.01", "0.1"],
+      "mock_api": true,
+      "test_timeout": 30,
+      "testnet_only": true
+    },
+    
+    "performance": {
+      "enable_profiling": false,
+      "profile_output_dir": "profiles/",
+      "memory_monitoring": true,
+      "cpu_monitoring": true,
+      "network_monitoring": true
+    },
+    
+    "security": {
+      "validate_inputs": true,
+      "sanitize_logs": true,
+      "rate_limiting": {
+        "enabled": true,
+        "max_requests_per_minute": 60,
+        "max_requests_per_hour": 1000
+      },
+      "circuit_breaker": {
+        "enabled": true,
+        "failure_threshold": 5,
+        "recovery_timeout": 60,
+        "half_open_max_calls": 3
+      }
+    },
+    
+    "advanced": {
+      "machine_learning": {
+        "enabled": false,
+        "model_path": "models/liquidity_predictor.pkl",
+        "features": ["spread_history", "volume_history", "volatility", "time_of_day"],
+        "retrain_interval_hours": 24,
+        "prediction_confidence_threshold": 0.8
+      },
+      "market_adaptation": {
+        "enabled": true,
+        "bull_market": {
+          "buy_offset_multiplier": 0.8,
+          "sell_offset_multiplier": 1.2,
+          "refresh_interval_multiplier": 0.6
+        },
+        "bear_market": {
+          "buy_offset_multiplier": 1.2,
+          "sell_offset_multiplier": 0.8,
+          "refresh_interval_multiplier": 1.0
+        },
+        "sideways_market": {
+          "buy_offset_multiplier": 1.0,
+          "sell_offset_multiplier": 1.0,
+          "refresh_interval_multiplier": 1.2
+        }
+      },
+      "cost_optimization": {
+        "enabled": true,
+        "prefer_maker_rebate": true,
+        "min_spread_threshold": 0.001,
+        "max_slippage": 0.002,
+        "target_cost_per_trade": 0.0001
+      }
+    }
+  }
+}

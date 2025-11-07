@@ -269,6 +269,61 @@ class WatchlistFilterApplier:
             # Retourner les symboles originaux en cas d'erreur
             return final_symbols, len(final_symbols)
 
+    def apply_spot_filter(
+        self, symbols: List[str], spot_checker
+    ) -> Tuple[List[str], int]:
+        """
+        Filter symbols to keep only those available in spot.
+
+        Args:
+            symbols: List of symbols to filter
+            spot_checker: SpotAvailabilityChecker instance
+
+        Returns:
+            Tuple (filtered symbols, count after filter)
+        """
+        if not spot_checker:
+            return symbols, len(symbols)
+
+        # Debug: Show which symbols are being tested
+        self.logger.info(f"🔍 Testing {len(symbols)} symbols for spot availability: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
+
+        # Extract symbol names from tuples if needed
+        symbol_names = []
+        for item in symbols:
+            if isinstance(item, tuple) and len(item) > 0:
+                symbol_names.append(item[0])  # First element is the symbol name
+            elif isinstance(item, str):
+                symbol_names.append(item)
+            else:
+                self.logger.warning(f"🔍 Unexpected symbol format: {item}")
+                continue
+
+        # Filter symbols and keep original format (tuples)
+        filtered = []
+        for item in symbols:
+            if isinstance(item, tuple) and len(item) > 0:
+                symbol_name = item[0]
+                if spot_checker.is_spot_available(symbol_name):
+                    filtered.append(item)  # Keep original tuple format
+            elif isinstance(item, str):
+                if spot_checker.is_spot_available(item):
+                    filtered.append(item)  # Keep original string format
+
+        # Debug: Show which symbols passed the spot filter
+        if filtered:
+            symbol_names = [item[0] if isinstance(item, tuple) else item for item in filtered]
+            self.logger.info(f"🔍 Symbols that passed spot filter: {symbol_names}")
+        else:
+            self.logger.info(f"🔍 No symbols passed spot filter. Available spot symbols: {list(spot_checker._spot_available_cache)[:10]}{'...' if len(spot_checker._spot_available_cache) > 10 else ''}")
+
+        self.logger.info(
+            f"🔍 Filtre spot: {len(filtered)} symboles disponibles en spot "
+            f"sur {len(symbols)} symboles perp"
+        )
+
+        return filtered, len(filtered)
+
     def apply_all_filters(
         self,
         perp_data: Dict,
@@ -277,6 +332,7 @@ class WatchlistFilterApplier:
         volatility_tracker,
         base_url: str,
         n0: int,
+        spot_checker=None,  # NEW parameter
     ) -> Tuple[List, Dict]:
         """
         Applique tous les filtres de manière séquentielle.
@@ -295,6 +351,11 @@ class WatchlistFilterApplier:
         # Appliquer le filtrage par funding, volume et temps
         filtered_symbols, n1 = self.apply_funding_volume_time_filters(
             perp_data, funding_map, config_params
+        )
+
+        # NEW: Appliquer le filtre de disponibilité spot
+        filtered_symbols, n_spot = self.apply_spot_filter(
+            filtered_symbols, spot_checker
         )
 
         # Appliquer le filtre de spread
@@ -325,6 +386,7 @@ class WatchlistFilterApplier:
         filter_metrics = {
             "n0": n0,
             "n1": n1,
+            "n_spot": n_spot,  # NEW metric
             "n2": n2,
             "n_before_volatility": n_before_volatility,
             "n_after_volatility": n_after_volatility,

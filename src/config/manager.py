@@ -52,22 +52,22 @@ from .config_validator import ConfigValidator
 class ConfigManager:
     """
     Gestionnaire de configuration pour le bot Bybit.
-    
+
     Cette classe orchestre :
     - Le chargement de la configuration depuis YAML et ENV
     - La validation des paramètres
     - La fourniture des valeurs par défaut
-    
+
     Hiérarchie de priorité :
     1. Variables d'environnement (.env) - PRIORITÉ MAXIMALE
     2. Fichier YAML (parameters.yaml) - PRIORITÉ MOYENNE
     3. Valeurs par défaut dans le code - PRIORITÉ MINIMALE
     """
-    
+
     def __init__(self, config_path: str = "src/parameters.yaml", logger=None):
         """
         Initialise le gestionnaire de configuration.
-        
+
         Args:
             config_path: Chemin vers le fichier de configuration YAML
             logger: Logger pour les messages (optionnel)
@@ -77,40 +77,40 @@ class ConfigManager:
         self.config = {}
         self.logger = self._init_logger(logger)
         self.validator = ConfigValidator()
-    
+
     def load_and_validate_config(self) -> Dict:
         """
         Charge et valide la configuration avec hiérarchie claire.
-        
+
         PRIORITÉ 1 (MAXIMALE) : Variables d'environnement (.env)
         PRIORITÉ 2 (MOYENNE) : Fichier YAML (parameters.yaml)
         PRIORITÉ 3 (MINIMALE) : Valeurs par défaut dans le code
-        
+
         Returns:
             Dict: Configuration validée
-            
+
         Raises:
             ValueError: Si la configuration est invalide
         """
         # ÉTAPE 1: Valeurs par défaut (priorité minimale)
         config = self._get_default_config()
-        
+
         # ÉTAPE 2: Charger depuis le fichier YAML (priorité moyenne)
         self._load_yaml_config(config)
-        
+
         # ÉTAPE 3: Appliquer les variables d'environnement (priorité maximale)
         self._apply_env_settings(config)
-        
+
         # ÉTAPE 4: Valider la configuration finale
         self.validator.validate(config)
-        
+
         self.config = config
         return config
-    
+
     def _get_default_config(self) -> Dict:
         """
         Retourne la configuration par défaut.
-        
+
         Returns:
             Dict: Configuration avec valeurs par défaut
         """
@@ -129,19 +129,19 @@ class ConfigManager:
             "display_interval_seconds": 10,
             "funding_threshold_minutes": 60,  # Seuil par défaut pour le Scheduler
         }
-    
+
     def _load_yaml_config(self, config: Dict) -> None:
         """
         Charge la configuration depuis le fichier YAML.
-        
+
         Cette méthode est tolérante aux erreurs : si le fichier n'existe pas
         ou est invalide, elle continue avec les valeurs par défaut.
-        
+
         Args:
             config: Configuration à mettre à jour
         """
         import os
-        
+
         try:
             # Vérifier que le fichier existe avant de tenter de le lire
             if not os.path.exists(self.config_path):
@@ -150,11 +150,11 @@ class ConfigManager:
                     f"   → Utilisation des valeurs par défaut uniquement"
                 )
                 return
-            
+
             # Lire le fichier YAML
             with open(self.config_path, "r", encoding="utf-8") as f:
                 file_config = yaml.safe_load(f)
-            
+
             # Vérifier que le fichier n'est pas vide
             if not file_config:
                 self.logger.warning(
@@ -162,7 +162,7 @@ class ConfigManager:
                     f"   → Utilisation des valeurs par défaut uniquement"
                 )
                 return
-            
+
             # Vérifier que c'est un dictionnaire
             if not isinstance(file_config, dict):
                 self.logger.error(
@@ -170,11 +170,11 @@ class ConfigManager:
                     f"   → Le fichier doit contenir un dictionnaire de clés/valeurs"
                 )
                 return
-            
+
             # Mettre à jour la configuration
             config.update(file_config)
             self.logger.debug(f"✓ Configuration YAML chargée : {len(file_config)} paramètres")
-            
+
         except yaml.YAMLError as e:
             self.logger.error(
                 f"❌ Erreur de syntaxe YAML dans {self.config_path} :\n"
@@ -191,19 +191,19 @@ class ConfigManager:
                 f"❌ Erreur inattendue lors du chargement YAML : {e}\n"
                 f"   → Fichier : {self.config_path}"
             )
-    
+
     def _apply_env_settings(self, config: Dict) -> None:
         """
         Applique les variables d'environnement sur la configuration.
-        
+
         Les variables ENV ont la priorité maximale et écraseront
         toute valeur provenant du fichier YAML ou des défauts.
-        
+
         Args:
             config: Configuration à mettre à jour
         """
         settings = get_settings()
-        
+
         # Mapping entre les clés ENV et les clés de configuration
         # Format: "clé_env" -> "clé_config"
         env_mappings = {
@@ -220,10 +220,10 @@ class ConfigManager:
             "funding_time_max_minutes": "funding_time_max_minutes",
             "display_interval_seconds": "display_interval_seconds",
         }
-        
+
         # Compter le nombre de surcharges appliquées
         overrides_count = 0
-        
+
         # Appliquer les variables d'environnement si présentes
         for env_key, config_key in env_mappings.items():
             env_value = settings.get(env_key)
@@ -231,27 +231,27 @@ class ConfigManager:
                 config[config_key] = env_value
                 overrides_count += 1
                 self.logger.debug(f"  ENV override: {config_key} = {env_value}")
-        
+
         if overrides_count > 0:
             self.logger.debug(f"✓ {overrides_count} paramètre(s) surchargé(s) par variables ENV")
-    
+
     def get_config(self) -> Dict:
         """
         Retourne la configuration actuelle.
-        
+
         Returns:
             Dict: Configuration actuelle
         """
         return self.config.copy()
-    
+
     def get_config_value(self, key: str, default=None):
         """
         Récupère une valeur de configuration spécifique.
-        
+
         Args:
             key: Clé de configuration
             default: Valeur par défaut si la clé n'existe pas
-            
+
         Returns:
             Valeur de configuration ou valeur par défaut
         """
@@ -262,36 +262,36 @@ class ConfigManager:
     def _find_config_file(self, config_path: str) -> str:
         """
         Recherche le fichier de configuration YAML.
-        
+
         Essaie plusieurs emplacements possibles dans cet ordre :
         1. Chemin fourni en paramètre
         2. parameters.yaml dans le répertoire courant
         3. src/parameters.yaml depuis la racine
         4. Chemin relatif au module config
-        
+
         Args:
             config_path: Chemin initial à essayer
-            
+
         Returns:
             str: Chemin vers le fichier trouvé (ou chemin initial si aucun trouvé)
         """
         import os
-        
+
         # Si le chemin fourni existe, l'utiliser
         if os.path.exists(config_path):
             return config_path
-        
+
         # Sinon, essayer d'autres emplacements
         possible_paths = [
             "parameters.yaml",  # Même répertoire que le script
             "src/parameters.yaml",  # Depuis la racine du projet
             os.path.join(os.path.dirname(__file__), "..", "parameters.yaml"),  # Relatif au module config
         ]
-        
+
         for path in possible_paths:
             if os.path.exists(path):
                 return path
-        
+
         # Si aucun fichier trouvé, retourner le chemin initial
         # (l'erreur sera gérée lors du chargement)
         return config_path
@@ -299,35 +299,35 @@ class ConfigManager:
     def _init_logger(self, logger):
         """
         Initialise le logger de manière robuste.
-        
+
         Essaie plusieurs stratégies d'import :
         1. Utiliser le logger fourni
         2. Importer depuis le package parent (..logging_setup)
         3. Importer depuis le répertoire courant (logging_setup)
         4. Fallback sur le logger standard Python
-        
+
         Args:
             logger: Logger fourni (ou None)
-            
+
         Returns:
             Logger initialisé
         """
         if logger:
             return logger
-        
+
         # Essayer d'importer setup_logging
         try:
             from ..logging_setup import setup_logging
             return setup_logging()
         except ImportError:
             pass
-        
+
         try:
             from logging_setup import setup_logging
             return setup_logging()
         except ImportError:
             pass
-        
+
         # Fallback sur le logger standard
         import logging
         return logging.getLogger(__name__)

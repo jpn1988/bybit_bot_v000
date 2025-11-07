@@ -50,7 +50,7 @@ class VolatilityScheduler:
         # Thread de rafraîchissement
         self._refresh_thread: Optional[threading.Thread] = None
         self._running = False
-        
+
         # Event loop persistant pour éviter la création/destruction répétée
         self._thread_loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -58,6 +58,10 @@ class VolatilityScheduler:
         self._get_active_symbols_callback: Optional[
             Callable[[], List[str]]
         ] = None
+
+        # Journalisation synthétique
+        self._summary_interval = 60
+        self._last_summary_ts = 0.0
 
     def set_active_symbols_callback(self, callback: Callable[[], List[str]]):
         """
@@ -71,7 +75,7 @@ class VolatilityScheduler:
     def start_refresh_task(self):
         """Démarre la tâche de rafraîchissement automatique."""
         if self._refresh_thread and self._refresh_thread.is_alive():
-            self.logger.info("ℹ️ Thread volatilité déjà actif")
+            self.logger.info("[VOLATILITY] ℹ️ Thread volatilité déjà actif")
             return
 
         self._running = True
@@ -84,7 +88,7 @@ class VolatilityScheduler:
     def stop_refresh_task(self):
         """
         Arrête la tâche de rafraîchissement de manière plus robuste.
-        
+
         CORRECTIF : N'attend plus le thread car il peut être bloqué dans
         un calcul de volatilité qui prend 30-45 secondes. Le thread daemon
         sera automatiquement tué par Python lors de la fermeture.
@@ -96,7 +100,7 @@ class VolatilityScheduler:
         # Comme c'est un thread daemon, Python le tuera automatiquement.
         # Les vérifications de self._running dans le code empêchent
         # de nouvelles opérations coûteuses.
-        
+
         if self._refresh_thread and self._refresh_thread.is_alive():
             self.logger.debug("🛑 Thread volatilité marqué pour arrêt (daemon)")
 
@@ -107,19 +111,19 @@ class VolatilityScheduler:
     def _refresh_loop(self):
         """Boucle de rafraîchissement périodique du cache de volatilité."""
         refresh_interval = self._calculate_refresh_interval()
-        
+
         # OPTIMISATION: Créer l'event loop une seule fois pour le thread
         # au lieu de le créer/détruire à chaque calcul de volatilité
         self._thread_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._thread_loop)
-        
+
         try:
             while self._running:
                 try:
                     # CORRECTIF : Vérifier à chaque début de cycle
                     if not self._running:
                         break
-                    
+
                     # Obtenir les symboles à rafraîchir
                     symbols_to_refresh = self._get_symbols_to_refresh()
 
@@ -141,7 +145,7 @@ class VolatilityScheduler:
                     # CORRECTIF : Ne pas logger les erreurs pendant l'arrêt
                     if self._running:
                         try:
-                            self.logger.warning(f"⚠️ Erreur refresh volatilité: {e}")
+                            self.logger.warning(f"[VOLATILITY] ⚠️ Erreur refresh volatilité: {e}")
                         except (ValueError, RuntimeError):
                             # Logging désactivé, arrêt en cours
                             break
@@ -153,7 +157,7 @@ class VolatilityScheduler:
 
                 # Attendre l'intervalle de rafraîchissement avec vérification d'interruption
                 self._wait_for_next_cycle(refresh_interval)
-                
+
         finally:
             # NETTOYAGE: Fermer l'event loop persistant
             if self._thread_loop and not self._thread_loop.is_closed():
@@ -188,7 +192,7 @@ class VolatilityScheduler:
         try:
             return self._get_active_symbols_callback()
         except Exception as e:
-            self.logger.warning(f"⚠️ Erreur callback symboles actifs: {e}")
+            self.logger.warning(f"[VOLATILITY] ⚠️ Erreur callback symboles actifs: {e}")
             return []
 
     def _perform_refresh_cycle(self, symbols: List[str]):
@@ -201,7 +205,7 @@ class VolatilityScheduler:
         # CORRECTIF : Vérifier si on est en train de s'arrêter
         if not self._running:
             return
-        
+
         # Calculer la volatilité pour tous les symboles
         results = self._run_async_volatility_batch(symbols)
 
@@ -218,9 +222,7 @@ class VolatilityScheduler:
         # CORRECTIF : Ne logger que si on tourne encore ET que le logging fonctionne
         if self._running:
             try:
-                self.logger.info(
-                    f"✅ Refresh volatilité terminé: ok={ok_count} | fail={fail_count}"
-                )
+                self._log_periodic_summary(len(symbols), ok_count, fail_count)
             except (ValueError, RuntimeError):
                 # Logging désactivé ou arrêt en cours, ignorer
                 pass
@@ -234,12 +236,23 @@ class VolatilityScheduler:
         if self._running:
             self.cache.clear_stale_cache(symbols)
 
+    def _log_periodic_summary(self, symbol_count: int, ok_count: int, fail_count: int) -> None:
+        """Émet un résumé synthétique du rafraîchissement (≤ une fois par minute)."""
+        now = time.time()
+        if now - self._last_summary_ts < self._summary_interval:
+            return
+
+        self._last_summary_ts = now
+        self.logger.info(
+            f"[VOLATILITY] Summary rafraichis={symbol_count} ok={ok_count} fail={fail_count}"
+        )
+
     def _run_async_volatility_batch(
         self, symbols: List[str]
     ) -> Dict[str, Optional[float]]:
         """
         Exécute le calcul de volatilité en batch en utilisant l'event loop persistant.
-        
+
         OPTIMISATION: Utilise l'event loop du thread au lieu d'en créer un nouveau
         à chaque calcul, ce qui réduit l'overhead de création/destruction.
 
@@ -252,12 +265,12 @@ class VolatilityScheduler:
         # CORRECTIF : Vérifier si on est en train de s'arrêter
         if not self._running:
             return {symbol: None for symbol in symbols}
-        
+
         # Vérifier que l'event loop persistant est disponible
         if not self._thread_loop or self._thread_loop.is_closed():
-            self.logger.warning("⚠️ Event loop volatilité non disponible")
+            self.logger.warning("[VOLATILITY] ⚠️ Event loop volatilité non disponible")
             return {symbol: None for symbol in symbols}
-        
+
         try:
             # OPTIMISATION: Utiliser l'event loop persistant du thread
             return self._thread_loop.run_until_complete(
@@ -267,13 +280,13 @@ class VolatilityScheduler:
             # CORRECTIF : Vérifier si c'est une erreur d'arrêt
             if not self._running:
                 return {symbol: None for symbol in symbols}
-            
+
             error_msg = str(e).lower()
             if "interpreter shutdown" in error_msg or "cannot schedule" in error_msg:
                 # Arrêt en cours, ne pas logger
                 return {symbol: None for symbol in symbols}
-            
-            self.logger.warning(f"⚠️ Erreur calcul volatilité: {e}")
+
+            self.logger.warning(f"[VOLATILITY] ⚠️ Erreur calcul volatilité: {e}")
             return {symbol: None for symbol in symbols}
 
     def _retry_failed_symbols(
@@ -289,16 +302,16 @@ class VolatilityScheduler:
         # CORRECTIF : Ne pas faire de retry si on est en train de s'arrêter
         if not self._running:
             return
-        
+
         # Logger avec protection contre l'arrêt
         try:
             self.logger.info(
-                f"🔁 Retry volatilité pour {len(failed_symbols)} symboles…"
+                f"[VOLATILITY] 🔁 Retry volatilité pour {len(failed_symbols)} symboles…"
             )
         except (ValueError, RuntimeError):
             # Logging désactivé ou arrêt en cours, abandonner le retry
             return
-        
+
         # Attendre avec vérification d'interruption
         for _ in range(50):  # 5 secondes = 50 * 0.1s
             if not self._running:
@@ -324,7 +337,7 @@ class VolatilityScheduler:
         if self._running:
             try:
                 self.logger.info(
-                    f"🔁 Retry volatilité terminé: récupérés={retry_ok}/{len(failed_symbols)}"
+                    f"[VOLATILITY] 🔁 Retry volatilité terminé: récupérés={retry_ok}/{len(failed_symbols)}"
                 )
             except (ValueError, RuntimeError):
                 # Logging désactivé ou arrêt en cours, ignorer

@@ -1,0 +1,69 @@
+# ============================================
+# Configuration de la parallélisation des appels API
+# ============================================
+# Ce fichier configure les paramètres de parallélisation
+# pour optimiser les performances des appels API
+
+# Configuration générale
+max_concurrent_requests: 4           # Nombre maximum de requêtes simultanées
+batch_size: 20                       # Taille des lots pour le traitement par batch
+max_retries: 3                       # Nombre maximum de tentatives en cas d'échec
+retry_delay: 0.1                     # Délai entre les tentatives (secondes)
+timeout: 30.0                        # Timeout global pour les requêtes (secondes)
+
+# Configuration par type d'opération
+volatility:
+  max_concurrent: 3                  # Requêtes simultanées pour le calcul de volatilité
+  batch_size: 12                     # Taille des lots pour la volatilité
+  timeout: 20.0                      # Timeout spécifique pour la volatilité
+
+funding:
+  max_concurrent: 3                  # Requêtes simultanées pour le funding
+  batch_size: 15                     # Taille des lots pour le funding
+  timeout: 10.0                      # Timeout spécifique pour le funding
+
+spread:
+  max_concurrent: 6                  # Requêtes simultanées pour le spread
+  batch_size: 25                     # Taille des lots pour le spread
+  timeout: 8.0                       # Timeout spécifique pour le spread
+
+# Configuration du rate limiting
+rate_limiting:
+  enabled: true                      # Activer le rate limiting
+  public_max_calls_per_sec: 3        # Appels maximum par seconde pour l'API publique
+  public_window_seconds: 1.0         # Fenêtre de temps pour l'API publique
+  private_max_calls_per_sec: 5       # Appels maximum par seconde pour l'API privée
+  private_window_seconds: 1.0        # Fenêtre de temps pour l'API privée
+
+# Configuration des timeouts
+timeouts:
+  http_request: 15                   # Timeout pour les requêtes HTTP standard
+  bybit_api_request: 30              # Timeout pour les requêtes API Bybit
+  data_fetch: 30                     # Timeout pour la récupération de données
+  spread_fetch: 10                   # Timeout pour les requêtes de spread
+  funding_fetch: 10                  # Timeout pour les requêtes de funding
+  volatility_fetch: 15               # Timeout pour les requêtes de volatilité
+  websocket_connect: 20              # Timeout pour les connexions WebSocket
+  websocket_message: 10              # Timeout pour les messages WebSocket
+
+# Configuration de la concurrence
+concurrency:
+  volatility_max_concurrent_requests: 5    # Limite pour le calcul de volatilité
+  http_max_concurrent_requests: 10         # Limite pour les requêtes HTTP générales
+  max_thread_pool_workers: 4               # Limite de workers pour ThreadPoolExecutor
+
+# Configuration des intervalles de scan
+scan_intervals:
+  market_scan: 60                    # Intervalle de scan du marché (secondes)
+  volatility_refresh: 120            # Intervalle de rafraîchissement de la volatilité (secondes)
+  health_check: 1                    # Intervalle de vérification de santé (secondes)
+  memory_monitoring: 60              # Intervalle de monitoring de la mémoire (secondes)
+  metrics_display: 300               # Intervalle d'affichage des métriques (secondes)
+
+# Configuration des délais de sommeil
+sleep_delays:
+  short: 0.1                         # Délai court pour les vérifications périodiques (secondes)
+  medium: 0.2                        # Délai moyen pour les attentes de propagation (secondes)
+  reconnect: 1.0                     # Délai pour les reconnexions WebSocket (secondes)
+  volatility_retry: 5.0              # Délai pour les retries de volatilité (secondes)
+  rate_limit: 0.05                   # Délai pour les vérifications de rate limiting (secondes)

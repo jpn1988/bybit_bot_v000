@@ -113,14 +113,14 @@ from ws.private.router import PrivateMessageRouter
 class PrivateWSClient:
     """
     Client WebSocket privé Bybit v5 avec authentification HMAC et reconnexion automatique.
-    
+
     Ce client gère :
     - Authentification automatique via HMAC-SHA256
     - Souscription aux topics privés (order, position, wallet, etc.)
     - Watchdog thread pour détecter les déconnexions silencieuses
     - Reconnexion automatique avec backoff progressif
     - Callbacks pour chaque type de message reçu
-    
+
     Attributes:
         testnet (bool): Utiliser le testnet (True) ou mainnet (False)
         api_key (str): Clé API Bybit
@@ -130,7 +130,7 @@ class PrivateWSClient:
         running (bool): État de la connexion (True = actif)
         connected (bool): État TCP (True = connecté au serveur)
         _authed (bool): État d'authentification (True = authentifié)
-        
+
     Example:
         ```python
         # Créer et démarrer le client
@@ -141,15 +141,15 @@ class PrivateWSClient:
             channels=["order", "position"],
             logger=my_logger
         )
-        
+
         # Définir les callbacks
         client.on_topic = lambda topic, data: print(f"{topic}: {data}")
         client.on_auth_success = lambda: print("Authentifié !")
-        
+
         # Démarrer (bloquant)
         client.run()
         ```
-        
+
     Note:
         - L'authentification se fait automatiquement après connexion
         - Le watchdog surveille la connexion et ré-authentifie si nécessaire
@@ -168,7 +168,7 @@ class PrivateWSClient:
     ) -> None:
         """
         Initialise le client WebSocket privé.
-        
+
         Args:
             testnet (bool): Utiliser le testnet (True) ou mainnet (False)
             api_key (str): Clé API Bybit (générée dans le dashboard)
@@ -179,7 +179,7 @@ class PrivateWSClient:
             logger: Instance du logger pour tracer les événements
             reconnect_delays (list[int] | None): Délais de reconnexion en secondes
                                                 Défaut: [1, 2, 5, 10]
-                                                
+
         Note:
             - Les clés API doivent avoir les permissions WebSocket activées
             - Pour le testnet, générez les clés sur testnet.bybit.com
@@ -365,7 +365,7 @@ class PrivateWSClient:
     def _watchdog_loop(self):
         """
         Boucle de surveillance du watchdog.
-        
+
         Vérifie périodiquement si l'authentification a réussi.
         Utilise un Event pour un arrêt propre.
         """
@@ -395,7 +395,7 @@ class PrivateWSClient:
     def run(self):
         """
         Boucle principale avec reconnexion et watchdog.
-        
+
         CORRECTIF : Réutilise le même thread watchdog au lieu d'en créer
         un nouveau à chaque reconnexion (évite les fuites de threads).
         """
@@ -453,7 +453,7 @@ class PrivateWSClient:
     def close(self):
         """
         Ferme proprement la WebSocket.
-        
+
         CORRECTIF : Arrête proprement le thread watchdog pour éviter
         les fuites de threads.
         """
@@ -463,10 +463,10 @@ class PrivateWSClient:
             except Exception:
                 pass
             self.running = False
-            
+
             # Arrêter le watchdog proprement
             self._watchdog.stop()
-            
+
             try:
                 if self.ws:
                     self.ws.close()

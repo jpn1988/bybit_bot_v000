@@ -14,11 +14,15 @@ from interfaces.callback_manager_interface import CallbackManagerInterface
 
 # Éviter les imports circulaires avec TYPE_CHECKING
 if TYPE_CHECKING:
-    from data_manager import DataManager
-    from display_manager import DisplayManager
-    from monitoring_manager import MonitoringManager
-    from volatility_tracker import VolatilityTracker
-    from ws_manager import WebSocketManager
+    from typing_imports import (
+        DataManager,
+        DisplayManager,
+        MonitoringManager,
+        VolatilityTracker,
+        WebSocketManager,
+        WatchlistManager,
+        OpportunityManager,
+    )
 
 
 class CallbackManager(CallbackManagerInterface):
@@ -42,13 +46,13 @@ class CallbackManager(CallbackManagerInterface):
 
     def setup_manager_callbacks(
         self,
-        display_manager: Any,
-        monitoring_manager: Any,
-        volatility_tracker: Any,
-        ws_manager: Any,
-        data_manager: Any,
-        watchlist_manager: Optional[Any] = None,
-        opportunity_manager: Optional[Any] = None,
+        display_manager: "DisplayManager",
+        monitoring_manager: "MonitoringManager",
+        volatility_tracker: "VolatilityTracker",
+        ws_manager: "WebSocketManager",
+        data_manager: "DataManager",
+        watchlist_manager: Optional["WatchlistManager"] = None,
+        opportunity_manager: Optional["OpportunityManager"] = None,
     ) -> None:
         """
         Configure TOUS les callbacks entre les différents managers.
@@ -89,13 +93,13 @@ class CallbackManager(CallbackManagerInterface):
 
     def setup_all_callbacks(
         self,
-        display_manager: Any,
-        monitoring_manager: Any,
-        volatility_tracker: Any,
-        ws_manager: Any,
-        data_manager: Any,
-        watchlist_manager: Optional[Any] = None,
-        opportunity_manager: Optional[Any] = None,
+        display_manager: "DisplayManager",
+        monitoring_manager: "MonitoringManager",
+        volatility_tracker: "VolatilityTracker",
+        ws_manager: "WebSocketManager",
+        data_manager: "DataManager",
+        watchlist_manager: Optional["WatchlistManager"] = None,
+        opportunity_manager: Optional["OpportunityManager"] = None,
     ) -> None:
         """
         Configure TOUS les callbacks en une seule méthode.
@@ -130,7 +134,7 @@ class CallbackManager(CallbackManagerInterface):
         self.setup_volatility_callbacks(volatility_tracker, data_manager)
 
     def setup_ws_callbacks(
-        self, ws_manager: Any, data_manager: Any
+        self, ws_manager: "WebSocketManager", data_manager: "DataManager"
     ) -> None:
         """
         Configure les callbacks WebSocket.
@@ -146,8 +150,8 @@ class CallbackManager(CallbackManagerInterface):
 
     def setup_volatility_callbacks(
         self,
-        volatility_tracker: Any,
-        data_manager: Any,
+        volatility_tracker: "VolatilityTracker",
+        data_manager: "DataManager",
     ) -> None:
         """
         Configure les callbacks de volatilité.
@@ -162,8 +166,8 @@ class CallbackManager(CallbackManagerInterface):
         )
 
     def _create_ticker_callback(
-        self, data_manager: Any
-    ) -> Callable:
+        self, data_manager: "DataManager"
+    ) -> Callable[[dict], None]:
         """
         Crée le callback pour les données ticker.
 
@@ -192,8 +196,8 @@ class CallbackManager(CallbackManagerInterface):
         return ticker_callback
 
     def _create_active_symbols_callback(
-        self, data_manager: Any
-    ) -> Callable:
+        self, data_manager: "DataManager"
+    ) -> Callable[[], List[str]]:
         """
         Crée le callback pour obtenir les symboles actifs.
 
@@ -217,12 +221,12 @@ class CallbackManager(CallbackManagerInterface):
 
     def setup_display_callbacks(
         self,
-        display_manager: Any,
-        data_manager: Any,
+        display_manager: "DisplayManager",
+        data_manager: "DataManager",
     ) -> None:
         """
         Configure les callbacks pour l'affichage.
-        
+
         Args:
             display_manager: Gestionnaire d'affichage
             data_manager: Gestionnaire de données
@@ -232,12 +236,12 @@ class CallbackManager(CallbackManagerInterface):
 
     def setup_monitoring_callbacks(
         self,
-        monitoring_manager: Any,
-        opportunity_manager: Any,
+        monitoring_manager: "MonitoringManager",
+        opportunity_manager: "OpportunityManager",
     ) -> None:
         """
         Configure les callbacks pour la surveillance.
-        
+
         Args:
             monitoring_manager: Gestionnaire de surveillance
             opportunity_manager: Gestionnaire d'opportunités
@@ -247,12 +251,12 @@ class CallbackManager(CallbackManagerInterface):
 
     def setup_websocket_callbacks(
         self,
-        ws_manager: Any,
-        data_manager: Any,
+        ws_manager: "WebSocketManager",
+        data_manager: "DataManager",
     ) -> None:
         """
         Configure les callbacks pour les WebSockets.
-        
+
         Args:
             ws_manager: Gestionnaire WebSocket
             data_manager: Gestionnaire de données

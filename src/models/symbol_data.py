@@ -14,10 +14,10 @@ from typing import Optional
 class SymbolData:
     """
     Value Object pour les informations d'un symbole de trading.
-    
+
     Cette classe est immutable (frozen=True) et valide automatiquement
     les données lors de la création.
-    
+
     Attributes:
         symbol: Symbole du contrat (ex: BTCUSDT)
         category: Catégorie du contrat ("linear" ou "inverse")
@@ -26,11 +26,11 @@ class SymbolData:
         contract_type: Type de contrat (ex: "LinearPerpetual")
         status: Statut du symbole (ex: "Trading")
         launch_time: Timestamp de lancement (optionnel)
-        
+
     Raises:
         ValueError: Si les valeurs sont invalides
     """
-    
+
     symbol: str
     category: str
     base_coin: str = ""
@@ -38,23 +38,23 @@ class SymbolData:
     contract_type: str = ""
     status: str = "Trading"
     launch_time: Optional[int] = None
-    
+
     def __post_init__(self):
         """
         Validation automatique des données après initialisation.
-        
+
         Raises:
             ValueError: Si une valeur est invalide
         """
         # Validation du symbole
         if not self.symbol or not isinstance(self.symbol, str):
             raise ValueError(f"Symbol invalide: {self.symbol}")
-        
+
         if len(self.symbol) < 3:
             raise ValueError(
                 f"Symbol trop court: {self.symbol} (minimum 3 caractères)"
             )
-        
+
         # Validation de la catégorie
         valid_categories = ["linear", "inverse"]
         if self.category not in valid_categories:
@@ -62,26 +62,26 @@ class SymbolData:
                 f"Catégorie invalide pour {self.symbol}: {self.category} "
                 f"(doit être {' ou '.join(valid_categories)})"
             )
-    
+
     @property
     def is_linear(self) -> bool:
         """Vérifie si le symbole est de type linear."""
         return self.category == "linear"
-    
+
     @property
     def is_inverse(self) -> bool:
         """Vérifie si le symbole est de type inverse."""
         return self.category == "inverse"
-    
+
     @property
     def is_trading(self) -> bool:
         """Vérifie si le symbole est en état de trading."""
         return self.status.lower() == "trading"
-    
+
     def to_dict(self) -> dict:
         """
         Convertit en dictionnaire.
-        
+
         Returns:
             dict: Dictionnaire avec tous les champs
         """
@@ -93,21 +93,21 @@ class SymbolData:
             "contractType": self.contract_type,
             "status": self.status,
         }
-        
+
         if self.launch_time is not None:
             result["launchTime"] = self.launch_time
-        
+
         return result
-    
+
     @classmethod
     def from_dict(cls, data: dict, category: str = "linear") -> "SymbolData":
         """
         Crée une instance depuis un dictionnaire (format API Bybit).
-        
+
         Args:
             data: Dictionnaire contenant les données du symbole
             category: Catégorie par défaut si non spécifiée
-            
+
         Returns:
             SymbolData: Nouvelle instance
         """

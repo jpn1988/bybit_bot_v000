@@ -15,16 +15,16 @@
 categorie: "linear"      # "linear" | "inverse" | "both"
 funding_min: 0.0001     # ex: 0.0001 pour >= 0.01%  | null = pas de min
 funding_max: null        # ex: 0.0005 pour <= 0.05%  | null = pas de max
-volume_min_millions: 100 # ex: 5.0 pour >= 5M USDT | null = pas de min
+volume_min_millions: 50 # ex: 5.0 pour >= 5M USDT | null = pas de min
 # Normalisation: spread exprimé en ratio (0.003 = 0.30%)
 spread_max: null        # ex: 0.003 pour <= 0.30% | null = pas de filtre
 volatility_min: null     # ex: 0.002 pour >= 0.20% | null = pas de min [NOUVEAU]
 volatility_max: null    # ex: 0.007 pour <= 0.70% | null = pas de max [NOUVEAU]
-volatility_ttl_sec: 60  # TTL du cache volatilité (secondes)
+volatility_ttl_sec: 120  # TTL du cache volatilité (secondes)
                         # Recalcul de la volatilité toutes les 60 secondes
 limite: 20               # ex: 10  | null = pas de limite
 funding_time_min_minutes: null   # Optionnel: minimum 30 minutes avant funding
-funding_time_max_minutes: 60 # Optionnel: maximum 120 minutes avant funding
+funding_time_max_minutes: 600 # Optionnel: maximum 120 minutes avant funding
 
 # ============================================
 # Configuration du système de poids
@@ -45,14 +45,14 @@ weights:
 # ============================================
 # Configuration de l'affichage
 # ============================================
-display_interval_seconds: 5 # Intervalle d'affichage de la watchlist (secondes)
+display_interval_seconds: 10 # Intervalle d'affichage de la watchlist (secondes)
 
 # ============================================
 # Configuration du Scheduler
 # ============================================
 # Seuil de détection du funding imminent (en minutes)
 # Le scheduler alertera quand le funding time est <= à cette valeur
-funding_threshold_minutes: 1 # ex: 60 = alerte 1h avant funding, 10 = 10min avant, 1 = 1min avant
+funding_threshold_minutes: 600 # ex: 60 = alerte 1h avant funding, 10 = 10min avant, 1 = 1min avant
 
 # ============================================
 # Configuration du trading automatique
@@ -61,6 +61,46 @@ funding_threshold_minutes: 1 # ex: 60 = alerte 1h avant funding, 10 = 10min avan
 auto_trading:
   enabled: true                    # Activer/désactiver le trading automatique
   order_size_usdt: 10             # Taille de l'ordre en USDT (montant minimum)
-  order_offset_percent: 0.1        # Offset du prix limite (0.1 = 0.1% au-dessus du prix actuel)
+  order_offset_percent: 0.01       # Offset plus agressif (0.05% = 0.0005) - PostOnly garantit le maker
+  order_timeout_minutes: 30       # Délai d'attente avant annulation d'un ordre non exécuté (minutes)
   max_positions: 1                 # Nombre maximum de positions simultanées
   dry_run: false                   # Mode test (true = ne pas passer d'ordres réels)
+  shadow_mode: false                # Shadow global: calcule/log uniquement, ne place pas d'ordres
+  close_order_offset_percent: 0.05 # Offset pour fermeture (0.05% = 0.0005) - Plus agressif
+  close_order_timeout_minutes: 2   # Délai avant fallback Market - Plus rapide
+  auto_close_after_funding: false  # Désactive la fermeture automatique après funding (stabilité)
+  
+  maker:
+    max_retries_perp: 50            # Nombre de tentatives max pour les ordres perp/inverse
+    max_retries_spot: 50            # Nombre de tentatives max pour les ordres spot
+    refresh_interval_perp_seconds: 4 # Délai avant refresh d'un ordre perp (secondes)
+    refresh_interval_spot_seconds: 4 # Délai avant refresh d'un ordre spot (secondes)
+  
+  # ============================================
+  # Configuration du hedging spot automatique
+  # ============================================
+  # Paramètres pour le hedging automatique des positions perpetual
+  spot_hedge:
+    enabled: true                      # Activer/désactiver le hedge spot automatique
+    offset_percent: 0.01               # Offset pour les ordres spot (0.02% = PostOnly)
+    timeout_minutes: 30                # Délai avant fallback Market si non exécuté
+    retry_on_reject: true              # Réessayer avec offset plus large si rejeté
+    max_retry_offset_percent: 0.1     # Offset maximum pour les retry (0.1%)
+
+# ============================================
+# Configuration API privée Bybit
+# ============================================
+bybit_private:
+  recv_window_ms: 7000                 # Fenêtre de réception (ms) pour les requêtes signées
+  time_sync_enabled: true              # Synchroniser régulièrement l'horloge avec Bybit
+  time_sync_interval_seconds: 60       # Intervalle de resynchronisation (secondes)
+  max_retries: 4                       # Nombre maximum de retries pour les requêtes privées
+  backoff_base: 0.5                    # Backoff exponentiel de base (secondes)
+
+# ============================================
+# Limites de parallélisation / batch
+# ============================================
+parallel_limits:
+  max_concurrent_requests: 4           # Limite globale de requêtes simultanées
+  watchlist_batch_size: 20             # Taille des lots pour la sélection des symboles
+  volatility_batch_size: 12            # Taille du batch volatilité

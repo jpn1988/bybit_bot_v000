@@ -150,7 +150,7 @@ La refactorisation a été testée pour garantir :
 L'utilisation reste identique à l'ancienne version :
 
 ```python
-from ws_manager import WebSocketManager
+from ws.manager import WebSocketManager
 
 # Créer le manager
 ws_manager = WebSocketManager(testnet=True)

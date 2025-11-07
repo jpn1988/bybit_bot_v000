@@ -1,0 +1,37 @@
+[flake8]
+# Configuration Flake8 pour l'audit PEP8
+# Longueur de ligne: 99 caractères (tolérance moderne, PEP8 recommande 79)
+max-line-length = 99
+
+# Exclure les répertoires et fichiers non pertinents
+exclude =
+    .git,
+    __pycache__,
+    .pytest_cache,
+    .venv,
+    venv,
+    env,
+    build,
+    dist,
+    *.pyc,
+    *.pyo,
+    *.egg-info,
+    logs,
+    docs
+
+# Ignorer certains codes d'erreur si nécessaire
+# E501 : line too long (géré par max-line-length)
+# W503 : line break before binary operator (style moderne)
+# E203 : whitespace before ':' (incompatible avec black)
+# F811 : redefinition of unused (faux positifs pour méthodes dupliquées dans classes différentes)
+ignore =
+    E203,
+    W503,
+    F811
+
+# Nombre maximum de caractères par ligne dans les docstrings
+max-doc-length = 99
+
+# Statistiques
+statistics = True
+

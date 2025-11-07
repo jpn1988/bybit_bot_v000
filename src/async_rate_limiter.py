@@ -16,7 +16,7 @@ from typing import Optional
 class AsyncRateLimiter:
     """
     Rate limiter asynchrone avec fenêtre glissante.
-    
+
     Responsabilité unique : Limiter la fréquence des appels asynchrones.
     """
 
@@ -36,7 +36,7 @@ class AsyncRateLimiter:
     async def acquire(self):
         """
         Attend de manière asynchrone si nécessaire pour respecter la limite.
-        
+
         Cette méthode doit être appelée avant chaque requête API pour
         garantir le respect des limites de taux.
         """
@@ -49,15 +49,15 @@ class AsyncRateLimiter:
                     and now - self._timestamps[0] > self.window_seconds
                 ):
                     self._timestamps.popleft()
-                
+
                 # Vérifier si on peut faire l'appel
                 if len(self._timestamps) < self.max_calls:
                     self._timestamps.append(now)
                     return
-                
+
                 # Calculer le temps à attendre
                 wait_time = self.window_seconds - (now - self._timestamps[0])
-            
+
             # Attendre en dehors du lock
             if wait_time > 0:
                 await asyncio.sleep(min(wait_time, 0.05))
@@ -69,7 +69,7 @@ class AsyncRateLimiter:
     def get_current_count(self) -> int:
         """
         Retourne le nombre d'appels dans la fenêtre actuelle.
-        
+
         Returns:
             Nombre d'appels dans la fenêtre courante
         """

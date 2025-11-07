@@ -10,12 +10,13 @@ Cette classe coordonne les différents composants :
 
 from typing import List, Tuple, Dict, Optional, Callable
 from logging_setup import setup_logging
+from interfaces.volatility_tracker_interface import VolatilityTrackerInterface
 from volatility import VolatilityCalculator
 from volatility_cache import VolatilityCache
 from volatility_scheduler import VolatilityScheduler
 
 
-class VolatilityTracker:
+class VolatilityTracker(VolatilityTrackerInterface):
     """
     Gestionnaire de volatilité pour le bot Bybit - Version refactorisée.
 

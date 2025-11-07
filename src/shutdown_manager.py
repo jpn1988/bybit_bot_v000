@@ -22,6 +22,7 @@ from logging_setup import (
     disable_logging,
     safe_log_info,
 )
+from utils.executors import GLOBAL_EXECUTOR
 
 
 class ShutdownManager:
@@ -88,6 +89,14 @@ class ShutdownManager:
         safe_log_info("🛑 Signal d'arrêt reçu (Ctrl+C)...")
         orchestrator.running = False
         self._shutdown_in_progress = True
+
+        metrics_monitor_instance = getattr(orchestrator, "metrics_monitor_instance", None)
+        if metrics_monitor_instance:
+            try:
+                metrics_monitor_instance.stop()
+                safe_log_info("[METRICS] MetricsMonitor stopped")
+            except Exception as metrics_error:
+                safe_log_info(f"⚠️ Erreur arrêt MetricsMonitor: {metrics_error}")
 
         # Arrêt simple et direct
         try:
@@ -170,6 +179,22 @@ class ShutdownManager:
         # Attendre très peu pour que les tâches se terminent
         await asyncio.sleep(0.2)
 
+    async def stop_all(self, managers: Dict[str, Any]):
+        """Arrête tous les managers et le moniteur de métriques."""
+
+        metrics_monitor = managers.get("metrics_monitor")
+        funding_close_manager = managers.get("funding_close_manager")
+
+        try:
+            await self.stop_all_managers_async(managers)
+        finally:
+            if metrics_monitor:
+                self.stop_metrics_monitor_sync(metrics_monitor)
+                managers["metrics_monitor"] = None
+            if funding_close_manager:
+                funding_close_manager.stop()
+                managers["funding_close_manager"] = None
+
     def stop_all_managers_sync(self, managers: Dict[str, Any]):
         """
         Arrêt synchrone de tous les managers.
@@ -190,6 +215,8 @@ class ShutdownManager:
                 managers["volatility_tracker"]._running = False
             if managers.get("metrics_monitor"):
                 managers["metrics_monitor"].running = False
+            if managers.get("funding_close_manager"):
+                managers["funding_close_manager"]._running = False
 
             self.logger.debug("✅ Managers marqués comme arrêtés")
         except Exception as e:
@@ -296,7 +323,7 @@ class ShutdownManager:
         try:
             # Arrêter le moniteur de métriques
             metrics_monitor.stop()
-            self.logger.debug("✅ Metrics monitor arrêté")
+            self.logger.info("[METRICS] MetricsMonitor stopped")
         except Exception as e:
             self.logger.warning(f"⚠️ Erreur arrêt Metrics monitor: {e}")
 
@@ -326,6 +353,9 @@ class ShutdownManager:
             managers: Dictionnaire des managers à nettoyer
         """
         try:
+            # Arrêter le pool de threads global pour éviter toute fuite de workers
+            GLOBAL_EXECUTOR.shutdown(wait=True)
+
             # Nettoyer les références des managers de manière plus approfondie
             self._cleanup_managers(managers)
 

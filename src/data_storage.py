@@ -14,9 +14,10 @@ from typing import Dict, List, Optional, Tuple, Any
 from logging_setup import setup_logging
 from models.funding_data import FundingData
 from models.ticker_data import TickerData
+from interfaces.data_storage_interface import DataStorageInterface
 
 
-class DataStorage:
+class DataStorage(DataStorageInterface):
     """
     Gestionnaire de stockage de données pour le bot Bybit.
 
@@ -326,36 +327,36 @@ class DataStorage:
             "linear_symbols": len(self.linear_symbols),
             "inverse_symbols": len(self.inverse_symbols),
         }
-    
+
     # ===== MÉTHODES UTILISANT LES VALUE OBJECTS =====
-    
+
     def set_funding_data_object(self, funding_data: FundingData):
         """
         Stocke un FundingData Value Object.
-        
+
         Args:
             funding_data: Instance de FundingData à stocker
         """
         with self._funding_lock:
             self._funding_data_objects[funding_data.symbol] = funding_data
-    
+
     def get_funding_data_object(self, symbol: str) -> Optional[FundingData]:
         """
         Récupère un FundingData Value Object pour un symbole.
-        
+
         Args:
             symbol: Symbole à récupérer
-            
+
         Returns:
             FundingData ou None si absent
         """
         with self._funding_lock:
             return self._funding_data_objects.get(symbol)
-    
+
     def get_all_funding_data_objects(self) -> Dict[str, FundingData]:
         """
         Récupère toutes les données de funding en tant que Value Objects.
-        
+
         Returns:
             Dictionnaire {symbol: FundingData}
         """

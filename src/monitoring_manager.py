@@ -53,21 +53,27 @@ from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
 # ============================================================================
 from logging_setup import setup_logging
 from config.timeouts import ScanIntervalConfig, TimeoutConfig
+from utils.validators import validate_string_param, validate_dict_param
 
 # ============================================================================
 # IMPORTS INTERFACES
 # ============================================================================
 from interfaces.monitoring_manager_interface import MonitoringManagerInterface
+from interfaces.bybit_client_interface import BybitClientInterface
 
 # ============================================================================
 # IMPORTS TYPE CHECKING (Éviter les imports circulaires)
 # ============================================================================
 if TYPE_CHECKING:
-    from data_manager import DataManager
-    from watchlist_manager import WatchlistManager
-    from volatility_tracker import VolatilityTracker
-    from opportunity_manager import OpportunityManager
-    from candidate_monitor import CandidateMonitor
+    from typing_imports import (
+        DataManager,
+        WatchlistManager,
+        VolatilityTracker,
+        OpportunityManager,
+        CandidateMonitor,
+        WebSocketManager,
+    )
+    from logging import Logger
 
 
 class MonitoringManager(MonitoringManagerInterface):
@@ -76,18 +82,18 @@ class MonitoringManager(MonitoringManagerInterface):
 
     Cette classe coordonne les différents composants de surveillance
     sans implémenter directement la logique métier.
-    
+
     Responsabilité unique : Orchestration des composants de surveillance.
     """
 
     def __init__(
         self,
-        data_manager: Any,
+        data_manager: "DataManager",
         testnet: bool = True,
-        logger: Optional[Any] = None,
+        logger: Optional["Logger"] = None,
         scan_interval: Optional[int] = None,
-        opportunity_manager: Optional[Any] = None,
-        candidate_monitor: Optional[Any] = None,
+        opportunity_manager: Optional["OpportunityManager"] = None,
+        candidate_monitor: Optional["CandidateMonitor"] = None,
     ) -> None:
         """
         Initialise le gestionnaire de surveillance unifié.
@@ -123,14 +129,14 @@ class MonitoringManager(MonitoringManagerInterface):
         self._last_scan_time = 0
 
         # Composants de surveillance (injection avec initialisation paresseuse)
-        self.opportunity_manager: Optional[Any] = opportunity_manager
-        self.candidate_monitor: Optional[Any] = candidate_monitor
+        self.opportunity_manager: Optional["OpportunityManager"] = opportunity_manager
+        self.candidate_monitor: Optional["CandidateMonitor"] = candidate_monitor
 
         # Callbacks externes
         self._on_new_opportunity_callback: Optional[Callable] = None
         self._on_candidate_ticker_callback: Optional[Callable] = None
 
-    def set_watchlist_manager(self, watchlist_manager: Any) -> None:
+    def set_watchlist_manager(self, watchlist_manager: "WatchlistManager") -> None:
         """
         Définit le gestionnaire de watchlist.
 
@@ -139,7 +145,7 @@ class MonitoringManager(MonitoringManagerInterface):
         """
         self.watchlist_manager = watchlist_manager
 
-    def set_volatility_tracker(self, volatility_tracker: Any) -> None:
+    def set_volatility_tracker(self, volatility_tracker: "VolatilityTracker") -> None:
         """
         Définit le tracker de volatilité.
 
@@ -148,7 +154,7 @@ class MonitoringManager(MonitoringManagerInterface):
         """
         self.volatility_tracker = volatility_tracker
 
-    def set_ws_manager(self, ws_manager):
+    def set_ws_manager(self, ws_manager: "WebSocketManager") -> None:
         """
         Définit le gestionnaire WebSocket principal.
 
@@ -157,12 +163,12 @@ class MonitoringManager(MonitoringManagerInterface):
         """
         self.ws_manager = ws_manager
 
-    def set_bybit_client(self, bybit_client):
+    def set_bybit_client(self, bybit_client: "BybitClientInterface") -> None:
         """
         Définit le client Bybit.
 
         Args:
-            bybit_client: Client Bybit pour les API privées
+            bybit_client: Client Bybit pour les API privées (implémente BybitClientInterface)
         """
         self.bybit_client = bybit_client
 
@@ -184,7 +190,7 @@ class MonitoringManager(MonitoringManagerInterface):
         """
         self._on_candidate_ticker_callback = callback
 
-    def set_opportunity_manager(self, opportunity_manager: Any) -> None:
+    def set_opportunity_manager(self, opportunity_manager: "OpportunityManager") -> None:
         """
         Définit le gestionnaire d'opportunités.
 
@@ -193,7 +199,7 @@ class MonitoringManager(MonitoringManagerInterface):
         """
         self.opportunity_manager = opportunity_manager
 
-    def set_data_manager(self, data_manager: Any) -> None:
+    def set_data_manager(self, data_manager: "DataManager") -> None:
         """
         Définit le gestionnaire de données.
 
@@ -201,6 +207,91 @@ class MonitoringManager(MonitoringManagerInterface):
             data_manager: Gestionnaire de données
         """
         self.data_manager = data_manager
+
+    # ===== MÉTHODES DE VALIDATION =====
+
+    # Les méthodes de validation sont maintenant déléguées à utils.validators
+    # pour éviter la duplication de code
+
+    # ===== CONTEXT MANAGER SUPPORT =====
+
+    def __enter__(self):
+        """
+        Context manager entry point pour MonitoringManager.
+
+        Initialise les ressources de monitoring si nécessaire.
+
+        Returns:
+            MonitoringManager: Instance du gestionnaire de monitoring
+        """
+        self.logger.debug("🔍 Entrée dans le contexte MonitoringManager")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Context manager exit point pour MonitoringManager.
+
+        Arrête proprement la surveillance et nettoie les ressources.
+
+        Args:
+            exc_type: Type d'exception (None si pas d'exception)
+            exc_val: Valeur de l'exception
+            exc_tb: Traceback de l'exception
+
+        Returns:
+            bool: False pour propager les exceptions
+        """
+        self.logger.debug("🔍 Sortie du contexte MonitoringManager")
+
+        try:
+            # Arrêter la surveillance si elle est active
+            if self._running:
+                self.logger.info("🛑 Arrêt de la surveillance via context manager...")
+                self._running = False
+        except Exception as e:
+            self.logger.warning("⚠️ Erreur lors de l'arrêt MonitoringManager: {}", str(e))
+
+        return False
+
+    async def __aenter__(self):
+        """
+        Context manager asynchrone entry point pour MonitoringManager.
+
+        Initialise les ressources de monitoring de manière asynchrone si nécessaire.
+
+        Returns:
+            MonitoringManager: Instance du gestionnaire de monitoring
+        """
+        self.logger.debug("🔍 Entrée dans le contexte asynchrone MonitoringManager")
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """
+        Context manager asynchrone exit point pour MonitoringManager.
+
+        Arrête proprement la surveillance et nettoie les ressources de manière asynchrone.
+
+        Args:
+            exc_type: Type d'exception (None si pas d'exception)
+            exc_val: Valeur de l'exception
+            exc_tb: Traceback de l'exception
+
+        Returns:
+            bool: False pour propager les exceptions
+        """
+        self.logger.debug("🔍 Sortie du contexte asynchrone MonitoringManager")
+
+        try:
+            # Arrêter la surveillance si elle est active
+            if self._running:
+                self.logger.info("🛑 Arrêt asynchrone de la surveillance via context manager...")
+                self._running = False
+        except Exception as e:
+            self.logger.warning("⚠️ Erreur lors de l'arrêt asynchrone MonitoringManager: {}", str(e))
+
+        return False
+
+    # ===== MÉTHODES DE MONITORING =====
 
     async def start_continuous_monitoring(
         self, base_url: str, perp_data: Dict[str, Any]
@@ -213,11 +304,16 @@ class MonitoringManager(MonitoringManagerInterface):
             perp_data: Données des perpétuels
 
         Raises:
-            ValueError: Si la configuration est invalide
+            ValueError: Si la configuration est invalide ou si les paramètres sont invalides
             RuntimeError: Si l'initialisation échoue
+            TypeError: Si les types de paramètres sont incorrects
         """
+        # Validation des paramètres
+        validate_string_param('base_url', base_url)
+        validate_dict_param('perp_data', perp_data)
+
         if self._running:
-            self.logger.warning("⚠️ Surveillance continue déjà active (composants: {})", 
+            self.logger.warning("⚠️ Surveillance continue déjà active (composants: {})",
                                len(self._active_positions))
             return
 
@@ -236,7 +332,7 @@ class MonitoringManager(MonitoringManagerInterface):
             # Configurer la surveillance des candidats
             self._setup_candidate_monitoring(base_url, perp_data)
 
-            self.logger.info("🔍 Surveillance continue démarrée avec succès (scan: {}s, positions: {})", 
+            self.logger.info("🔍 Surveillance continue démarrée avec succès (scan: {}s, positions: {})",
                             self._scan_interval, len(self._active_positions))
 
         except ValueError as e:
@@ -327,11 +423,11 @@ class MonitoringManager(MonitoringManagerInterface):
     def _init_opportunity_manager(self):
         """
         Initialise le gestionnaire d'opportunités si nécessaire.
-        
+
         Cette méthode crée l'OpportunityManager de manière paresseuse
         s'il n'existe pas encore. Elle configure les callbacks et
         les références aux autres managers.
-        
+
         Side effects:
             - Crée self.opportunity_manager si nécessaire
             - Configure les callbacks de découverte d'opportunités
@@ -343,7 +439,7 @@ class MonitoringManager(MonitoringManagerInterface):
 
         # Import local pour éviter les imports circulaires
         from opportunity_manager import OpportunityManager
-        
+
         self.opportunity_manager = OpportunityManager(
             data_manager=self.data_manager,
             watchlist_manager=self.watchlist_manager,
@@ -361,11 +457,11 @@ class MonitoringManager(MonitoringManagerInterface):
     def _init_candidate_monitor(self):
         """
         Initialise le moniteur de candidats si nécessaire.
-        
+
         Cette méthode crée le CandidateMonitor de manière paresseuse
         s'il n'existe pas encore. Elle configure les callbacks pour
         la surveillance des symboles proches des critères.
-        
+
         Side effects:
             - Crée self.candidate_monitor si nécessaire
             - Configure les callbacks de surveillance des candidats
@@ -377,7 +473,7 @@ class MonitoringManager(MonitoringManagerInterface):
 
         # Import local pour éviter les imports circulaires
         from candidate_monitor import CandidateMonitor
-        
+
         self.candidate_monitor = CandidateMonitor(
             data_manager=self.data_manager,
             watchlist_manager=self.watchlist_manager,
@@ -470,7 +566,7 @@ class MonitoringManager(MonitoringManagerInterface):
     async def _wait_with_interrupt_check(self, seconds: int):
         """
         Attend avec vérification d'interruption.
-        
+
         CORRECTIF PERF-002: Optimisation pour réduire les cycles CPU en utilisant
         des délais plus longs entre les vérifications.
         """
@@ -478,7 +574,7 @@ class MonitoringManager(MonitoringManagerInterface):
         # pour réduire les cycles CPU tout en gardant une bonne réactivité
         check_interval = 2
         remaining_seconds = seconds
-        
+
         while remaining_seconds > 0 and self._scan_running:
             sleep_time = min(check_interval, remaining_seconds)
             try:
@@ -491,7 +587,7 @@ class MonitoringManager(MonitoringManagerInterface):
     async def _perform_scan(self, base_url: str, perp_data: Dict):
         """
         Effectue un scan complet du marché.
-        
+
         Args:
             base_url: URL de base de l'API
             perp_data: Données des perpétuels
@@ -508,7 +604,7 @@ class MonitoringManager(MonitoringManagerInterface):
             # Intégrer les opportunités si trouvées
             if new_opportunities:
                 self.opportunity_manager.integrate_opportunities(new_opportunities)
-            
+
         except Exception as e:
             # Ne pas logger si on est en train de s'arrêter
             if self._scan_running:
@@ -528,7 +624,7 @@ class MonitoringManager(MonitoringManagerInterface):
     def setup_candidate_monitoring(self, base_url: str, perp_data: Dict):
         """
         Configure la surveillance des symboles candidats.
-        
+
         Méthode publique pour compatibilité avec l'interface existante.
 
         Args:
@@ -556,7 +652,7 @@ class MonitoringManager(MonitoringManagerInterface):
     def candidate_symbols(self) -> List[str]:
         """
         Retourne la liste des symboles candidats surveillés.
-        
+
         Propriété pour compatibilité avec l'interface existante.
 
         Returns:
@@ -647,13 +743,13 @@ class MonitoringManager(MonitoringManagerInterface):
     def add_active_position(self, symbol: str):
         """
         Ajoute une position active à la liste.
-        
+
         Args:
             symbol: Symbole de la position active
         """
         self._active_positions.add(symbol)
         self.logger.info(f"📈 Position active ajoutée: {symbol} (total: {len(self._active_positions)})")
-        
+
         # Mettre en pause si c'est la première position
         if len(self._active_positions) == 1:
             self.logger.info("⏸️ Surveillance de la watchlist mise en pause")
@@ -661,14 +757,14 @@ class MonitoringManager(MonitoringManagerInterface):
     def remove_active_position(self, symbol: str):
         """
         Retire une position active de la liste.
-        
+
         Args:
             symbol: Symbole de la position fermée
         """
         if symbol in self._active_positions:
             self._active_positions.remove(symbol)
             self.logger.info(f"📉 Position fermée: {symbol} (restantes: {len(self._active_positions)})")
-            
+
             # Reprendre si plus de positions actives
             if len(self._active_positions) == 0:
                 self.logger.info("▶️ Surveillance de la watchlist reprise")
@@ -676,7 +772,7 @@ class MonitoringManager(MonitoringManagerInterface):
     def has_active_positions(self) -> bool:
         """
         Vérifie s'il y a des positions actives.
-        
+
         Returns:
             True s'il y a au moins une position active
         """
@@ -685,7 +781,7 @@ class MonitoringManager(MonitoringManagerInterface):
     def get_active_positions(self) -> set:
         """
         Retourne l'ensemble des positions actives.
-        
+
         Returns:
             Set des symboles avec positions actives
         """
@@ -694,28 +790,28 @@ class MonitoringManager(MonitoringManagerInterface):
     async def handle_existing_positions(self, existing_positions: list):
         """
         Traite les positions existantes détectées au démarrage.
-        
+
         Args:
             existing_positions: Liste des positions existantes
         """
         try:
             self.logger.info("🔄 Traitement des positions existantes...")
-            
+
             for position in existing_positions:
                 symbol = position.get("symbol")
                 if symbol:
                     # Ajouter à la liste des positions actives
                     self.add_active_position(symbol)
-                    
+
                     # Notifier les callbacks si configurés
                     if hasattr(self, '_position_opened_callback') and self._position_opened_callback:
                         try:
                             await self._position_opened_callback(symbol)
                         except Exception as e:
                             self.logger.error(f"❌ Erreur callback position existante {symbol}: {e}")
-            
+
             self.logger.info(f"✅ Traitement terminé - {len(existing_positions)} position(s) existante(s) intégrée(s)")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Erreur traitement positions existantes: {e}")
 

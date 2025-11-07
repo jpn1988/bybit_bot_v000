@@ -44,10 +44,15 @@ class WeightCalculator:
         """
         try:
             # Extraire les données de l'opportunité
-            funding_rate = opportunity.get('funding', 0.0)
-            volume = opportunity.get('volume', 0.0)
-            spread = opportunity.get('spread', 0.0)
-            volatility = opportunity.get('volatility', 0.0)
+            funding_rate = float(opportunity.get('funding') or 0.0)
+            volume = float(opportunity.get('volume') or 0.0)
+            spread = float(opportunity.get('spread') or 0.0)
+            volatility = float(opportunity.get('volatility') or 0.0)
+
+            # S'assurer que les valeurs utilisées dans les formules sont positives
+            volume = max(volume, 0.0)
+            spread = max(spread, 0.0)
+            volatility = max(volatility, 0.0)
 
             # Extraire les poids de configuration
             funding_weight = weights_config.get('funding', 10.0)
@@ -70,8 +75,8 @@ class WeightCalculator:
             return 0.0
 
     def apply_weighting_to_opportunities(
-        self, 
-        opportunities: List[Tuple], 
+        self,
+        opportunities: List[Tuple],
         weights_config: Dict,
         symbol_categories: Dict
     ) -> List[Dict]:
@@ -134,8 +139,8 @@ class WeightCalculator:
         return sorted(weighted_opportunities, key=lambda x: x['weight'], reverse=True)
 
     def limit_to_top_symbols(
-        self, 
-        sorted_opportunities: List[Dict], 
+        self,
+        sorted_opportunities: List[Dict],
         top_symbols: int
     ) -> List[Dict]:
         """
@@ -164,8 +169,8 @@ class WeightCalculator:
         pass
 
     def process_weighted_ranking(
-        self, 
-        opportunities: List[Tuple], 
+        self,
+        opportunities: List[Tuple],
         weights_config: Dict,
         symbol_categories: Dict
     ) -> List[Dict]:

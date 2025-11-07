@@ -13,7 +13,7 @@ from logging_setup import setup_logging
 class VolatilityFilter:
     """
     Filtre de symboles basé sur la volatilité.
-    
+
     Responsabilité unique : Filtrer les symboles selon des critères de volatilité.
     """
 
@@ -37,7 +37,7 @@ class VolatilityFilter:
         Filtre les symboles selon leurs critères de volatilité.
 
         Args:
-            symbols_data: Liste des (symbol, funding, volume, 
+            symbols_data: Liste des (symbol, funding, volume,
                 funding_time_remaining, spread_pct)
             volatilities: Dictionnaire {symbol: volatility_pct}
             volatility_min: Seuil minimum de volatilité ou None

@@ -1,0 +1,43 @@
+# ==============================================================================
+# Requirements pour le bot de trading Bybit
+# ==============================================================================
+#
+# Installation des dépendances :
+#   pip install -r requirements.txt
+#
+# Vérifier les versions :
+#   pip list
+#
+# ==============================================================================
+
+# HTTP Client - Pour les requêtes API REST
+httpx>=0.24.0,<0.28.0
+
+# WebSocket Client - Pour les connexions WebSocket temps réel
+websocket-client>=1.6.0
+
+# YAML Parser - Pour lire parameters.yaml
+PyYAML>=6.0
+
+# Environment Variables - Pour charger .env
+python-dotenv>=1.0.0
+
+# Logging - Pour les logs colorés et rotation
+loguru>=0.7.0
+
+# System Monitoring (optionnel) - Pour les métriques CPU/mémoire
+psutil>=5.9.0
+
+# ==============================================================================
+# Dépendances de développement (optionnel)
+# ==============================================================================
+# Pour installer avec les dépendances de dev :
+#   pip install -r requirements.txt[dev]
+
+# [dev]
+# pytest>=7.0.0
+# black>=23.0.0
+# pylint>=3.0.0
+# mypy>=1.0.0
+# flake8>=6.0.0
+

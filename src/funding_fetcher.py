@@ -14,6 +14,7 @@ from logging_setup import setup_logging
 from pagination_handler import PaginationHandler
 from error_handler import ErrorHandler
 from config import MAX_WORKERS_THREADPOOL
+from parallel_api_manager import get_parallel_manager, ParallelConfig, ExecutionMode
 
 
 class FundingFetcher:
@@ -36,6 +37,7 @@ class FundingFetcher:
         self.logger = logger or setup_logging()
         self._pagination_handler = PaginationHandler(logger)
         self._error_handler = ErrorHandler(logger)
+        self._parallel_manager = get_parallel_manager()
 
     def fetch_funding_map(
         self, base_url: str, category: str, timeout: int = 10
@@ -82,7 +84,7 @@ class FundingFetcher:
         self, base_url: str, categories: List[str], timeout: int = 10
     ) -> Dict[str, Dict]:
         """
-        Récupère les données de funding pour plusieurs catégories en parallèle.
+        Récupère les données de funding pour plusieurs catégories en parallèle optimisé.
 
         Args:
             base_url: URL de base de l'API Bybit
@@ -95,29 +97,29 @@ class FundingFetcher:
         if len(categories) == 1:
             return self.fetch_funding_map(base_url, categories[0], timeout)
 
-        funding_map = {}
-
         try:
-            # Paralléliser les requêtes
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS_THREADPOOL) as executor:
-                # Lancer les requêtes en parallèle
-                futures = {
-                    executor.submit(self.fetch_funding_map, base_url, category, timeout): category
-                    for category in categories
-                }
+            # Créer les tâches synchrones optimisées
+            tasks = [
+                self._parallel_manager.create_sync_task(
+                    self.fetch_funding_map, base_url, category, timeout
+                )
+                for category in categories
+            ]
 
-                # Récupérer les résultats
-                for future in futures:
-                    category = futures[future]
-                    try:
-                        category_data = future.result()
-                        funding_map.update(category_data)
-                        self.logger.debug(f"✅ Funding {category}: {len(category_data)} symboles")
-                    except Exception as e:
-                        self._error_handler.log_error(
-                            e, f"fetch_funding_data_parallel category={category}"
-                        )
-                        raise
+            # Exécuter avec le gestionnaire de parallélisation optimisé
+            results = self._parallel_manager.execute_sync_batch(tasks)
+
+            # Combiner les résultats
+            funding_map = {}
+            for i, category_data in enumerate(results):
+                if isinstance(category_data, Exception):
+                    self._error_handler.log_error(
+                        category_data, f"fetch_funding_data_parallel category={categories[i]}"
+                    )
+                    raise category_data
+
+                funding_map.update(category_data)
+                self.logger.debug(f"✅ Funding {categories[i]}: {len(category_data)} symboles")
 
             self.logger.info(f"✅ Funding parallèle terminé: {len(funding_map)} symboles total")
             return funding_map
@@ -143,31 +145,31 @@ class FundingFetcher:
 
         Raises:
             RuntimeError: En cas d'erreur HTTP ou API
-            
+
         Note:
             Cette méthode utilise aiohttp pour les requêtes non-bloquantes.
             Préférer cette version dans un contexte async pour éviter de bloquer l'event loop.
         """
         try:
             self.logger.debug(f"📊 Récupération funding async pour {category}...")
-            
+
             # Paramètres de base pour la pagination
             params = {
                 "category": category,
                 "limit": 1000,  # Limite maximum supportée par l'API Bybit
             }
-            
+
             # Utiliser la version async de la pagination
             all_tickers = await self._pagination_handler.fetch_paginated_data_async(
                 base_url, "/v5/market/tickers", params, timeout
             )
-            
+
             # Traiter les données (méthode synchrone légère)
             funding_map = self._process_funding_data(all_tickers)
-            
+
             self.logger.info(f"✅ Funding async récupéré: {len(funding_map)} symboles pour {category}")
             return funding_map
-            
+
         except Exception as e:
             self._error_handler.log_error(e, f"fetch_funding_map_async category={category}")
             raise
@@ -176,7 +178,7 @@ class FundingFetcher:
         self, base_url: str, categories: List[str], timeout: int = 10
     ) -> Dict[str, Dict]:
         """
-        Version async de fetch_funding_data_parallel().
+        Version async de fetch_funding_data_parallel() optimisée.
         Récupère les données pour plusieurs catégories en parallèle.
 
         Args:
@@ -189,28 +191,31 @@ class FundingFetcher:
         """
         if len(categories) == 1:
             return await self.fetch_funding_map_async(base_url, categories[0], timeout)
-        
-        funding_map = {}
-        
+
         try:
-            # Utiliser asyncio.gather pour paralléliser
-            import asyncio
+            # Créer les tâches asynchrones optimisées
             tasks = [
-                self.fetch_funding_map_async(base_url, category, timeout)
+                self._parallel_manager.create_async_task(
+                    self.fetch_funding_map_async, base_url, category, timeout
+                )
                 for category in categories
             ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for category, result in zip(categories, results):
+
+            # Exécuter avec le gestionnaire de parallélisation optimisé
+            results = await self._parallel_manager.execute_async_batch(tasks)
+
+            # Combiner les résultats
+            funding_map = {}
+            for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    self._error_handler.log_error(result, f"async parallel {category}")
+                    self._error_handler.log_error(result, f"async parallel {categories[i]}")
                     raise result
                 funding_map.update(result)
-                self.logger.debug(f"✅ Funding async {category}: {len(result)} symboles")
-            
+                self.logger.debug(f"✅ Funding async {categories[i]}: {len(result)} symboles")
+
             self.logger.info(f"✅ Funding async parallèle terminé: {len(funding_map)} symboles total")
             return funding_map
-            
+
         except Exception as e:
             self._error_handler.log_error(e, "fetch_funding_data_parallel_async")
             raise

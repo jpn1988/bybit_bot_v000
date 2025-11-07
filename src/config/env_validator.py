@@ -64,10 +64,10 @@ BOT_KEYWORDS = [
 def is_system_variable(var_name: str) -> bool:
     """
     Vérifie si une variable d'environnement est une variable système.
-    
+
     Args:
         var_name: Nom de la variable
-        
+
     Returns:
         bool: True si c'est une variable système
     """
@@ -77,10 +77,10 @@ def is_system_variable(var_name: str) -> bool:
 def is_bot_related(var_name: str) -> bool:
     """
     Vérifie si une variable d'environnement semble liée au bot.
-    
+
     Args:
         var_name: Nom de la variable
-        
+
     Returns:
         bool: True si la variable semble liée au bot
     """
@@ -90,19 +90,19 @@ def is_bot_related(var_name: str) -> bool:
 def find_unknown_bot_variables() -> Set[str]:
     """
     Trouve toutes les variables d'environnement inconnues liées au bot.
-    
+
     Returns:
         Set[str]: Ensemble des variables inconnues liées au bot
     """
     all_env_vars = set(os.environ.keys())
     unknown_vars = all_env_vars - VALID_ENV_VARS - IGNORED_ENV_VARS
-    
+
     # Filtrer pour ne garder que les variables liées au bot
     bot_related_unknown = set()
     for var in unknown_vars:
         if not is_system_variable(var) and is_bot_related(var):
             bot_related_unknown.add(var)
-    
+
     return bot_related_unknown
 
 
@@ -110,33 +110,33 @@ def validate_environment_variables() -> None:
     """
     Valide les variables d'environnement et affiche des avertissements
     pour les variables inconnues liées au bot.
-    
+
     Cette fonction détecte les fautes de frappe dans les noms de variables.
     """
     bot_related_unknown = find_unknown_bot_variables()
-    
+
     if not bot_related_unknown:
         return  # Aucune variable inconnue, tout est OK
-    
+
     # Afficher les avertissements sur stderr
     for var in sorted(bot_related_unknown):
         print(
             f"⚠️ Variable d'environnement inconnue ignorée: {var}",
             file=sys.stderr,
         )
-    
+
     # Afficher la liste des variables valides
     valid_vars_str = ", ".join(sorted(VALID_ENV_VARS))
     print(f"💡 Variables valides: {valid_vars_str}", file=sys.stderr)
-    
+
     # Essayer aussi avec le logger si disponible
     try:
         import logging
         logger = logging.getLogger(__name__)
-        
+
         for var in sorted(bot_related_unknown):
             logger.warning(f"⚠️ Variable d'environnement inconnue ignorée: {var}")
-        
+
         logger.warning(f"💡 Variables valides: {valid_vars_str}")
     except Exception:
         pass  # Le message a déjà été affiché sur stderr

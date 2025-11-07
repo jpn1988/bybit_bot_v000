@@ -121,7 +121,7 @@ import json
 import time
 import websocket
 from typing import Callable, List, Optional
-from metrics import record_ws_connection, record_ws_error
+from enhanced_metrics import record_ws_connection, record_ws_error
 from ws.public.subscriptions import SubscriptionBuilder
 from ws.public.parser_router import PublicMessageRouter
 from ws.public.transport import BackoffTransport
@@ -130,14 +130,14 @@ from ws.public.transport import BackoffTransport
 class PublicWSClient:
     """
     Client WebSocket publique Bybit v5 avec reconnexion automatique.
-    
+
     Ce client gère automatiquement :
     - Connexion au serveur WebSocket Bybit
     - Souscription aux topics publics (tickers, orderbook, trades, klines)
     - Reconnexion automatique avec backoff progressif
     - Parsing et dispatch des messages reçus
     - Gestion des erreurs et timeouts
-    
+
     Attributes:
         category (str): Catégorie des symboles ("linear" ou "inverse")
         symbols (List[str]): Liste des symboles à suivre
@@ -148,13 +148,13 @@ class PublicWSClient:
         running (bool): État de la connexion
         reconnect_delays (List[int]): Délais de reconnexion progressifs [1, 2, 5, 10, 30]
         current_delay_index (int): Index du délai actuel (réinitialisé après succès)
-        
+
     Example:
         ```python
         # Exemple simple : suivre 2 symboles
         def on_ticker(data):
             print(f"{data['symbol']}: ${data['lastPrice']}")
-        
+
         client = PublicWSClient(
             category="linear",
             symbols=["BTCUSDT", "ETHUSDT"],
@@ -162,11 +162,11 @@ class PublicWSClient:
             logger=my_logger,
             on_ticker_callback=on_ticker
         )
-        
+
         # Démarrer (bloquant)
         client.run()
         ```
-        
+
     Note:
         - La méthode run() est bloquante (utiliser un thread si nécessaire)
         - Le backoff progressif évite de spammer le serveur
@@ -183,7 +183,7 @@ class PublicWSClient:
     ):
         """
         Initialise le client WebSocket publique.
-        
+
         Args:
             category (str): Catégorie des symboles
                           - "linear" : Contrats USDT perpetual (BTCUSDT, ETHUSDT, etc.)
@@ -198,7 +198,7 @@ class PublicWSClient:
                    Recommandé: logging.getLogger(__name__)
             on_ticker_callback (Callable[[dict], None]): Fonction appelée pour chaque ticker
                                                         Signature: callback(ticker_data: dict) -> None
-                                                        
+
         Note:
             - Les symboles invalides seront ignorés par Bybit
             - Le callback doit être rapide (non-bloquant)
@@ -234,13 +234,13 @@ class PublicWSClient:
     def _on_open(self, ws):
         """
         Callback appelé automatiquement à l'ouverture de la connexion WebSocket.
-        
+
         Cette méthode :
         1. Enregistre la connexion dans les métriques
         2. Réinitialise le backoff progressif (connexion réussie)
         3. Souscrit automatiquement aux topics tickers pour tous les symboles
         4. Appelle le callback personnalisé si défini
-        
+
         Args:
             ws: Instance WebSocketApp (fournie automatiquement par websocket-client)
         """
@@ -320,7 +320,7 @@ class PublicWSClient:
         Boucle principale avec reconnexion automatique et backoff progressif.
 
         Cette méthode bloque jusqu'à ce que close() soit appelé.
-        
+
         CORRECTIF : Entoure tout d'un try/finally pour garantir le nettoyage
         des callbacks même en cas d'exception.
         """
@@ -388,7 +388,7 @@ class PublicWSClient:
     def _cleanup(self):
         """
         Nettoie toutes les ressources (WebSocket et callbacks).
-        
+
         CORRECTIF : Méthode centralisée pour garantir le nettoyage
         même en cas d'exception dans run().
         """
@@ -409,7 +409,7 @@ class PublicWSClient:
                         self.ws.sock.close()
                 except Exception:
                     pass
-        
+
         # Nettoyer les références pour éviter les fuites mémoire
         self.ws = None
         self.on_ticker_callback = None
@@ -420,7 +420,7 @@ class PublicWSClient:
     def close(self):
         """
         Ferme proprement la connexion WebSocket.
-        
+
         CORRECTIF : Utilise _cleanup() pour garantir le nettoyage.
         """
         self.running = False

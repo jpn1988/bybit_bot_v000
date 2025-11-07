@@ -23,7 +23,8 @@ from async_rate_limiter import get_async_rate_limiter
 from volatility_filter import VolatilityFilter
 from instruments import category_of_symbol
 from config.timeouts import TimeoutConfig, ConcurrencyConfig
-from metrics import monitor_task_performance
+from enhanced_metrics import monitor_task_performance
+from parallel_api_manager import get_parallel_manager, ParallelConfig, ExecutionMode
 
 
 def is_cache_valid(timestamp: float, ttl_seconds: int = 60) -> bool:
@@ -59,7 +60,7 @@ class VolatilityCalculator:
 
     Cette classe gère le calcul de volatilité basé sur les klines (bougies)
     et le filtrage des symboles selon leurs critères de volatilité.
-    
+
     La volatilité est calculée sur les 5 dernières bougies de 1 minute
     comme : (prix_max - prix_min) / prix_median
     """
@@ -85,6 +86,9 @@ class VolatilityCalculator:
 
         # Catégories des symboles
         self._symbol_categories: Dict[str, str] = {}
+
+        # Gestionnaire de parallélisation optimisé
+        self._parallel_manager = get_parallel_manager()
 
     def set_symbol_categories(self, symbol_categories: Dict[str, str]):
         """
@@ -138,7 +142,7 @@ class VolatilityCalculator:
         self, base_url: str, symbols: List[str]
     ) -> Dict[str, Optional[float]]:
         """
-        Calcule la volatilité pour une liste de symboles en parallèle.
+        Calcule la volatilité pour une liste de symboles en parallèle optimisé.
 
         Args:
             base_url: URL de base de l'API Bybit
@@ -150,27 +154,20 @@ class VolatilityCalculator:
         if not symbols:
             return {}
 
-        # Limiter la concurrence globale pour éviter le rate limit
-        # OPTIMISATION: Utilise la configuration externalisée au lieu d'une valeur codée en dur
-        sem = asyncio.Semaphore(ConcurrencyConfig.VOLATILITY_MAX_CONCURRENT_REQUESTS)
-        async_rate_limiter = get_async_rate_limiter()
-
-        async def limited_task(sym: str):
-            """Tâche avec rate limiting et semaphore."""
-            # Respecter le rate limiter asynchrone avant chaque requête
-            await async_rate_limiter.acquire()
-            async with sem:
-                return await self._compute_single(session, base_url, sym)
-
-        # Créer une session aiohttp
+        # Créer une session aiohttp partagée
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self.timeout)
         ) as session:
-            # Créer les tâches async pour chaque symbole
-            tasks = [limited_task(symbol) for symbol in symbols]
+            # Créer les tâches asynchrones optimisées
+            tasks = [
+                self._parallel_manager.create_async_task(
+                    self._compute_single, session, base_url, symbol
+                )
+                for symbol in symbols
+            ]
 
-            # Exécuter toutes les tâches en parallèle
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Exécuter avec le gestionnaire de parallélisation optimisé
+            results = await self._parallel_manager.execute_async_batch(tasks)
 
             # Construire le dictionnaire de résultats
             volatility_results = {}
@@ -419,10 +416,10 @@ class VolatilityCalculator:
     ) -> List[Tuple[str, float, float, str, float, Optional[float]]]:
         """
         Helper method pour exécuter le filtrage dans une nouvelle event loop.
-        
+
         CORRECTIF PERF-002: Méthode séparée pour éviter la duplication de code
         et améliorer la lisibilité.
-        
+
         Args:
             symbols_data: Liste des données de symboles
             volatility_min: Volatilité minimum ou None

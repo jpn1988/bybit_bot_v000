@@ -31,11 +31,11 @@ tout ce qui est nécessaire avant de construire la watchlist.
 📚 POUR EN SAVOIR PLUS : Consultez GUIDE_DEMARRAGE_BOT.md
 """
 
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Set
 from logging_setup import setup_logging
 from interfaces.bybit_client_interface import BybitClientInterface
 from bybit_client import BybitPublicClient
-from instruments import get_perp_symbols
+from instruments import get_perp_symbols, get_spot_symbols
 from data_manager import DataManager
 from volatility_tracker import VolatilityTracker
 from watchlist_manager import WatchlistManager
@@ -88,12 +88,12 @@ class BotConfigurator:
             )
             raise
 
-    def get_market_data(self) -> Tuple[str, Dict]:
+    def get_market_data(self) -> Tuple[str, Dict, Set[str]]:
         """
-        Récupère les données de marché initiales.
+        Récupère les données de marché initiales incluant les symboles spot.
 
         Returns:
-            Tuple (base_url, perp_data)
+            Tuple (base_url, perp_data, spot_symbols)
 
         Raises:
             Exception: En cas d'erreur de récupération des données
@@ -106,7 +106,15 @@ class BotConfigurator:
             # Récupérer l'univers perp
             perp_data = get_perp_symbols(base_url, timeout=TimeoutConfig.HTTP_REQUEST)
 
-            return base_url, perp_data
+            # NEW: Récupérer les symboles spot
+            spot_symbols = get_spot_symbols(base_url, timeout=TimeoutConfig.HTTP_REQUEST)
+
+            self.logger.info(
+                f"📊 Symboles récupérés: {perp_data['total']} perp, "
+                f"{len(spot_symbols)} spot"
+            )
+
+            return base_url, perp_data, spot_symbols
 
         except Exception as e:
             self.logger.error(f"❌ Erreur récupération données marché : {e}")

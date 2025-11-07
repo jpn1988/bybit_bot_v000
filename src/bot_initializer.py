@@ -32,7 +32,7 @@ pour créer et configurer tous les managers nécessaires.
 # ============================================================================
 # IMPORTS STANDARD LIBRARY
 # ============================================================================
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 # ============================================================================
 # IMPORTS CONFIGURATION ET UTILITAIRES
@@ -51,7 +51,7 @@ from display_manager import DisplayManager
 from monitoring_manager import MonitoringManager
 
 # Connexions et communication
-from ws_manager import WebSocketManager
+from ws.manager import WebSocketManager
 
 # Analyse et filtrage
 from volatility_tracker import VolatilityTracker
@@ -60,6 +60,23 @@ from watchlist_manager import WatchlistManager
 # Gestion des callbacks et opportunités
 from callback_manager import CallbackManager
 from opportunity_manager import OpportunityManager
+
+# ============================================================================
+# IMPORTS TYPE CHECKING (Éviter les imports circulaires)
+# ============================================================================
+
+if TYPE_CHECKING:
+    from typing_imports import (
+        DataManager,
+        DisplayManager,
+        MonitoringManager,
+        WebSocketManager,
+        VolatilityTracker,
+        WatchlistManager,
+        CallbackManager,
+        OpportunityManager,
+        CandidateMonitor
+    )
 
 
 class BotInitializer:
@@ -134,10 +151,11 @@ class BotInitializer:
             testnet=self.testnet, logger=self.logger
         )
 
-        # Gestionnaire de watchlist dédié (avec injection du config_manager)
+        # Gestionnaire de watchlist dédié (avec injection du config_manager et data_manager)
         self.watchlist_manager = WatchlistManager(
             testnet=self.testnet,
             config_manager=self.config_manager,
+            market_data_fetcher=self.data_manager,  # Injection de data_manager pour découplage
             logger=self.logger,
         )
 
@@ -155,7 +173,7 @@ class BotInitializer:
         self.opportunity_manager = OpportunityManager(
             self.data_manager, logger=self.logger
         )
-        
+
         # Gestionnaire de candidats (pour cohérence avec factory mode)
         from candidate_monitor import CandidateMonitor
         self.candidate_monitor = CandidateMonitor(

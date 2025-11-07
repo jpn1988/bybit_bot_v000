@@ -109,7 +109,7 @@ class PaginationHandler:
     ) -> List[Dict[str, Any]]:
         """
         Récupère toutes les données via pagination de manière asynchrone.
-        
+
         OPTIMISATION: Version async qui utilise aiohttp et async_rate_limiter
         pour éviter de bloquer l'event loop pendant les requêtes HTTP.
 
@@ -141,7 +141,7 @@ class PaginationHandler:
 
                     # Effectuer la requête de manière asynchrone
                     page_data = await self._make_paginated_request_async(
-                        session, base_url, endpoint, page_params, timeout, 
+                        session, base_url, endpoint, page_params, timeout,
                         page_index + 1, async_rate_limiter
                     )
 
@@ -290,7 +290,7 @@ class PaginationHandler:
             error_detail = response_text[:200]
         except Exception:
             error_detail = "Could not read response"
-            
+
         error_msg = (
             f"Erreur HTTP Bybit GET {url} | "
             f"page={page_index} limit={params.get('limit')} "

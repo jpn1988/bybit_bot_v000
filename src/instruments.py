@@ -45,10 +45,10 @@ Priorité 2 : Heuristique (fallback)
 Exemple :
     symbol = "BTCUSDT"
     → Contient "USDT" → Catégorie : "linear" ✅
-    
+
     symbol = "BTCUSD"
     → Ne contient pas "USDT" → Catégorie : "inverse" ✅
-    
+
     symbol = "ETHPERP"
     → Ne contient pas "USDT" → Catégorie : "inverse"
     (Note : Rare, mais l'heuristique gère ce cas)
@@ -84,12 +84,16 @@ print(f"BTCUSDT est {cat}")  # "linear"
 """
 
 import httpx
+import logging
 from http_client_manager import get_http_client
 from http_utils import get_rate_limiter
-from typing import Dict, List
+from typing import Dict, List, Set
 
 # Rate limiter global pour toutes les requêtes
 _rate_limiter = get_rate_limiter()
+
+# Logger pour les exclusions de symboles (utilisé uniquement si nécessaire)
+_logger = logging.getLogger(__name__)
 
 
 def fetch_instruments_info(
@@ -179,18 +183,25 @@ def is_perpetual_active(item: Dict) -> bool:
     # Liste noire des symboles en cours de délisting ou problématiques
     delisted_symbols = {
         "LAUNCHCOINUSDT",  # En cours de délisting (erreur 30228)
+        "AI16ZUSDT",       # En cours de délisting (erreur 30228)
         # Ajouter d'autres symboles problématiques ici si nécessaire
     }
 
     # Exclure les symboles en cours de délisting
     if symbol in delisted_symbols:
+        _logger.debug(f"🚫 Symbole {symbol} exclu (liste noire - délisting)")
         return False
 
     # Vérifier le type de contrat (perpétuel)
     is_perpetual = contract_type in {"linearperpetual", "inverseperpetual"}
 
-    # Vérifier le statut (actif)
-    is_active = status in {"trading", "listed"}
+    # Vérifier le statut (actif) - exclure les statuts de délisting
+    # Bybit peut retourner des statuts comme "delisting", "suspending", etc.
+    is_delisting = "delisting" in status or "suspending" in status
+    if is_delisting and is_perpetual:
+        _logger.info(f"🚫 Symbole {symbol} exclu (statut délisting détecté: '{status}')")
+    
+    is_active = status in {"trading", "listed"} and not is_delisting
 
     return is_perpetual and is_active
 
@@ -250,20 +261,49 @@ def get_perp_symbols(base_url: str, timeout: int = 10) -> Dict:
     }
 
 
+def get_spot_symbols(base_url: str, timeout: int = 10) -> Set[str]:
+    """
+    Fetch all active spot symbols from Bybit.
+
+    Args:
+        base_url: Base URL for Bybit API
+        timeout: HTTP timeout in seconds
+
+    Returns:
+        Set of spot symbol names
+    """
+    try:
+        spot_instruments = fetch_instruments_info(base_url, "spot", timeout)
+        spot_symbols = set()
+
+        for item in spot_instruments:
+            status = item.get("status", "").lower()
+            if status in {"trading", "listed"}:
+                symbol = item.get("symbol", "")
+                if symbol:
+                    spot_symbols.add(symbol)
+
+        return spot_symbols
+
+    except Exception as e:
+        # Return empty set on error
+        return set()
+
+
 def category_of_symbol(
     symbol: str, categories: Dict[str, str] | None = None
 ) -> str:
     """
     Détermine la catégorie d'un symbole avec mapping officiel + heuristique fallback.
-    
+
     Cette fonction utilise une stratégie à 2 niveaux pour garantir la précision :
     1. PRIORITÉ : Mapping officiel de l'API Bybit (100% précis)
     2. FALLBACK : Heuristique basée sur le nom (fiable à ~99%)
-    
+
     Heuristique :
     - Si "USDT" dans le symbole → "linear" (USDT perpetual)
     - Sinon → "inverse" (Coin-margined)
-    
+
     Exemples :
         category_of_symbol("BTCUSDT", categories)  # "linear" (USDT)
         category_of_symbol("BTCUSD", categories)   # "inverse" (coin)
@@ -281,19 +321,19 @@ def category_of_symbol(
         str: Catégorie du symbole
             - "linear" : Contrat USDT perpetual (ex: BTCUSDT)
             - "inverse" : Contrat coin-margined (ex: BTCUSD)
-            
+
     Note:
         - Toujours préférer le mapping officiel quand disponible
         - L'heuristique est fiable à ~99% mais peut échouer sur symboles non-standard
         - En cas d'erreur, retourne le résultat de l'heuristique (safe)
-        
+
     Example:
         ```python
         # Avec mapping officiel
         perp_data = get_perp_symbols(base_url)
         cat = category_of_symbol("BTCUSDT", perp_data['categories'])
         print(cat)  # "linear" (depuis l'API)
-        
+
         # Sans mapping (fallback heuristique)
         cat = category_of_symbol("ETHUSDT", None)
         print(cat)  # "linear" (heuristique : contient "USDT")
@@ -308,7 +348,7 @@ def category_of_symbol(
         ):
             # ✅ Utiliser la catégorie officielle (100% précis)
             return categories[symbol]
-        
+
         # PRIORITÉ 2 : Fallback sur l'heuristique basée sur le nom
         # Heuristique : Si "USDT" dans le symbole → linear, sinon → inverse
         # Fiabilité : ~99% (échoue sur symboles non-standard rares)

@@ -9,13 +9,17 @@ Cette classe est responsable uniquement de :
 Responsabilité unique : Scanner le marché pour détecter les opportunités.
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 from logging_setup import setup_logging
-from watchlist_manager import WatchlistManager
-from volatility_tracker import VolatilityTracker
+from interfaces.watchlist_manager_interface import WatchlistManagerInterface
+from interfaces.volatility_tracker_interface import VolatilityTrackerInterface
 from interfaces.bybit_client_interface import BybitClientInterface
 from bybit_client import BybitPublicClient
 from config.timeouts import TimeoutConfig
+
+if TYPE_CHECKING:
+    from watchlist_manager import WatchlistManager
+    from volatility_tracker import VolatilityTracker
 
 
 class OpportunityScanner:
@@ -29,8 +33,8 @@ class OpportunityScanner:
 
     def __init__(
         self,
-        watchlist_manager: WatchlistManager,
-        volatility_tracker: VolatilityTracker,
+        watchlist_manager: WatchlistManagerInterface,
+        volatility_tracker: VolatilityTrackerInterface,
         testnet: bool = True,
         logger=None,
     ):
@@ -120,7 +124,7 @@ class OpportunityScanner:
 
         Returns:
             Dict avec les opportunités trouvées ou None
-            
+
         Note:
             Cette méthode utilise asyncio.to_thread() pour exécuter build_watchlist()
             dans un thread séparé, évitant de bloquer l'event loop principal.

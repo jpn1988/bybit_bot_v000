@@ -15,21 +15,25 @@ Responsabilités principales :
 - Surveillance des candidats (symboles proches des critères)
 """
 
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, TYPE_CHECKING
 from logging_setup import setup_logging
 from config import ConfigManager
-from data_manager import DataManager
 from filters.symbol_filter import SymbolFilter
 from volatility_tracker import VolatilityTracker
-from metrics import record_filter_result
+from enhanced_metrics import record_filter_result
+from interfaces.watchlist_manager_interface import WatchlistManagerInterface
+from interfaces.data_manager_interface import DataManagerInterface
 from watchlist_helpers import (
     WatchlistDataPreparer,
     WatchlistFilterApplier,
     WatchlistResultBuilder,
 )
 
+if TYPE_CHECKING:
+    from data_manager import DataManager
 
-class WatchlistManager:
+
+class WatchlistManager(WatchlistManagerInterface):
     """
     Gestionnaire de watchlist pour le bot Bybit - Version unifiée.
 
@@ -51,9 +55,10 @@ class WatchlistManager:
         self,
         testnet: bool = True,
         config_manager: Optional[ConfigManager] = None,
-        market_data_fetcher: Optional[DataManager] = None,
+        market_data_fetcher: Optional[DataManagerInterface] = None,
         symbol_filter: Optional[SymbolFilter] = None,
         logger=None,
+        spot_checker=None,  # NEW parameter
     ):
         """
         Initialise le gestionnaire de watchlist.
@@ -63,21 +68,31 @@ class WatchlistManager:
             (False)
             config_manager: Gestionnaire de configuration (optionnel, créé
             automatiquement si non fourni)
-            market_data_fetcher: Gestionnaire de données (optionnel, créé
-            automatiquement si non fourni)
+            market_data_fetcher: Gestionnaire de données (obligatoire, doit implémenter DataManagerInterface)
             symbol_filter: Filtre de symboles (optionnel, créé
             automatiquement si non fourni)
             logger: Logger pour les messages (optionnel)
+            spot_checker: Vérificateur spot (optionnel)
+
+        Raises:
+            ValueError: Si market_data_fetcher est None
         """
         self.testnet = testnet
         self.logger = logger or setup_logging()
 
         # Composants principaux (injection de dépendances avec fallback)
         self.config_manager = config_manager or ConfigManager(logger=self.logger)
-        self.market_data_fetcher = market_data_fetcher or DataManager(
-            testnet=testnet, logger=self.logger
-        )
+
+        # Forcer l'injection de market_data_fetcher pour découplage
+        if market_data_fetcher is None:
+            raise ValueError(
+                "market_data_fetcher est obligatoire. "
+                "Passez une instance de DataManagerInterface via le constructeur."
+            )
+        self.market_data_fetcher = market_data_fetcher
+
         self.symbol_filter = symbol_filter or SymbolFilter(logger=self.logger)
+        self.spot_checker = spot_checker  # NEW: Store spot checker
 
         # Configuration et données
         self.config = self.config_manager.load_and_validate_config()
@@ -154,6 +169,7 @@ class WatchlistManager:
             volatility_tracker,
             base_url,
             n0,
+            spot_checker=self.spot_checker,  # NEW parameter
         )
 
         # Enregistrer les métriques de filtrage
@@ -325,7 +341,7 @@ class WatchlistManager:
 
         Returns:
             str: Temps restant formaté ou "-" si invalide
-            
+
         Example:
             >>> manager = WatchlistManager(...)
             >>> manager.calculate_funding_time_remaining(1640995200000)

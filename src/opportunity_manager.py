@@ -11,13 +11,23 @@ Responsabilité unique : Coordination entre les composants d'opportunités.
 """
 
 import asyncio
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, TYPE_CHECKING
 from logging_setup import setup_logging
-from data_manager import DataManager
-from watchlist_manager import WatchlistManager
-from volatility_tracker import VolatilityTracker
+from interfaces.data_manager_interface import DataManagerInterface
+from interfaces.watchlist_manager_interface import WatchlistManagerInterface
+from interfaces.volatility_tracker_interface import VolatilityTrackerInterface
 from opportunity_scanner import OpportunityScanner
 from opportunity_integrator import OpportunityIntegrator
+from bybit_client import BybitPublicClient as _BybitPublicClient  # Compatibilité legacy
+
+# LEGACY COMPAT: ré-export pour les tests/mock existants. À retirer une fois
+# les suites migrées (voir docs/COMPATIBILITY_NOTES.md).
+BybitPublicClient = _BybitPublicClient
+
+if TYPE_CHECKING:
+    from data_manager import DataManager
+    from watchlist_manager import WatchlistManager
+    from volatility_tracker import VolatilityTracker
 
 
 class OpportunityManager:
@@ -34,9 +44,9 @@ class OpportunityManager:
 
     def __init__(
         self,
-        data_manager: DataManager,
-        watchlist_manager: WatchlistManager = None,
-        volatility_tracker: VolatilityTracker = None,
+        data_manager: DataManagerInterface,
+        watchlist_manager: WatchlistManagerInterface = None,
+        volatility_tracker: VolatilityTrackerInterface = None,
         testnet: bool = True,
         logger=None,
     ):
@@ -155,7 +165,7 @@ class OpportunityManager:
         linear_symbols: List[str],
         inverse_symbols: List[str],
         ws_manager,
-        watchlist_manager: WatchlistManager,
+        watchlist_manager: WatchlistManagerInterface,
     ):
         """
         Callback appelé lors de nouvelles opportunités détectées.
@@ -209,11 +219,11 @@ class OpportunityManager:
         linear_symbols: List[str],
         inverse_symbols: List[str],
         ws_manager,
-        watchlist_manager: WatchlistManager,
+        watchlist_manager: WatchlistManagerInterface,
     ):
         """
         Version async pure pour nouvelles opportunités.
-        
+
         CORRECTIF ARCH-001: Cette méthode utilise async/await pur sans
         tentatives de création d'event loops imbriquées.
 
@@ -245,7 +255,7 @@ class OpportunityManager:
     def _handle_task_exception(self, task):
         """
         Gère les exceptions des tâches asyncio.
-        
+
         CORRECTIF : Capture les erreurs des tâches fire-and-forget
         pour éviter les erreurs silencieuses.
 
@@ -275,16 +285,16 @@ class OpportunityManager:
     ):
         """
         Version async pure pour démarrer les connexions WebSocket.
-        
+
         Args:
             ws_manager: Gestionnaire WebSocket
             linear_symbols: Symboles linear à surveiller
             inverse_symbols: Symboles inverse à surveiller
-            
+
         Returns:
             asyncio.Task: Tâche créée pour les connexions WebSocket
         """
-        
+
         task = asyncio.create_task(
             ws_manager.start_connections(linear_symbols, inverse_symbols)
         )
@@ -296,7 +306,7 @@ class OpportunityManager:
         self,
         symbol: str,
         ticker_data: dict,
-        watchlist_manager: WatchlistManager,
+        watchlist_manager: WatchlistManagerInterface,
     ):
         """
         Callback appelé pour les tickers des candidats.

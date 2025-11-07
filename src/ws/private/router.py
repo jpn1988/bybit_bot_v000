@@ -36,13 +36,13 @@ class PrivateMessageRouter:
 
         # Topics
         topic = data.get("topic", "")
-        
+
         # Log de débogage pour TOUS les messages reçus
         try:
             self.logger and self.logger.info(f"🔍 [DEBUG] Message WebSocket reçu: topic='{topic}', data={data}")
         except Exception:
             pass
-        
+
         if topic and callable(self.on_topic):
             try:
                 self.logger and self.logger.info(f"🔍 [DEBUG] Appel callback on_topic avec topic='{topic}'")

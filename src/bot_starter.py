@@ -18,7 +18,7 @@ tous les composants actifs (WebSocket, monitoring, affichage, etc.).
    - Démarre display_manager (affichage du tableau)
    - Démarre ws_manager (connexions WebSocket)
    - Démarre monitoring_manager (surveillance des opportunités)
-   
+
    ⚠️ IMPORTANT : Cette méthode est ASYNCHRONE (await)
 
 3. get_startup_stats() : Retourne les stats de démarrage
@@ -30,12 +30,13 @@ tous les composants actifs (WebSocket, monitoring, affichage, etc.).
 📚 POUR EN SAVOIR PLUS : Consultez GUIDE_DEMARRAGE_BOT.md
 """
 
+import asyncio
 import time
 from typing import Dict, Any
 from logging_setup import setup_logging
 from volatility_tracker import VolatilityTracker
 from display_manager import DisplayManager
-from ws_manager import WebSocketManager
+from ws.manager import WebSocketManager
 from data_manager import DataManager
 from monitoring_manager import MonitoringManager
 
@@ -117,22 +118,26 @@ class BotStarter:
     async def _check_existing_positions(self, monitoring_manager: MonitoringManager):
         """
         Vérifie les positions existantes au démarrage.
-        
+
         Args:
             monitoring_manager: Gestionnaire de surveillance
         """
         try:
             self.logger.info("🔍 Vérification des positions existantes au démarrage...")
-            
+
             # Vérifier si le monitoring_manager a un bybit_client
             if hasattr(monitoring_manager, 'bybit_client') and monitoring_manager.bybit_client:
-                # Récupérer les positions existantes
-                positions = monitoring_manager.bybit_client.get_positions(category="linear", settleCoin="USDT")
-                
+                # Récupérer les positions existantes sans bloquer l'event loop
+                positions = await asyncio.to_thread(
+                    monitoring_manager.bybit_client.get_positions,
+                    category="linear",
+                    settleCoin="USDT",
+                )
+
                 if positions and positions.get("result", {}).get("list"):
                     existing_positions = positions["result"]["list"]
                     active_positions = [pos for pos in existing_positions if float(pos.get("size", 0)) > 0]
-                    
+
                     if active_positions:
                         self.logger.info(f"📈 {len(active_positions)} position(s) existante(s) détectée(s) au démarrage:")
                         for pos in active_positions:
@@ -140,7 +145,7 @@ class BotStarter:
                             size = pos.get("size", "0")
                             side = pos.get("side", "N/A")
                             self.logger.info(f"   - {symbol}: {side} {size}")
-                        
+
                         # Notifier le monitoring_manager des positions existantes
                         if hasattr(monitoring_manager, 'handle_existing_positions'):
                             await monitoring_manager.handle_existing_positions(active_positions)
@@ -150,7 +155,7 @@ class BotStarter:
                     self.logger.info("ℹ️ Aucune position trouvée au démarrage")
             else:
                 self.logger.warning("⚠️ Impossible de vérifier les positions - bybit_client non disponible")
-                
+
         except Exception as e:
             self.logger.error(f"❌ Erreur vérification positions existantes: {e}")
             # Ne pas faire échouer le démarrage pour cette erreur

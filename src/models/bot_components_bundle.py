@@ -10,21 +10,53 @@ tous les composants du bot pour permettre leur injection en bloc dans BotOrchest
 # IMPORTS STANDARD LIBRARY
 # ============================================================================
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Optional, Any, TYPE_CHECKING
+
+# Imports des interfaces pour utilisation en runtime (pas seulement pour type checking)
+from interfaces.lifecycle_manager_interface import LifecycleManagerInterface
+from interfaces.position_event_handler_interface import PositionEventHandlerInterface
+from interfaces.fallback_data_manager_interface import FallbackDataManagerInterface
+from interfaces.bybit_client_interface import BybitClientInterface
+
+if TYPE_CHECKING:
+    from typing_imports import (
+        DataManager,
+        DisplayManager,
+        MonitoringManager,
+        WebSocketManager,
+        WatchlistManager,
+        CallbackManager,
+        OpportunityManager,
+        VolatilityTracker,
+        BotInitializer,
+        BotConfigurator,
+        DataManager as DataLoader,
+        BotStarter,
+        BotHealthMonitor,
+        ShutdownManager,
+        ThreadManager,
+        BotLifecycleManager,
+        PositionEventHandler,
+        FallbackDataManager,
+        CandidateMonitor,
+        SchedulerManager,
+        PositionMonitor,
+        FundingCloseManager
+    )
 
 
 @dataclass
 class BotComponentsBundle:
     """
     Bundle contenant tous les composants du bot.
-    
+
     Ce bundle permet de transporter tous les composants créés par la factory
     vers le BotOrchestrator en une seule injection, évitant ainsi la configuration
     impérative dispersée.
-    
+
     Note: Les composants scheduler, position_monitor et funding_close_manager
     sont créés dynamiquement dans start() et peuvent être modifiés après création.
-    
+
     Attributs:
         # Managers principaux
         data_manager: Gestionnaire de données unifié
@@ -35,7 +67,7 @@ class BotComponentsBundle:
         callback_manager: Gestionnaire de callbacks
         opportunity_manager: Gestionnaire d'opportunités
         volatility_tracker: Tracker de volatilité
-        
+
         # Composants helper
         initializer: Initialiseur des managers
         configurator: Configurateur du bot
@@ -43,20 +75,20 @@ class BotComponentsBundle:
         health_monitor: Moniteur de santé
         shutdown_manager: Gestionnaire d'arrêt
         thread_manager: Gestionnaire de threads
-        
+
         # Composants lifecycle
         lifecycle_manager: Gestionnaire du cycle de vie
         position_event_handler: Gestionnaire des événements de position
         fallback_data_manager: Gestionnaire de fallback des données
-        
+
         # Client
-        bybit_client: Client Bybit authentifié (optionnel)
-        
+        bybit_client: Client Bybit authentifié (optionnel, BybitClientInterface)
+
         # Composants spécialisés (initialisés dans start())
         scheduler: SchedulerManager (optionnel, créé dans start())
         position_monitor: PositionMonitor (optionnel, créé dans start())
         funding_close_manager: FundingCloseManager (optionnel, créé dans start())
-        
+
     Exemple:
         # Créer tous les composants
         bundle = BotComponentsBundle(
@@ -64,11 +96,11 @@ class BotComponentsBundle:
             display_manager=display_mgr,
             # ... tous les autres
         )
-        
+
         # Injecter dans BotOrchestrator
         orchestrator = BotOrchestrator(components_bundle=bundle, logger=logger)
     """
-    
+
     # Managers principaux
     data_manager: Any
     display_manager: Any
@@ -78,7 +110,7 @@ class BotComponentsBundle:
     callback_manager: Any
     opportunity_manager: Any
     volatility_tracker: Any
-    
+
     # Composants helper
     initializer: Any
     configurator: Any
@@ -87,27 +119,27 @@ class BotComponentsBundle:
     health_monitor: Any
     shutdown_manager: Any
     thread_manager: Any
-    
-    # Composants lifecycle
-    lifecycle_manager: Any
-    position_event_handler: Any
-    fallback_data_manager: Any
-    
-    # Client
-    bybit_client: Optional[Any] = None
-    
+
+    # Composants lifecycle (utilisant les interfaces pour découplage)
+    lifecycle_manager: LifecycleManagerInterface
+    position_event_handler: PositionEventHandlerInterface
+    fallback_data_manager: FallbackDataManagerInterface
+
+    # Client (utilisant l'interface pour découplage)
+    bybit_client: Optional[BybitClientInterface] = None
+
     # Composants spécialisés de surveillance (optionnel)
     candidate_monitor: Optional[Any] = None
-    
+
     # Composants spécialisés (initialisés plus tard dans start())
     scheduler: Optional[Any] = None
     position_monitor: Optional[Any] = None
     funding_close_manager: Optional[Any] = None
-    
+
     def get_all_managers(self) -> dict:
         """
         Retourne un dictionnaire avec tous les managers principaux.
-        
+
         Returns:
             Dict contenant tous les managers indexés par leur nom
         """
@@ -121,11 +153,11 @@ class BotComponentsBundle:
             "opportunity_manager": self.opportunity_manager,
             "volatility_tracker": self.volatility_tracker,
         }
-    
+
     def get_helper_components(self) -> dict:
         """
         Retourne un dictionnaire avec tous les composants helper.
-        
+
         Returns:
             Dict contenant tous les helpers indexés par leur nom
         """
@@ -138,11 +170,11 @@ class BotComponentsBundle:
             "shutdown_manager": self.shutdown_manager,
             "thread_manager": self.thread_manager,
         }
-    
+
     def get_lifecycle_components(self) -> dict:
         """
         Retourne un dictionnaire avec tous les composants de cycle de vie.
-        
+
         Returns:
             Dict contenant tous les composants de lifecycle indexés par leur nom
         """

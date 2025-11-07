@@ -43,7 +43,7 @@ Exemple de flux :
     Temps = 130s → WebSocket bloqué, aucune mise à jour
     Temps = 140s → Affichage détecte staleness (140s > 120s)
     Temps = 140s → Fallback → Récupère depuis REST API ($43,510) ✅ Frais
-    
+
 Pourquoi ce mécanisme ?
 - ✅ Résilience : Continue à afficher même si WebSocket down
 - ✅ Précision : Préfère temps réel quand disponible
@@ -55,7 +55,7 @@ Le staleness mesure l'ancienneté des données pour décider du fallback.
 
 Calcul :
     staleness = now() - timestamp_dernière_mise_à_jour
-    
+
 Exemple :
     Dernière mise à jour : 10:00:00
     Heure actuelle : 10:02:30
@@ -117,71 +117,74 @@ Le tableau affiché contient les colonnes suivantes :
 """
 
 import asyncio
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from logging_setup import setup_logging
-from data_manager import DataManager
+from interfaces.data_manager_interface import DataManagerInterface
 from table_formatter import TableFormatter
 from config.timeouts import TimeoutConfig
+
+if TYPE_CHECKING:
+    from data_manager import DataManager
 
 
 class DisplayManager:
     """
     Gestionnaire d'affichage avec fallback intelligent WebSocket → REST API.
-    
+
     Ce gestionnaire affiche périodiquement un tableau des symboles suivis avec
     leurs données en temps réel. Il utilise un mécanisme de fallback automatique
     pour garantir la fraîcheur des données affichées.
-    
+
     Stratégie de données :
     1. Priorité : Données WebSocket (temps réel) si récentes
     2. Fallback : Données REST API si WebSocket stale ou indisponible
     3. Seuil : 120 secondes par défaut (configurable)
-    
+
     Responsabilités :
     - Afficher le tableau des symboles périodiquement
     - Détecter et gérer les données stales (anciennes)
     - Fallback automatique vers REST API si nécessaire
     - Formater les données via TableFormatter
-    
+
     Attributes:
-        data_manager (DataManager): Gestionnaire de données
+        data_manager (DataManagerInterface): Gestionnaire de données (interface)
         logger: Logger pour les messages
         display_interval_seconds (int): Intervalle d'affichage (défaut: 10s)
         price_ttl_sec (int): Seuil de staleness pour fallback (défaut: 120s)
         _running (bool): État de la boucle d'affichage
         _display_task (asyncio.Task): Tâche d'affichage en cours
         _formatter (TableFormatter): Formateur de tableaux
-        
+
     Example:
         ```python
         # Créer et configurer
         display = DisplayManager(data_manager=dm)
         display.set_display_interval(10)  # Afficher toutes les 10s
         display.set_price_ttl(120)  # Fallback si > 120s stale
-        
+
         # Démarrer
         await display.start_display_loop()
-        
+
         # Arrêter
         await display.stop_display_loop()
         ```
-        
+
     Note:
         - La boucle d'affichage est non-bloquante (asyncio.Task)
         - Le fallback est transparent pour l'utilisateur
         - Les données REST sont mises en cache dans DataStorage
     """
 
-    def __init__(self, data_manager: DataManager, logger=None):
+    def __init__(self, data_manager: DataManagerInterface, logger=None):
         """
         Initialise le gestionnaire d'affichage.
 
         Args:
-            data_manager (DataManager): Gestionnaire de données unifié
-                                       Contient storage (WebSocket + REST)
+            data_manager (DataManagerInterface): Gestionnaire de données (interface)
+                                                 Contient storage (WebSocket + REST)
             logger: Logger pour tracer les événements
                    Recommandé : logging.getLogger(__name__)
-                   
+
         Note:
             - display_interval_seconds contrôle la fréquence d'affichage
             - price_ttl_sec contrôle le seuil de fallback
@@ -194,7 +197,7 @@ class DisplayManager:
         # Intervalle entre chaque affichage du tableau (en secondes)
         # Valeur recommandée : 5-15s (équilibre entre fraîcheur et spam)
         self.display_interval_seconds = 10
-        
+
         # Seuil de staleness pour le fallback (en secondes)
         # Si les données WebSocket ont plus de 120s, on bascule sur REST
         # TTL = Time To Live = durée de validité des données
@@ -207,7 +210,7 @@ class DisplayManager:
 
         # Formateur de tableaux
         self._formatter = TableFormatter()
-        
+
         # Filtrage des symboles à afficher (pour mode position unique)
         self._filtered_symbols: Optional[set] = None
 
@@ -223,7 +226,7 @@ class DisplayManager:
     def set_symbol_filter(self, symbols: Optional[set]):
         """
         Définit les symboles à afficher (filtrage).
-        
+
         Args:
             symbols: Set des symboles à afficher, ou None pour afficher tous
         """
@@ -270,7 +273,7 @@ class DisplayManager:
         self._display_task = asyncio.create_task(self._display_loop())
 
         self.logger.info("📊 Boucle d'affichage démarrée")
-        
+
         # Log de débogage pour vérifier que la tâche est bien créée
         self.logger.debug(f"Tâche d'affichage créée: {self._display_task}")
         self.logger.debug(f"État running: {self._running}")
@@ -305,7 +308,7 @@ class DisplayManager:
         Boucle d'affichage avec intervalle configurable.
         """
         self.logger.debug("Boucle d'affichage démarrée")
-        
+
         while self._running:
             # Vérifier immédiatement si on doit s'arrêter
             if not self._running:
@@ -324,13 +327,14 @@ class DisplayManager:
         """
         Affiche le tableau des prix aligné avec funding, volume en millions,
         spread et volatilité.
-        
+
         Utilise les FundingData Value Objects pour accéder aux données.
         """
         # Si aucune opportunité n'est trouvée, retourner
-        funding_data_objects = self.data_manager.storage.get_all_funding_data_objects()
+        # Utiliser la méthode déléguée de DataManagerInterface au lieu d'accéder à .storage
+        funding_data_objects = self.data_manager.get_all_funding_data_objects()
         self.logger.debug(f"_print_price_table: {len(funding_data_objects) if funding_data_objects else 0} symboles")
-        
+
         if not funding_data_objects:
             self.logger.debug("⏳ Aucune donnée de funding disponible - En attente...")
             return
@@ -369,8 +373,34 @@ class DisplayManager:
         print("\n" + header)
         print(separator)
 
-        # Afficher les données
-        for symbol in funding_data_objects.keys():
+        # Trier les symboles par poids (si disponible) avant affichage
+        symbols_to_display = list(funding_data_objects.keys())
+
+        # Essayer de récupérer les poids depuis les données de funding
+        try:
+            # Trier par poids décroissant si les données contiennent des poids
+            symbols_with_weights = []
+            for symbol in symbols_to_display:
+                funding_data = funding_data_objects[symbol]
+                # Vérifier si le FundingData contient un poids
+                if hasattr(funding_data, 'weight') and funding_data.weight is not None:
+                    symbols_with_weights.append((symbol, funding_data.weight))
+                else:
+                    # Fallback: utiliser la valeur absolue du funding comme critère de tri
+                    funding_rate = funding_data.funding_rate if hasattr(funding_data, 'funding_rate') else 0.0
+                    symbols_with_weights.append((symbol, abs(funding_rate)))
+
+            # Trier par poids décroissant
+            symbols_with_weights.sort(key=lambda x: x[1], reverse=True)
+            symbols_to_display = [symbol for symbol, weight in symbols_with_weights]
+
+        except Exception as e:
+            # En cas d'erreur, utiliser l'ordre original
+            self.logger.debug(f"Impossible de trier par poids: {e}")
+            pass
+
+        # Afficher les données dans l'ordre trié
+        for symbol in symbols_to_display:
             row_data = self._formatter.prepare_row_data(
                 symbol, self.data_manager
             )
